@@ -1,0 +1,32 @@
+# Fly.io config: deploys the same Docker image as the home setup.
+#   fly launch --no-deploy --copy-config && fly volumes create dubdeck_data --size 20
+#   fly secrets set DUBDECK_BACKEND_KEY=... DUBDECK_SIGNING_SECRET=... \
+#     DUBDECK_PUBLIC_URL=https://<app>.fly.dev DUBDECK_GOOGLE_CLIENT_ID=...
+#   fly deploy
+# Volumes and machines are billed by Fly. Check pricing first.
+app = "dubdeck-api"
+primary_region = "iad"
+
+[build]
+  dockerfile = "server/Dockerfile"
+
+[env]
+  PORT = "8000"
+  DUBDECK_TRUST_CF_HEADERS = "1"
+
+[[mounts]]
+  source = "dubdeck_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "off"
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "20s"
+    method = "GET"
+    path = "/healthz"

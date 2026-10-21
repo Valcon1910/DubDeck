@@ -1,0 +1,19 @@
+{
+  "proxies": {
+    "/api/*": {
+      "upstream": "https://__DUBDECK_API_HOST__/api",
+      "headers": {
+        "X-DubDeck-Key": "${DUBDECK_BACKEND_KEY}"
+      },
+      "rateLimit": "1000/hour/ip"
+    },
+    "/events": {
+      "upstream": "https://__DUBDECK_API_HOST__/api/events",
+      "method": "GET",
+      "headers": {
+        "X-DubDeck-Key": "${DUBDECK_BACKEND_KEY}"
+      },
+      "rateLimit": "600/hour/ip"
+    }
+  }
+}

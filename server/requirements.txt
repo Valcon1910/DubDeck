@@ -1,0 +1,7 @@
+fastapi==0.158.1
+uvicorn[standard]==0.54.0
+pydantic==2.14.1
+yt-dlp[default,curl-cffi]==2026.8.19
+mutagen==1.48.1
+google-auth==2.62.0
+requests==2.34.2

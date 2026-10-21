@@ -1,0 +1,32 @@
+# Run DubDeck's backend on your PC and expose it through a Cloudflare Tunnel.
+#   cp server/.env.example server/.env   # then fill it in
+#   docker compose up -d --build
+#   docker compose exec dubdeck dubdeck-update-ytdlp   # update yt-dlp any time
+
+services:
+  dubdeck:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    image: dubdeck-server
+    env_file: server/.env
+    volumes:
+      - dubdeck-data:/data
+      # Live copy of the allowlist: `git pull` and the backend picks it up within seconds.
+      - ./config:/app/config:ro
+    restart: unless-stopped
+    # Not published on the host: only cloudflared can reach it.
+    expose:
+      - "8000"
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.9.3
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN in .env next to this file}
+    depends_on:
+      - dubdeck
+    restart: unless-stopped
+
+volumes:
+  dubdeck-data:

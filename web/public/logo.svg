@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 248 64" role="img" aria-label="DubDeck">
+  <rect width="64" height="64" rx="15" fill="#e4572e"/>
+  <rect x="9" y="15" width="46" height="32" rx="6" fill="none" stroke="#fff" stroke-width="3.5"/>
+  <circle cx="21.5" cy="29" r="5.5" fill="none" stroke="#fff" stroke-width="3"/>
+  <circle cx="42.5" cy="29" r="5.5" fill="none" stroke="#fff" stroke-width="3"/>
+  <circle cx="21.5" cy="29" r="1.7" fill="#fff"/>
+  <circle cx="42.5" cy="29" r="1.7" fill="#fff"/>
+  <path d="M30 27.4v3.2M32 25.2v7.6M34 27.4v3.2" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/>
+  <path d="M18 47l3.5-5.5h21L46 47" fill="none" stroke="#fff" stroke-width="3" stroke-linejoin="round"/>
+  <text x="80" y="43" font-family="Inter, 'Segoe UI', system-ui, sans-serif" font-size="32" font-weight="700" letter-spacing="-0.5" fill="#1b1b1f">Dub<tspan fill="#e4572e">Deck</tspan></text>
+</svg>

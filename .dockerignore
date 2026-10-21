@@ -1,0 +1,8 @@
+**/node_modules
+web
+.git
+**/__pycache__
+**/.pytest_cache
+server/.env
+**/.env
+.herenow

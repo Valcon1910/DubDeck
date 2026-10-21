@@ -1,0 +1,29 @@
+# Render Blueprint: deploys the same Docker image as the home setup.
+# Persistent disks need a paid instance type; Render bills for this. Check pricing first.
+services:
+  - type: web
+    name: dubdeck-api
+    runtime: docker
+    dockerfilePath: ./server/Dockerfile
+    dockerContext: .
+    plan: starter
+    healthCheckPath: /healthz
+    disk:
+      name: dubdeck-data
+      mountPath: /data
+      sizeGB: 20
+    envVars:
+      - key: DUBDECK_BACKEND_KEY
+        sync: false
+      - key: DUBDECK_SIGNING_SECRET
+        sync: false
+      - key: DUBDECK_PUBLIC_URL
+        sync: false
+      - key: DUBDECK_GOOGLE_CLIENT_ID
+        sync: false
+      - key: DUBDECK_ALLOWLIST_URL
+        sync: false
+      - key: DUBDECK_ALLOWLIST_TOKEN
+        sync: false
+      - key: DUBDECK_TRUST_CF_HEADERS
+        value: "0"

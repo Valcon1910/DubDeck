@@ -1,0 +1,38 @@
+name: Sync access allowlist
+
+# Edit config/allowed-emails.json on GitHub → this makes the here.now Site's
+# restricted-access list match it exactly (PATCH replaces the whole list).
+on:
+  push:
+    branches: [main]
+    paths:
+      - config/allowed-emails.json
+      - scripts/sync-access.mjs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: herenow-access
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate file
+        run: node scripts/sync-access.mjs --check
+
+      - name: Read current policy and write the file's contents
+        env:
+          HERENOW_API_KEY: ${{ secrets.HERENOW_API_KEY }}
+          HERENOW_SLUG: ${{ vars.HERENOW_SLUG }}
+        run: node scripts/sync-access.mjs

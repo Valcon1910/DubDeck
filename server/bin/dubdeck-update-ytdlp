@@ -1,0 +1,10 @@
+#!/bin/sh
+# Update yt-dlp in place, without rebuilding the image or restarting the server.
+# The new copy lives on the /data volume and is used by the next download.
+#   docker compose exec dubdeck dubdeck-update-ytdlp
+set -eu
+TARGET="${DUBDECK_YTDLP_TARGET:-${DUBDECK_DATA_DIR:-/data}/ytdlp}"
+mkdir -p "$TARGET"
+python -m pip install --disable-pip-version-check --no-cache-dir --upgrade \
+  --target "$TARGET" "yt-dlp[default,curl-cffi]" >/dev/null
+PYTHONPATH="$TARGET" python -m yt_dlp --version
