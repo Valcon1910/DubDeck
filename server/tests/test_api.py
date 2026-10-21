@@ -138,10 +138,36 @@ def test_rate_limit(client):
     assert 429 in codes
 
 
-def test_session_slides_forward_on_use(client, session):
+def test_session_renews_after_a_day(client, session, monkeypatch):
     import time
-    db = client.app.state.services.db
-    db.execute("UPDATE sessions SET last_seen = ?, expires_at = ?", (time.time() - 3600, time.time() + 60))
-    assert client.get("/api/auth/me", headers=session).status_code == 200
-    row = db.one("SELECT expires_at FROM sessions")
-    assert row["expires_at"] > time.time() + 29 * 86400
+    real = time.time
+    monkeypatch.setattr(time, "time", lambda: real() + 2 * 86400)
+    r = client.get("/api/auth/me", headers=session)
+    assert r.status_code == 200 and r.json()["token"].startswith("s1.")
+    new = {**session, "X-DubDeck-Session": r.json()["token"]}
+    assert client.get("/api/auth/me", headers=new).status_code == 200
+    # The old token is retired once renewed.
+    assert client.get("/api/auth/me", headers=session).status_code == 401
+
+
+def test_session_survives_a_wiped_server(session, cfg, tmp_path):
+    from dataclasses import replace
+
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+    fresh = replace(cfg, data_dir=tmp_path / "wiped")
+    with TestClient(create_app(fresh)) as c:
+        assert c.get("/api/auth/me", headers=session).json()["email"] == OWNER
+
+
+def test_forged_session_rejected(client, session):
+    tok = session["X-DubDeck-Session"]
+    head, body, sig = tok.split(".")
+    bad = {**session, "X-DubDeck-Session": f"{head}.{body}x.{sig}"}
+    assert client.get("/api/auth/me", headers=bad).status_code == 401
+
+
+def test_sign_out_everywhere(client, session):
+    assert client.post("/api/auth/logout", json={"everywhere": True}, headers=session).status_code == 200
+    assert client.get("/api/auth/me", headers=session).status_code == 401

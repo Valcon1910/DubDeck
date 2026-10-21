@@ -172,7 +172,7 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     @app.get("/api/auth/config")
     async def auth_config() -> dict[str, Any]:
         return {"googleClientId": cfg.google_client_id or None, "emailLogin": s.mailcodes.enabled,
-                "passcodeLogin": bool(cfg.owner_passcode),
+                "passcodeLogin": bool(cfg.owner_passcode), "ephemeral": cfg.ephemeral,
                 "devLogin": cfg.dev_login}
 
     def session_response(email: str, name: str | None, picture: str | None, request: Request) -> dict[str, Any]:
@@ -249,7 +249,11 @@ def create_app(cfg: Config | None = None) -> FastAPI:
 
     @app.get("/api/auth/me")
     async def auth_me(u: User = Depends(user)) -> dict[str, Any]:
-        return {"email": u.email, "name": u.name, "picture": u.picture}
+        out: dict[str, Any] = {"email": u.email, "name": u.name, "picture": u.picture}
+        renewed = s.auth.renew(u)
+        if renewed:
+            out["token"], out["expiresAt"] = renewed
+        return out
 
     @app.post("/api/auth/logout")
     async def auth_logout(body: Logout, u: User = Depends(user)) -> dict[str, bool]:

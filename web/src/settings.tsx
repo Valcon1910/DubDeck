@@ -54,6 +54,15 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const reloadFromServer = useCallback(async () => {
     try {
       const res = await api<{ settings: Settings; updatedAt: number }>("/api/settings");
+      const local = readJSON<Cached>(CACHE_KEY);
+      if (!res.updatedAt && local?.updatedAt) {
+        // The server lost its data (e.g. a free host wiped its disk): restore from this device.
+        const restored = await api<{ settings: Settings; updatedAt: number }>("/api/settings", {
+          method: "PUT", body: { settings: merge(local.settings) },
+        });
+        res.settings = restored.settings;
+        res.updatedAt = restored.updatedAt;
+      }
       const s = merge(res.settings);
       setSettings(s);
       remember(s, res.updatedAt);

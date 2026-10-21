@@ -13,6 +13,8 @@ that person out immediately, even with a live session.
 
 from __future__ import annotations
 
+import base64
+import json
 import hashlib
 import hmac
 import logging
@@ -38,7 +40,8 @@ class User:
     email: str
     name: str | None
     picture: str | None
-    token_hash: str
+    token_hash: str  # the session's token id (jti)
+    issued_at: float = 0.0
 
 
 def api_error(status: int, code: str, message: str) -> HTTPException:
@@ -66,48 +69,75 @@ class Auth:
     def session_token(request: Request) -> str:
         return request.headers.get(SESSION_HEADER) or request.query_params.get(SESSION_QUERY) or ""
 
+    # Sessions are self-contained signed tokens, so they survive a server whose
+    # disk is wiped on restart (Render's free plan). Format:
+    #   s1.<base64url JSON {e,n,p,i,x,j}>.<base64url HMAC-SHA256>
+    # Revocation (sign out) is recorded in the database by token id / epoch.
+    def _session_key(self) -> bytes:
+        return hashlib.sha256(b"dubdeck-session:" + self.cfg.signing_secret.encode()).digest()
+
+    def _encode(self, claims: dict) -> str:
+        body = base64.urlsafe_b64encode(json.dumps(claims, separators=(",", ":")).encode()).rstrip(b"=").decode()
+        sig = base64.urlsafe_b64encode(
+            hmac.new(self._session_key(), body.encode(), hashlib.sha256).digest()).rstrip(b"=").decode()
+        return f"s1.{body}.{sig}"
+
+    def _decode(self, token: str) -> dict | None:
+        parts = token.split(".")
+        if len(parts) != 3 or parts[0] != "s1":
+            return None
+        expected = base64.urlsafe_b64encode(
+            hmac.new(self._session_key(), parts[1].encode(), hashlib.sha256).digest()).rstrip(b"=").decode()
+        if not hmac.compare_digest(expected, parts[2]):
+            return None
+        try:
+            return json.loads(base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4)))
+        except ValueError:
+            return None
+
     def current_user(self, request: Request) -> User:
         token = self.session_token(request)
         if not token:
             raise api_error(401, "no_session", "Sign in to continue.")
-        if len(token) > 200:
-            raise api_error(401, "bad_session", "Your session is invalid. Sign in again.")
-        row = self.db.one("SELECT * FROM sessions WHERE token_hash = ?", (_hash(token),))
+        claims = self._decode(token) if len(token) < 4000 else None
         now = time.time()
-        if not row or row["expires_at"] < now:
-            if row:
-                self.db.execute("DELETE FROM sessions WHERE token_hash = ?", (row["token_hash"],))
+        if not claims or float(claims.get("x", 0)) < now:
             raise api_error(401, "bad_session", "Your session expired. Sign in again.")
-        if not self.allowlist.allows(row["email"]):
-            self.db.execute("DELETE FROM sessions WHERE email = ?", (row["email"],))
+        email = str(claims.get("e", ""))
+        if self.db.one("SELECT 1 FROM revoked_sessions WHERE jti = ?", (claims.get("j"),)):
+            raise api_error(401, "bad_session", "You signed out on this device. Sign in again.")
+        epoch = self.db.get_json(f"session_epoch:{email}")
+        if epoch and float(claims.get("i", 0)) < epoch[0]:
+            raise api_error(401, "bad_session", "You were signed out everywhere. Sign in again.")
+        if not self.allowlist.allows(email):
             raise api_error(403, "not_allowed", "This account is no longer allowed to use DubDeck.")
-        if now - row["last_seen"] > 300:
-            # Sliding expiry: every use pushes the deadline out again, so a
-            # device in regular use stays signed in indefinitely.
-            self.db.execute(
-                "UPDATE sessions SET last_seen = ?, expires_at = ? WHERE token_hash = ?",
-                (now, now + self.cfg.session_days * 86400, row["token_hash"]),
-            )
-        return User(row["email"], row["name"], row["picture"], row["token_hash"])
+        return User(email, claims.get("n"), claims.get("p"), str(claims.get("j")), float(claims.get("i", 0)))
 
     def create_session(self, email: str, name: str | None, picture: str | None,
-                       user_agent: str | None) -> tuple[str, float]:
-        token = secrets.token_urlsafe(32)
+                       user_agent: str | None = None) -> tuple[str, float]:
         now = time.time()
         expires = now + self.cfg.session_days * 86400
-        self.db.execute(
-            "INSERT INTO sessions(token_hash, email, name, picture, created_at, last_seen, "
-            "expires_at, user_agent) VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
-            (_hash(token), email, name, picture, now, now, expires, (user_agent or "")[:300]),
-        )
-        self.db.execute("DELETE FROM sessions WHERE expires_at < ?", (now,))
+        token = self._encode({"e": email, "n": name, "p": picture, "i": now, "x": expires,
+                              "j": secrets.token_urlsafe(12)})
         return token, expires
 
+    def renew(self, user: User) -> tuple[str, float] | None:
+        """Sliding expiry: a fresh token once the current one is a day old."""
+        if time.time() - user.issued_at < 86400:
+            return None
+        self.end_session(user)
+        return self.create_session(user.email, user.name, user.picture)
+
     def end_session(self, user: User, everywhere: bool = False) -> None:
+        now = time.time()
         if everywhere:
-            self.db.execute("DELETE FROM sessions WHERE email = ?", (user.email,))
+            self.db.set_json(f"session_epoch:{user.email}", now, now)
         else:
-            self.db.execute("DELETE FROM sessions WHERE token_hash = ?", (user.token_hash,))
+            self.db.execute(
+                "INSERT OR IGNORE INTO revoked_sessions(jti, expires_at) VALUES(?, ?)",
+                (user.token_hash, now + self.cfg.session_days * 86400),
+            )
+        self.db.execute("DELETE FROM revoked_sessions WHERE expires_at < ?", (now,))
 
     # -- Google ---------------------------------------------------------
     def verify_google(self, credential: str) -> tuple[str, str | None, str | None]:

@@ -7,6 +7,7 @@ import { describeOptions } from "../defaults";
 import { useLive } from "../live";
 import { useRouter } from "../router";
 import { useSettings } from "../settings";
+import { rememberMyJobs } from "../storage";
 import { useToast } from "../toasts";
 import type { Job } from "../types";
 import { clsx, formatBytes, formatDateTime, formatDuration, safeImg } from "../util";
@@ -45,6 +46,7 @@ export function QueuePage() {
     try {
       const res = await api<{ job: Job }>(`/api/jobs/${j.id}/${action}`, { body: {} });
       upsert(res.job);
+      if (action === "redownload" || action === "retry") rememberMyJobs([res.job.id]);
       if (action === "redownload") toast.push("Added to the queue again", "success");
     } catch (e) {
       toast.push((e as ApiError).message, "error");

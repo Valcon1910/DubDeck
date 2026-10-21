@@ -1,5 +1,9 @@
 # What you need to do by hand
 
+**No computer (Render free):** follow [README → Easiest setup](README.md#easiest-setup-no-computer-needed-render-free): Render Blueprint → copy the backend key → here.now variable → GitHub secret and variable → run the deploy → open the address.
+
+**Home computer** (list below):
+
 Everything else is automated. Details for each step are in the [README](README.md#one-time-setup).
 
 - [ ] **Secrets**: run `openssl rand -hex 32` twice, once for `DUBDECK_BACKEND_KEY` and once for `DUBDECK_SIGNING_SECRET`.

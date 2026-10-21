@@ -34,6 +34,27 @@ Other protections: URL validation that blocks private and loopback addresses; yt
 
 ---
 
+## Easiest setup: no computer needed (Render free)
+
+The backend runs on Render's free plan, so you only ever use the website (for example on an iPad). Nothing runs on your computer.
+
+**Trade-offs:** the server sleeps after about 15 minutes unused, so the first request takes about a minute to wake it. Its disk is wiped when it restarts, so finished downloads are **saved straight to your device** and the Library is temporary. Converting is slow (512 MB RAM). YouTube often blocks cloud servers ("confirm you're not a bot"); many other sites work.
+
+1. **Render**: sign up at <https://render.com> with GitHub (the free plan needs no card; if asked for one, stop). Click **New → Blueprint**, pick your DubDeck repo, and confirm. When asked, enter:
+   - `DUBDECK_OWNER_PASSCODE`: your passcode (10+ characters)
+   - `DUBDECK_OWNER_EMAIL`: your email (it must be in `config/allowed-emails.json`)
+
+   Wait for **Live**. Note the address, e.g. `https://dubdeck-api-ab12.onrender.com`, and open `…/healthz`: it should show `{"ok":true}`.
+2. **Copy the backend key**: in Render, open **dubdeck-api → Environment** and copy the generated value of `DUBDECK_BACKEND_KEY`.
+3. **here.now variable**: in the here.now dashboard → **Variables**, add `DUBDECK_BACKEND_KEY` = that value, with allowed upstreams `dubdeck-api-ab12.onrender.com`.
+4. **GitHub** (**Settings → Secrets and variables → Actions**): add the secret `HERENOW_API_KEY` (your here.now API key) and the variable `DUBDECK_API_HOST` = `dubdeck-api-ab12.onrender.com`.
+5. **Publish**: **Actions → Deploy web to here.now → Run workflow**. The log ends with `Live: https://<slug>.here.now/` (your DubDeck address) and asks you to save the slug as the variable `HERENOW_SLUG`. Do that.
+6. **Use it**: open the address, pass here.now's gate, enter your passcode once, and add it to your home screen.
+
+Editing `config/allowed-emails.json` on GitHub updates both here.now (via the sync workflow) and Render (it redeploys on every push to `main`).
+
+The steps below are the **home-computer setup** (more reliable for YouTube, keeps a Library).
+
 ## One-time setup
 
 You need: a here.now account (free plan is enough), an email account that can send mail over SMTP (for example a personal Gmail with an app password), a domain on Cloudflare for the tunnel hostname (the Cloudflare plan is free; a domain costs money if you don't have one), and Docker on your PC.

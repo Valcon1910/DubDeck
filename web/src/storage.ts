@@ -25,3 +25,15 @@ export function remove(key: string): void {
     /* ignore */
   }
 }
+
+// Jobs started from this device, so finished files can be offered here automatically.
+const MINE = "dubdeck.myJobs";
+
+export function rememberMyJobs(ids: string[]): void {
+  const prev = readJSON<string[]>(MINE) ?? [];
+  writeJSON(MINE, [...ids, ...prev].slice(0, 300));
+}
+
+export function isMyJob(id: string): boolean {
+  return (readJSON<string[]>(MINE) ?? []).includes(id);
+}

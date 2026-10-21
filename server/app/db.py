@@ -9,6 +9,10 @@ from pathlib import Path
 from typing import Any, Iterable
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS revoked_sessions (
+    jti        TEXT PRIMARY KEY,
+    expires_at REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS login_codes (
     email      TEXT PRIMARY KEY,
     code_hash  TEXT NOT NULL,

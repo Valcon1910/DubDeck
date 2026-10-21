@@ -1,4 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { api, downloadFromUrl } from "./api";
+import { useLive } from "./live";
+import { isMyJob } from "./storage";
+import { useToast } from "./toasts";
 import { AuthProvider, useAuth } from "./auth";
 import { Modal } from "./components/Modal";
 import { NAV, Shell } from "./components/Shell";
@@ -19,7 +23,31 @@ function isTyping(el: EventTarget | null) {
   return !!e && (/^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName) || e.isContentEditable);
 }
 
+/** When this device's download finishes, save it here (the server may be temporary). */
+function useAutoSave(enabled: boolean) {
+  const { jobs } = useLive();
+  const toast = useToast();
+  const seen = useRef<Map<string, string>>(new Map());
+  useEffect(() => {
+    for (const j of jobs) {
+      const before = seen.current.get(j.id);
+      seen.current.set(j.id, j.status);
+      if (!enabled || before === undefined || before === "completed" || j.status !== "completed") continue;
+      if (!j.fileId || !isMyJob(j.id)) continue;
+      const save = async () => {
+        const link = await api<{ url: string }>(`/api/library/${j.fileId}/link`, { body: { disposition: "attachment" } });
+        downloadFromUrl(link.url);
+      };
+      // Browsers (iPad Safari especially) may want a tap, so also offer a button.
+      save().catch(() => {});
+      toast.push(`Ready: ${j.title ?? "your download"}`, "success", { label: "Save", run: () => void save().catch(() => {}) });
+    }
+  }, [jobs, enabled, toast]);
+}
+
 function SignedInApp() {
+  const { config } = useAuth();
+  useAutoSave(Boolean(config?.ephemeral));
   const { route, go } = useRouter();
   const [intake, setIntake] = useState<{ urls: string[]; nonce: number } | null>(null);
   const [shortcuts, setShortcuts] = useState(false);

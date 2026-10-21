@@ -7,6 +7,7 @@ interface AuthConfig {
   googleClientId: string | null;
   emailLogin: boolean;
   passcodeLogin: boolean;
+  ephemeral: boolean;
   devLogin: boolean;
 }
 
@@ -66,8 +67,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         const cached = readJSON<User>(USER_KEY);
         if (cached) setState({ status: "signedIn", user: cached });
-        const user = await api<User>("/api/auth/me");
+        const { token, ...user } = await api<User & { token?: string }>("/api/auth/me");
         if (cancelled) return;
+        if (token) setSession(token); // sliding renewal
         writeJSON(USER_KEY, user);
         setState({ status: "signedIn", user });
       } catch (e) {

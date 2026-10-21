@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, downloadFromUrl } from "../api";
 import { Icon } from "../components/Icon";
 import { ConfirmModal, Modal } from "../components/Modal";
+import { useAuth } from "../auth";
 import { useLive } from "../live";
 import { useToast } from "../toasts";
 import type { LibraryFile, LibraryStats } from "../types";
@@ -16,6 +17,7 @@ const REFRESH_MS = 10 * 60 * 1000; // thumbnail URLs are signed for 15 minutes
 export function LibraryPage() {
   const { libraryVersion } = useLive();
   const toast = useToast();
+  const { config } = useAuth();
   const [files, setFiles] = useState<LibraryFile[] | null>(null);
   const [stats, setStats] = useState<LibraryStats | null>(null);
   const [query, setQuery] = useState("");
@@ -111,6 +113,9 @@ export function LibraryPage() {
         </div>
       </header>
 
+      {config?.ephemeral && (
+        <p className="notice">This server is temporary: files disappear when it restarts. Save anything you want to keep to your device.</p>
+      )}
       {stats && <StorageDashboard stats={stats} onOpen={setPlaying} />}
 
       <div className="toolbar card">

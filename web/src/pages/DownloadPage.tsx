@@ -6,6 +6,7 @@ import { baseOptions, describeOptions, QUALITIES, TEMPLATE_TOKENS } from "../def
 import { useLive } from "../live";
 import { useRouter } from "../router";
 import { useSettings } from "../settings";
+import { rememberMyJobs } from "../storage";
 import { useToast } from "../toasts";
 import type { DownloadOptions, Job, PlaylistPreview, Preset, PresetOptions, Preview, Settings, VideoPreview } from "../types";
 import { clsx, extractUrls, formatBytes, formatDuration, safeImg } from "../util";
@@ -173,6 +174,7 @@ export function DownloadPage({ intake }: { intake: { urls: string[]; nonce: numb
       for (let i = 0; i < jobItems.length; i += 200) {
         const res = await api<{ jobs: Job[] }>("/api/jobs", { body: { items: jobItems.slice(i, i + 200), options: payload } });
         res.jobs.forEach(upsert);
+        rememberMyJobs(res.jobs.map((j) => j.id));
         total += res.jobs.length;
       }
       toast.push(`${total} ${total === 1 ? "download" : "downloads"} added to the queue`, "success", { label: "View queue", run: () => go("queue") });

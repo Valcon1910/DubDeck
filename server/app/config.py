@@ -42,6 +42,7 @@ class Config:
     allow_private_urls: bool
     cookies_file: str
     owner_passcode: str = ""
+    ephemeral: bool = False
     owner_email: str = ""
     smtp_host: str = ""
     smtp_port: int = 587
@@ -78,7 +79,9 @@ def load_config() -> Config:
     cfg = Config(
         backend_key=os.environ.get("DUBDECK_BACKEND_KEY", ""),
         signing_secret=os.environ.get("DUBDECK_SIGNING_SECRET", ""),
-        public_url=os.environ.get("DUBDECK_PUBLIC_URL", "http://localhost:8000").rstrip("/"),
+        # On Render, RENDER_EXTERNAL_URL is set automatically (https://<service>.onrender.com).
+        public_url=(os.environ.get("DUBDECK_PUBLIC_URL") or os.environ.get("RENDER_EXTERNAL_URL")
+                    or "http://localhost:8000").rstrip("/"),
         google_client_id=os.environ.get("DUBDECK_GOOGLE_CLIENT_ID", ""),
         data_dir=data_dir,
         allowlist_path=Path(
@@ -97,6 +100,8 @@ def load_config() -> Config:
         allow_private_urls=_bool("DUBDECK_ALLOW_PRIVATE_URLS", False),
         cookies_file=os.environ.get("DUBDECK_COOKIES_FILE", ""),
         owner_passcode=os.environ.get("DUBDECK_OWNER_PASSCODE", ""),
+        # Disk is wiped on restart (Render free): the UI saves files to the device right away.
+        ephemeral=_bool("DUBDECK_EPHEMERAL", False),
         owner_email=os.environ.get("DUBDECK_OWNER_EMAIL", "").strip().lower(),
         smtp_host=os.environ.get("DUBDECK_SMTP_HOST", ""),
         smtp_port=_int("DUBDECK_SMTP_PORT", 587),
