@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ApiError } from "../api";
 import { useAuth } from "../auth";
 import { LogoMark } from "../components/Logo";
+import { readJSON, writeJSON } from "../storage";
 
 const GIS_SRC = "https://accounts.google.com/gsi/client";
 
@@ -21,7 +22,7 @@ function loadGis(): Promise<void> {
 }
 
 export function SignIn() {
-  const { config, signInWithGoogle, signInDev, state } = useAuth();
+  const { config, signInWithGoogle, signInDev, requestCode, verifyCode, state } = useAuth();
   const buttonRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(state.status === "signedOut" ? state.reason ?? null : null);
   const [busy, setBusy] = useState(false);
@@ -78,10 +79,17 @@ export function SignIn() {
           Dub<span className="logo-accent">Deck</span>
         </h1>
         <p className="muted">Your private video and audio downloader. Sign in to continue.</p>
-        {config?.googleClientId ? (
-          <div className="gis-slot" ref={buttonRef} aria-busy={busy} />
-        ) : (
-          !config?.devLogin && <p className="notice">Google sign-in isn't configured on the server yet.</p>
+        {config?.emailLogin && (
+          <EmailCodeForm requestCode={requestCode} verifyCode={verifyCode} onError={setError} />
+        )}
+        {config?.googleClientId && (
+          <>
+            {config.emailLogin && <p className="or">or</p>}
+            <div className="gis-slot" ref={buttonRef} aria-busy={busy} />
+          </>
+        )}
+        {!config?.googleClientId && !config?.emailLogin && !config?.devLogin && (
+          <p className="notice">No sign-in method is configured on the server yet.</p>
         )}
         {config?.devLogin && (
           <form
@@ -107,8 +115,73 @@ export function SignIn() {
           </form>
         )}
         {error && <p className="error-text" role="alert">{error}</p>}
-        <p className="fine">Only addresses on your allowlist can sign in.</p>
+        <p className="fine">Only addresses on your allowlist can sign in. You stay signed in on this device.</p>
       </div>
     </main>
+  );
+}
+
+const EMAIL_KEY = "dubdeck.lastEmail";
+
+function EmailCodeForm({ requestCode, verifyCode, onError }: {
+  requestCode: (email: string) => Promise<void>;
+  verifyCode: (email: string, code: string) => Promise<void>;
+  onError: (msg: string | null) => void;
+}) {
+  const [email, setEmail] = useState(() => readJSON<string>(EMAIL_KEY) ?? "");
+  const [code, setCode] = useState("");
+  const [step, setStep] = useState<"email" | "code">("email");
+  const [busy, setBusy] = useState(false);
+
+  const send = async () => {
+    setBusy(true);
+    onError(null);
+    try {
+      await requestCode(email.trim());
+      writeJSON(EMAIL_KEY, email.trim());
+      setStep("code");
+    } catch (e) {
+      onError((e as ApiError).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (step === "email") {
+    return (
+      <form className="code-form" onSubmit={(e) => { e.preventDefault(); void send(); }}>
+        <label htmlFor="login-email">Email</label>
+        <input id="login-email" type="email" required autoComplete="email" value={email}
+          onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
+        <button className="btn btn-primary" disabled={busy}>{busy ? "Sending…" : "Email me a code"}</button>
+      </form>
+    );
+  }
+  return (
+    <form
+      className="code-form"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setBusy(true);
+        onError(null);
+        try {
+          await verifyCode(email.trim(), code);
+        } catch (err) {
+          onError((err as ApiError).message);
+          setBusy(false);
+        }
+      }}
+    >
+      <p className="muted">If {email} is allowed, a 6-digit code is on its way. It expires in 10 minutes.</p>
+      <label htmlFor="login-code">Code</label>
+      <input id="login-code" className="mono code-input" inputMode="numeric" autoComplete="one-time-code"
+        pattern="[0-9]{6}" maxLength={6} required autoFocus value={code}
+        onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} placeholder="123456" />
+      <button className="btn btn-primary" disabled={busy || code.length !== 6}>{busy ? "Checking…" : "Sign in"}</button>
+      <div className="row code-links">
+        <button type="button" className="link-btn" onClick={() => { setCode(""); void send(); }}>Resend code</button>
+        <button type="button" className="link-btn" onClick={() => { setStep("email"); setCode(""); }}>Use another email</button>
+      </div>
+    </form>
   );
 }

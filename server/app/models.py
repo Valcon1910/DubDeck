@@ -107,6 +107,15 @@ class GoogleLogin(Strict):
     credential: str = Field(min_length=10, max_length=8192)
 
 
+class EmailStart(Strict):
+    email: str = Field(min_length=3, max_length=320)
+
+
+class EmailVerify(Strict):
+    email: str = Field(min_length=3, max_length=320)
+    code: str = Field(pattern=r"^\d{6}$")
+
+
 class DevLogin(Strict):
     email: str = Field(max_length=320)
 

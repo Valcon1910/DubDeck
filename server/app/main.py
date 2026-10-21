@@ -21,7 +21,8 @@ from .db import Database
 from .events import EventBus
 from .jobs import JobManager
 from .library import CONTENT_TYPES, Library
-from .models import (BulkDelete, CreateJobs, DevLogin, GoogleLogin, LinkRequest, Logout,
+from .mailcode import CodeError, MailCodes
+from .models import (BulkDelete, CreateJobs, DevLogin, EmailStart, EmailVerify, GoogleLogin, LinkRequest, Logout,
                      PreviewRequest, Rename, SettingsUpdate)
 from .ratelimit import LIMITS, RateLimiter
 from .settings_store import SettingsConflict, SettingsStore
@@ -46,6 +47,7 @@ class Services:
         self.library = Library(cfg, self.db, self.signer)
         self.jobs = JobManager(cfg, self.db, self.bus, self.library, self.settings)
         self.limiter = RateLimiter()
+        self.mailcodes = MailCodes(cfg, self.db)
 
 
 async def _cleanup_loop(s: Services) -> None:
@@ -167,7 +169,8 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     # -- auth -----------------------------------------------------------
     @app.get("/api/auth/config")
     async def auth_config() -> dict[str, Any]:
-        return {"googleClientId": cfg.google_client_id or None, "devLogin": cfg.dev_login}
+        return {"googleClientId": cfg.google_client_id or None, "emailLogin": s.mailcodes.enabled,
+                "devLogin": cfg.dev_login}
 
     def session_response(email: str, name: str | None, picture: str | None, request: Request) -> dict[str, Any]:
         if not s.allowlist.allows(email):
@@ -181,6 +184,36 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     async def auth_google(body: GoogleLogin, request: Request) -> dict[str, Any]:
         email, name, picture = await asyncio.to_thread(s.auth.verify_google, body.credential)
         return session_response(email, name, picture, request)
+
+    @app.post("/api/auth/email/start")
+    async def auth_email_start(body: EmailStart) -> dict[str, Any]:
+        if not s.mailcodes.enabled:
+            raise api_error(404, "not_found", "Email sign-in isn't configured on the server.")
+        email = body.email.strip().lower()
+        # Same answer either way, so this endpoint doesn't reveal who is on the allowlist.
+        if s.allowlist.allows(email):
+            code = s.mailcodes.issue(email)
+            if code:
+                try:
+                    await asyncio.to_thread(s.mailcodes.send, email, code)
+                except Exception as exc:
+                    log.error("sending sign-in code failed: %s", exc)
+                    raise api_error(502, "email_failed",
+                                    "Couldn't send the email. Check the server's SMTP settings.") from exc
+        else:
+            log.warning("sign-in code requested for %s (not on the allowlist)", email)
+        return {"ok": True}
+
+    @app.post("/api/auth/email/verify")
+    async def auth_email_verify(body: EmailVerify, request: Request) -> dict[str, Any]:
+        if not s.mailcodes.enabled:
+            raise api_error(404, "not_found", "Email sign-in isn't configured on the server.")
+        email = body.email.strip().lower()
+        try:
+            s.mailcodes.verify(email, body.code)
+        except CodeError as exc:
+            raise api_error(401, exc.code, exc.message) from exc
+        return session_response(email, None, None, request)
 
     @app.post("/api/auth/dev")
     async def auth_dev(body: DevLogin, request: Request) -> dict[str, Any]:

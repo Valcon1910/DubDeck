@@ -373,6 +373,12 @@ input.num { width: 120px !important; flex: none; }
 .gis-slot { min-height: 44px; display: flex; justify-content: center; margin-top: 6px; }
 .dev-login { width: 100%; text-align: left; display: flex; flex-direction: column; gap: 6px; padding-top: 12px; border-top: 1px dashed var(--border-strong); }
 .dev-login label { font-size: 0.85rem; color: var(--muted); }
+.code-form { width: 100%; display: flex; flex-direction: column; gap: 8px; text-align: left; }
+.code-form label { font-weight: 600; font-size: 0.88rem; color: var(--ink-2); }
+.code-form .btn { margin-top: 4px; }
+.code-input { font-size: 1.4rem !important; letter-spacing: 0.4em; text-align: center; }
+.code-links { justify-content: space-between; margin-top: 4px; font-size: 0.88rem; }
+.or { color: var(--muted); font-size: 0.85rem; }
 .notice { padding: 10px 12px; border-radius: 10px; background: var(--surface-2); }
 
 /* -- download page ---------------------------------------------------------------- */

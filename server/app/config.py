@@ -41,6 +41,12 @@ class Config:
     dev_login: bool
     allow_private_urls: bool
     cookies_file: str
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_security: str = "starttls"  # starttls | ssl | none
     signed_url_ttl: int = 15 * 60
     ytdlp_target: Path = field(default_factory=lambda: Path("/data/ytdlp"))
 
@@ -88,6 +94,12 @@ def load_config() -> Config:
         dev_login=_bool("DUBDECK_DEV_LOGIN", False),
         allow_private_urls=_bool("DUBDECK_ALLOW_PRIVATE_URLS", False),
         cookies_file=os.environ.get("DUBDECK_COOKIES_FILE", ""),
+        smtp_host=os.environ.get("DUBDECK_SMTP_HOST", ""),
+        smtp_port=_int("DUBDECK_SMTP_PORT", 587),
+        smtp_user=os.environ.get("DUBDECK_SMTP_USER", ""),
+        smtp_password=os.environ.get("DUBDECK_SMTP_PASSWORD", ""),
+        smtp_from=os.environ.get("DUBDECK_SMTP_FROM", "") or os.environ.get("DUBDECK_SMTP_USER", ""),
+        smtp_security=os.environ.get("DUBDECK_SMTP_SECURITY", "starttls").lower(),
         signed_url_ttl=_int("DUBDECK_SIGNED_URL_TTL", 15 * 60),
         ytdlp_target=Path(os.environ.get("DUBDECK_YTDLP_TARGET", str(data_dir / "ytdlp"))),
     )
@@ -102,9 +114,12 @@ def validate(cfg: Config) -> None:
         raise ConfigError("DUBDECK_SIGNING_SECRET must be set (at least 32 characters).")
     if cfg.signing_secret == cfg.backend_key:
         raise ConfigError("DUBDECK_SIGNING_SECRET must differ from DUBDECK_BACKEND_KEY.")
-    if not cfg.google_client_id and not cfg.dev_login:
+    if not (cfg.smtp_host or cfg.google_client_id or cfg.dev_login):
         raise ConfigError(
-            "DUBDECK_GOOGLE_CLIENT_ID must be set (or DUBDECK_DEV_LOGIN=1 for local testing)."
+            "Configure a sign-in method: DUBDECK_SMTP_* (emailed codes) and/or "
+            "DUBDECK_GOOGLE_CLIENT_ID (or DUBDECK_DEV_LOGIN=1 for local testing)."
         )
+    if cfg.smtp_host and (not cfg.smtp_from or cfg.smtp_security not in {"starttls", "ssl", "none"}):
+        raise ConfigError("Set DUBDECK_SMTP_FROM (or DUBDECK_SMTP_USER) and a valid DUBDECK_SMTP_SECURITY.")
     if not 60 <= cfg.signed_url_ttl <= 15 * 60:
         raise ConfigError("DUBDECK_SIGNED_URL_TTL must be between 60 and 900 seconds.")
