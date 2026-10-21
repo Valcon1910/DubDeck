@@ -82,8 +82,11 @@ class Auth:
             self.db.execute("DELETE FROM sessions WHERE email = ?", (row["email"],))
             raise api_error(403, "not_allowed", "This account is no longer allowed to use DubDeck.")
         if now - row["last_seen"] > 300:
+            # Sliding expiry: every use pushes the deadline out again, so a
+            # device in regular use stays signed in indefinitely.
             self.db.execute(
-                "UPDATE sessions SET last_seen = ? WHERE token_hash = ?", (now, row["token_hash"])
+                "UPDATE sessions SET last_seen = ?, expires_at = ? WHERE token_hash = ?",
+                (now, now + self.cfg.session_days * 86400, row["token_hash"]),
             )
         return User(row["email"], row["name"], row["picture"], row["token_hash"])
 

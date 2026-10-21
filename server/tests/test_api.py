@@ -136,3 +136,12 @@ def test_auto_cleanup(client, session, cfg):
 def test_rate_limit(client):
     codes = [client.get("/api/auth/config").status_code for _ in range(70)]
     assert 429 in codes
+
+
+def test_session_slides_forward_on_use(client, session):
+    import time
+    db = client.app.state.services.db
+    db.execute("UPDATE sessions SET last_seen = ?, expires_at = ?", (time.time() - 3600, time.time() + 60))
+    assert client.get("/api/auth/me", headers=session).status_code == 200
+    row = db.one("SELECT expires_at FROM sessions")
+    assert row["expires_at"] > time.time() + 29 * 86400

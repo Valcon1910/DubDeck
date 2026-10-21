@@ -26,7 +26,7 @@ A private, personal web app for downloading video and audio. Paste links, previe
 
 1. **here.now restricted access.** Visitors see here.now's invite-only gate and verify with **Google or an emailed magic link**. Only emails or domains in `config/allowed-emails.json` get in.
 2. **Proxy key.** The here.now proxy adds `X-DubDeck-Key` from an account variable pinned with `allowedUpstreams` to your tunnel hostname. The backend rejects every `/api` request without it. The key never reaches the browser.
-3. **In-app Google sign-in.** here.now does not pass the visitor's identity to proxy upstreams, so the app signs in with Google Identity Services too. The backend verifies the Google ID token (signature, audience, `email_verified`), checks its own copy of the allowlist, and issues a 30-day session. The allowlist is re-checked on **every** request, so removing an email locks that account out immediately. This also powers the "Signed in as …" chip.
+3. **In-app Google sign-in.** here.now does not pass the visitor's identity to proxy upstreams, so the app signs in with Google Identity Services too. The backend verifies the Google ID token (signature, audience, `email_verified`), checks its own copy of the allowlist, and issues a session that lasts 30 days from your last use (it renews itself each time you use the app). The allowlist is re-checked on **every** request, so removing an email locks that account out immediately. This also powers the "Signed in as …" chip.
 
 Large files bypass the proxy. The backend returns a signed URL for **one file** that **expires in 15 minutes** (HMAC-SHA256), and the browser fetches it directly from the tunnel. Range requests work, so the inline player can seek.
 
