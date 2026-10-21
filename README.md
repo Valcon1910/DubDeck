@@ -86,6 +86,22 @@ Each new device asks for the passcode once, after here.now's gate, then stays si
 3. **Public hostname**: `dubdeck-api.example.com` → Service **HTTP** `dubdeck:8000`.
 4. Do **not** use a "quick tunnel" (`trycloudflare.com`); its URL changes on every restart.
 
+### 5b. No domain? Use Tailscale Funnel instead (free)
+
+Skip step 5 and use this instead. It gives your PC a permanent public address like `https://dubdeck.tail1234.ts.net` with no domain needed.
+
+1. Create a free account at <https://login.tailscale.com/start> (sign in with Google, Microsoft or GitHub).
+2. In the admin console, open **DNS** and make sure **MagicDNS** and **HTTPS Certificates** are on. Note your tailnet name, e.g. `tail1234.ts.net`.
+3. Open **Access controls** and allow Funnel by adding this to the policy file, then save:
+   ```json
+   "nodeAttrs": [{ "target": ["autogroup:member"], "attr": ["funnel"] }],
+   ```
+   (Tailscale also offers to add it for you the first time Funnel is used.)
+4. Open **Settings → Keys → Generate auth key**, then copy it.
+5. In the repo folder, create `.env` containing `TS_AUTHKEY=<that key>`.
+6. Your backend address is `dubdeck.<tailnet name>`, e.g. `dubdeck.tail1234.ts.net`. Use it for `DUBDECK_PUBLIC_URL` (`https://…`), the GitHub variable `DUBDECK_API_HOST`, and the here.now variable's `allowedUpstreams`.
+7. In step 6, start with `docker compose -f docker-compose.tailscale.yml up -d --build` instead of `docker compose up -d --build`.
+
 ### 6. Run the backend
 
 ```bash
