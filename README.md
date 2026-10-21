@@ -26,7 +26,7 @@ A private, personal web app for downloading video and audio. Paste links, previe
 
 1. **here.now restricted access.** Visitors see here.now's invite-only gate and verify with **Google or an emailed magic link**. Only emails or domains in `config/allowed-emails.json` get in.
 2. **Proxy key.** The here.now proxy adds `X-DubDeck-Key` from an account variable pinned with `allowedUpstreams` to your tunnel hostname. The backend rejects every `/api` request without it. The key never reaches the browser.
-3. **In-app sign-in by emailed code.** here.now does not pass the visitor's identity to proxy upstreams, so the app has its own sign-in: enter your email, get a 6-digit code (valid 10 minutes, single use, 5 tries), and the backend checks its own copy of the allowlist before issuing a session that lasts 30 days from your last use (it renews itself each time you use the app). The allowlist is re-checked on **every** request, so removing an email locks that account out immediately. This also powers the "Signed in as …" chip.
+3. **In-app passcode.** here.now does not pass the visitor's identity to proxy upstreams, so the app has its own sign-in: each new device enters a private passcode once (wrong guesses are slowed down, and 10 failures lock sign-in for 15 minutes). The backend checks that the owner email is still on its own copy of the allowlist and issues a session that lasts 30 days from your last use (it renews itself each time you use the app). The allowlist is re-checked on **every** request, so removing an email locks that account out immediately. This also powers the "Signed in as …" chip.
 
 Large files bypass the proxy. The backend returns a signed URL for **one file** that **expires in 15 minutes** (HMAC-SHA256), and the browser fetches it directly from the tunnel. Range requests work, so the inline player can seek.
 
@@ -68,17 +68,16 @@ curl -sS -X PUT https://here.now/api/v1/me/variables/DUBDECK_BACKEND_KEY \
 
 (You can also do this in the dashboard's **Variables** tab.)
 
-### 4. Email for sign-in codes
+### 4. Choose your passcode
 
-DubDeck emails you a 6-digit code the first time you sign in on each device. It needs an account it can send from:
+Pick a private passcode of at least 10 characters (a few random words works well). In `server/.env` (step 6) set:
 
-1. Use a **personal** Gmail (school accounts usually block this). Turn on **2-Step Verification** in your Google Account.
-2. Open <https://myaccount.google.com/apppasswords>, create an app password named "DubDeck", and copy the 16 characters.
-3. In `server/.env` (step 6), set `DUBDECK_SMTP_USER` to that Gmail address and `DUBDECK_SMTP_PASSWORD` to the app password. The other `DUBDECK_SMTP_*` defaults in `.env.example` are already right for Gmail.
+- `DUBDECK_OWNER_PASSCODE` to that passcode;
+- `DUBDECK_OWNER_EMAIL` to your email. It must be in `config/allowed-emails.json`, and removing it from there signs every device out.
 
-Codes go only to addresses on the allowlist. The screen looks the same for any address, so it doesn't reveal who's allowed. Any SMTP provider works (Outlook, Brevo, and so on); set host, port and `DUBDECK_SMTP_SECURITY` (`starttls`, `ssl` or `none`).
+Each new device asks for the passcode once, after here.now's gate, then stays signed in. To change the passcode, edit `.env` and run `docker compose up -d`. Existing devices stay signed in; to sign them out, use **Settings → Sign out everywhere**.
 
-*Optional:* if you can use Google Cloud Console with some account, you can also set `DUBDECK_GOOGLE_CLIENT_ID` to offer "Sign in with Google" (Web OAuth client; add `https://<slug>.here.now` as an authorized JavaScript origin).
+*Optional alternatives* (both can be enabled together with the passcode): emailed 6-digit codes via SMTP (`DUBDECK_SMTP_*`, see `server/.env.example`), or "Sign in with Google" (`DUBDECK_GOOGLE_CLIENT_ID`, which needs Google Cloud Console).
 
 ### 5. Cloudflare Tunnel
 
@@ -118,7 +117,7 @@ Push to `main` (or run **Actions → Deploy web to here.now → Run workflow**).
 2. publishes with **create → upload → finalize** (sending `X-HereNow-Client`), and **fails if finalize warns about `proxy.json` or `data.json`**;
 3. sets the Site to **restricted** with the allowlist.
 
-On the first run there is no slug yet, so the job creates the Site and prints `Save "<slug>" as the HERENOW_SLUG repository variable`. Add that variable and you're done. Open the URL, pass the here.now gate, then enter your email in the app and type the code you receive. That device then stays signed in.
+On the first run there is no slug yet, so the job creates the Site and prints `Save "<slug>" as the HERENOW_SLUG repository variable`. Add that variable and you're done. Open the URL, pass the here.now gate, then enter your passcode in the app. That device then stays signed in.
 
 ### 8. Add someone (or another address) to the allowlist
 

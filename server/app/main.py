@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -22,7 +24,7 @@ from .events import EventBus
 from .jobs import JobManager
 from .library import CONTENT_TYPES, Library
 from .mailcode import CodeError, MailCodes
-from .models import (BulkDelete, CreateJobs, DevLogin, EmailStart, EmailVerify, GoogleLogin, LinkRequest, Logout,
+from .models import (BulkDelete, CreateJobs, DevLogin, EmailStart, PasscodeLogin, EmailVerify, GoogleLogin, LinkRequest, Logout,
                      PreviewRequest, Rename, SettingsUpdate)
 from .ratelimit import LIMITS, RateLimiter
 from .settings_store import SettingsConflict, SettingsStore
@@ -170,6 +172,7 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     @app.get("/api/auth/config")
     async def auth_config() -> dict[str, Any]:
         return {"googleClientId": cfg.google_client_id or None, "emailLogin": s.mailcodes.enabled,
+                "passcodeLogin": bool(cfg.owner_passcode),
                 "devLogin": cfg.dev_login}
 
     def session_response(email: str, name: str | None, picture: str | None, request: Request) -> dict[str, Any]:
@@ -184,6 +187,29 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     async def auth_google(body: GoogleLogin, request: Request) -> dict[str, Any]:
         email, name, picture = await asyncio.to_thread(s.auth.verify_google, body.credential)
         return session_response(email, name, picture, request)
+
+    passcode_failures: list[float] = []
+
+    @app.post("/api/auth/passcode")
+    async def auth_passcode(body: PasscodeLogin, request: Request) -> dict[str, Any]:
+        if not cfg.owner_passcode:
+            raise api_error(404, "not_found", "Passcode sign-in isn't configured on the server.")
+        now = time.time()
+        passcode_failures[:] = [t for t in passcode_failures if now - t < 900]
+        if len(passcode_failures) >= 10:
+            raise api_error(429, "locked", "Too many wrong passcodes. Try again in 15 minutes.")
+        given = hashlib.sha256(body.passcode.encode()).digest()
+        want = hashlib.sha256(cfg.owner_passcode.encode()).digest()
+        if not hmac.compare_digest(given, want):
+            passcode_failures.append(now)
+            log.warning("wrong passcode attempt")
+            await asyncio.sleep(1)  # slow down guessing
+            raise api_error(401, "bad_passcode", "That passcode isn't right.")
+        policy = s.allowlist.policy()
+        email = cfg.owner_email or (sorted(policy.emails)[0] if policy.emails else "")
+        if not email:
+            raise api_error(503, "no_owner", "Set DUBDECK_OWNER_EMAIL on the server.")
+        return session_response(email, None, None, request)
 
     @app.post("/api/auth/email/start")
     async def auth_email_start(body: EmailStart) -> dict[str, Any]:

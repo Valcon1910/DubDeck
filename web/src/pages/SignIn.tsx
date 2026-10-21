@@ -22,7 +22,7 @@ function loadGis(): Promise<void> {
 }
 
 export function SignIn() {
-  const { config, signInWithGoogle, signInDev, requestCode, verifyCode, state } = useAuth();
+  const { config, signInWithGoogle, signInDev, signInPasscode, requestCode, verifyCode, state } = useAuth();
   const buttonRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(state.status === "signedOut" ? state.reason ?? null : null);
   const [busy, setBusy] = useState(false);
@@ -79,6 +79,8 @@ export function SignIn() {
           Dub<span className="logo-accent">Deck</span>
         </h1>
         <p className="muted">Your private video and audio downloader. Sign in to continue.</p>
+        {config?.passcodeLogin && <PasscodeForm signIn={signInPasscode} onError={setError} />}
+        {config?.passcodeLogin && config.emailLogin && <p className="or">or</p>}
         {config?.emailLogin && (
           <EmailCodeForm requestCode={requestCode} verifyCode={verifyCode} onError={setError} />
         )}
@@ -88,7 +90,7 @@ export function SignIn() {
             <div className="gis-slot" ref={buttonRef} aria-busy={busy} />
           </>
         )}
-        {!config?.googleClientId && !config?.emailLogin && !config?.devLogin && (
+        {!config?.googleClientId && !config?.emailLogin && !config?.passcodeLogin && !config?.devLogin && (
           <p className="notice">No sign-in method is configured on the server yet.</p>
         )}
         {config?.devLogin && (
@@ -115,7 +117,7 @@ export function SignIn() {
           </form>
         )}
         {error && <p className="error-text" role="alert">{error}</p>}
-        <p className="fine">Only addresses on your allowlist can sign in. You stay signed in on this device.</p>
+        <p className="fine">You only need to do this once on each device.</p>
       </div>
     </main>
   );
@@ -182,6 +184,32 @@ function EmailCodeForm({ requestCode, verifyCode, onError }: {
         <button type="button" className="link-btn" onClick={() => { setCode(""); void send(); }}>Resend code</button>
         <button type="button" className="link-btn" onClick={() => { setStep("email"); setCode(""); }}>Use another email</button>
       </div>
+    </form>
+  );
+}
+
+function PasscodeForm({ signIn, onError }: { signIn: (p: string) => Promise<void>; onError: (m: string | null) => void }) {
+  const [passcode, setPasscode] = useState("");
+  const [busy, setBusy] = useState(false);
+  return (
+    <form
+      className="code-form"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setBusy(true);
+        onError(null);
+        try {
+          await signIn(passcode);
+        } catch (err) {
+          onError((err as ApiError).message);
+          setBusy(false);
+        }
+      }}
+    >
+      <label htmlFor="passcode">Passcode</label>
+      <input id="passcode" type="password" autoComplete="current-password" required autoFocus
+        value={passcode} onChange={(e) => setPasscode(e.target.value)} />
+      <button className="btn btn-primary" disabled={busy || !passcode}>{busy ? "Checking…" : "Sign in"}</button>
     </form>
   );
 }

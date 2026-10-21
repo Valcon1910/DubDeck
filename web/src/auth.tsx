@@ -6,6 +6,7 @@ import type { User } from "./types";
 interface AuthConfig {
   googleClientId: string | null;
   emailLogin: boolean;
+  passcodeLogin: boolean;
   devLogin: boolean;
 }
 
@@ -20,6 +21,7 @@ interface AuthApi {
   config: AuthConfig | null;
   signInWithGoogle(credential: string): Promise<void>;
   signInDev(email: string): Promise<void>;
+  signInPasscode(passcode: string): Promise<void>;
   requestCode(email: string): Promise<void>;
   verifyCode(email: string, code: string): Promise<void>;
   signOut(everywhere?: boolean): Promise<void>;
@@ -108,6 +110,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [finish],
   );
 
+  const signInPasscode = useCallback(
+    async (passcode: string) => finish(await api<SessionResponse>("/api/auth/passcode", { body: { passcode }, auth: false })),
+    [finish],
+  );
+
   const requestCode = useCallback(async (email: string) => {
     await api("/api/auth/email/start", { body: { email }, auth: false });
   }, []);
@@ -134,8 +141,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<AuthApi>(
-    () => ({ state, config, signInWithGoogle, signInDev, requestCode, verifyCode, signOut, retry: () => setAttempt((n) => n + 1) }),
-    [state, config, signInWithGoogle, signInDev, requestCode, verifyCode, signOut],
+    () => ({ state, config, signInWithGoogle, signInDev, signInPasscode, requestCode, verifyCode, signOut, retry: () => setAttempt((n) => n + 1) }),
+    [state, config, signInWithGoogle, signInDev, signInPasscode, requestCode, verifyCode, signOut],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

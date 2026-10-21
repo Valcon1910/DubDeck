@@ -21,7 +21,7 @@ def mail_client(tmp_path):
 def test_config_advertises_email_login(mail_client):
     c, _ = mail_client
     assert c.get("/api/auth/config", headers=H).json() == {
-        "googleClientId": None, "emailLogin": True, "devLogin": False}
+        "googleClientId": None, "emailLogin": True, "passcodeLogin": False, "devLogin": False}
 
 
 def test_code_signs_in(mail_client):

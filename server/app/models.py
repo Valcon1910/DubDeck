@@ -107,6 +107,10 @@ class GoogleLogin(Strict):
     credential: str = Field(min_length=10, max_length=8192)
 
 
+class PasscodeLogin(Strict):
+    passcode: str = Field(min_length=1, max_length=256)
+
+
 class EmailStart(Strict):
     email: str = Field(min_length=3, max_length=320)
 

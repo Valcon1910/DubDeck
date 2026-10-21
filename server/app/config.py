@@ -41,6 +41,8 @@ class Config:
     dev_login: bool
     allow_private_urls: bool
     cookies_file: str
+    owner_passcode: str = ""
+    owner_email: str = ""
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
@@ -94,6 +96,8 @@ def load_config() -> Config:
         dev_login=_bool("DUBDECK_DEV_LOGIN", False),
         allow_private_urls=_bool("DUBDECK_ALLOW_PRIVATE_URLS", False),
         cookies_file=os.environ.get("DUBDECK_COOKIES_FILE", ""),
+        owner_passcode=os.environ.get("DUBDECK_OWNER_PASSCODE", ""),
+        owner_email=os.environ.get("DUBDECK_OWNER_EMAIL", "").strip().lower(),
         smtp_host=os.environ.get("DUBDECK_SMTP_HOST", ""),
         smtp_port=_int("DUBDECK_SMTP_PORT", 587),
         smtp_user=os.environ.get("DUBDECK_SMTP_USER", ""),
@@ -114,11 +118,13 @@ def validate(cfg: Config) -> None:
         raise ConfigError("DUBDECK_SIGNING_SECRET must be set (at least 32 characters).")
     if cfg.signing_secret == cfg.backend_key:
         raise ConfigError("DUBDECK_SIGNING_SECRET must differ from DUBDECK_BACKEND_KEY.")
-    if not (cfg.smtp_host or cfg.google_client_id or cfg.dev_login):
+    if not (cfg.owner_passcode or cfg.smtp_host or cfg.google_client_id or cfg.dev_login):
         raise ConfigError(
-            "Configure a sign-in method: DUBDECK_SMTP_* (emailed codes) and/or "
-            "DUBDECK_GOOGLE_CLIENT_ID (or DUBDECK_DEV_LOGIN=1 for local testing)."
+            "Configure a sign-in method: DUBDECK_OWNER_PASSCODE, DUBDECK_SMTP_* (emailed codes) "
+            "or DUBDECK_GOOGLE_CLIENT_ID (or DUBDECK_DEV_LOGIN=1 for local testing)."
         )
+    if cfg.owner_passcode and len(cfg.owner_passcode) < 10:
+        raise ConfigError("DUBDECK_OWNER_PASSCODE must be at least 10 characters.")
     if cfg.smtp_host and (not cfg.smtp_from or cfg.smtp_security not in {"starttls", "ssl", "none"}):
         raise ConfigError("Set DUBDECK_SMTP_FROM (or DUBDECK_SMTP_USER) and a valid DUBDECK_SMTP_SECURITY.")
     if not 60 <= cfg.signed_url_ttl <= 15 * 60:
