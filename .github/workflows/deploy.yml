@@ -1,4 +1,4 @@
-name: Deploy web to here.now
+name: Deploy Vortex Engine to here.now
 
 on:
   push:
@@ -21,6 +21,7 @@ jobs:
     env:
       HERENOW_API_KEY: ${{ secrets.HERENOW_API_KEY }}
       HERENOW_SLUG: ${{ vars.HERENOW_SLUG }}
+      RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -33,8 +34,14 @@ jobs:
       - name: Check configuration
         run: |
           test -n "$HERENOW_API_KEY" || { echo "::error::Add the HERENOW_API_KEY repository secret."; exit 1; }
-          test -n "${{ vars.DUBDECK_API_HOST }}" || { echo "::error::Add the DUBDECK_API_HOST repository variable (your backend's hostname)."; exit 1; }
           node scripts/sync-access.mjs --check
+
+      # Stores the RapidAPI key in here.now (pinned to the YTStream host) for the /yt proxy route.
+      - name: Save RapidAPI key in here.now
+        if: env.RAPIDAPI_KEY != ''
+        env:
+          VALUE: ${{ secrets.RAPIDAPI_KEY }}
+        run: node scripts/herenow-variable.mjs RAPIDAPI_KEY ytstream-download-youtube-videos.p.rapidapi.com
 
       - name: Install
         working-directory: web

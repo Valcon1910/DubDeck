@@ -1,5 +1,13 @@
 # What you need to do by hand
 
+**Vortex Engine (no computer needed):**
+- [ ] RapidAPI: subscribe to YTStream's free plan and copy your key.
+- [ ] GitHub secrets: `RAPIDAPI_KEY` and `HERENOW_API_KEY`. Never paste keys in chat or commit them.
+- [ ] **Actions → Deploy Vortex Engine to here.now → Run workflow**, then save the printed slug as the variable `HERENOW_SLUG`.
+- [ ] Delete the old `HF_TOKEN` secret if you created it.
+- [ ] Open `https://<slug>.here.now` on the iPad → **Downloader** → try a video.
+
+**Old DubDeck self-hosted backend (optional, needs your own computer):**
 Everything else is automated. Details for each step are in the [README](README.md#one-time-setup).
 
 - [ ] **Secrets**: run `openssl rand -hex 32` twice, once for `DUBDECK_BACKEND_KEY` and once for `DUBDECK_SIGNING_SECRET`.

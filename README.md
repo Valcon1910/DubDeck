@@ -1,6 +1,32 @@
 # Vortex Engine
 
-**Vortex Engine** is a private games, docs, slides and utilities website. Its sections aren't built yet; for now it contains DubDeck, a video/audio downloader utility.
+**Vortex Engine** is a private games, docs, slides and utilities website hosted on here.now. Games, Docs and Slides are not built yet. The first utility is the **Downloader**: paste a YouTube link and save the video (360p with sound), the audio (M4A), or higher-quality picture-only video to your device. It runs entirely in the browser, with no computer or server of your own.
+
+```
+ iPad/browser ──▶ here.now Site (restricted access)
+                    ├─ static app (web/dist)
+                    └─ proxy route /yt/*  ──adds X-RapidAPI-Key──▶ YTStream API (RapidAPI)
+ iPad/browser ◀── file saved straight from YouTube's video servers (googlevideo.com)
+```
+
+### Set up the Downloader (once, free)
+
+1. **RapidAPI**: subscribe to the free plan of [YTStream](https://rapidapi.com/ytjar/api/ytstream-download-youtube-videos) and copy your RapidAPI key.
+2. **GitHub**: in the repository, open **Settings → Secrets and variables → Actions → New repository secret**, and add:
+   - `RAPIDAPI_KEY`: your RapidAPI key
+   - `HERENOW_API_KEY`: your here.now API key
+3. **Deploy**: open **Actions → Deploy Vortex Engine to here.now → Run workflow** (pushes to `main` also deploy). The workflow stores the RapidAPI key in your here.now account as the variable `RAPIDAPI_KEY`. here.now only sends it to the YTStream host, and it never reaches the browser. The log ends with `Live: https://<slug>.here.now/`. Save the slug as the repository **variable** `HERENOW_SLUG` so later runs update the same site.
+4. **Use it**: open the address on the iPad, pass here.now's sign-in gate, and tap **Downloader**. Add it to your home screen with **Share → Add to Home Screen**.
+
+**Saving on iPad:** tap a format. Files under 400 MB are saved straight to **Files → Downloads**. Larger files open in a new tab; save those with **Share → Save to Files**, or press and hold the format and choose **Download Linked File**.
+
+**Limits:** YouTube serves video with sound only up to 360p; higher qualities are picture only. For 1080p or 4K with sound, the page links to cobalt.tools. Links expire after about 6 hours. The free RapidAPI plan has a monthly quota, and the page shows how many lookups are left. Links are generated for Colombia (`COUNTRY` in `web/src/vortex/youtube.ts`).
+
+**Local development:** put `RAPIDAPI_KEY=...` in `web/.env.local` (git-ignored), then run `npm run dev` in `web/`. Vite adds the key just like the here.now route does. Tests: `npx playwright test` (the API and video host are mocked).
+
+---
+
+The rest of this README describes **DubDeck**, the original self-hosted downloader (FastAPI + yt-dlp). Its code is still in `server/`, and the site is not using it. It only matters if you later run it on your own computer and set the `DUBDECK_API_HOST` repository variable.
 
 ## DubDeck (utility)
 

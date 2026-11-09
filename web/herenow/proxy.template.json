@@ -1,19 +1,13 @@
 {
   "proxies": {
-    "/api/*": {
-      "upstream": "https://__DUBDECK_API_HOST__/api",
-      "headers": {
-        "X-DubDeck-Key": "${DUBDECK_BACKEND_KEY}"
-      },
-      "rateLimit": "1000/hour/ip"
-    },
-    "/events": {
-      "upstream": "https://__DUBDECK_API_HOST__/api/events",
+    "/yt/*": {
+      "upstream": "https://ytstream-download-youtube-videos.p.rapidapi.com",
       "method": "GET",
       "headers": {
-        "X-DubDeck-Key": "${DUBDECK_BACKEND_KEY}"
+        "X-RapidAPI-Key": "${RAPIDAPI_KEY}",
+        "X-RapidAPI-Host": "ytstream-download-youtube-videos.p.rapidapi.com"
       },
-      "rateLimit": "600/hour/ip"
+      "rateLimit": "60/hour/ip"
     }
   }
 }

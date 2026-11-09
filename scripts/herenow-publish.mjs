@@ -101,15 +101,15 @@ async function upload(u, file) {
 const files = walk(dir);
 if (!files.some((f) => f.path === "index.html")) fail(`${dir}/index.html not found. Did the build run?`);
 if (!files.some((f) => f.path === ".herenow/proxy.json") && process.env.DUBDECK_ALLOW_NO_PROXY !== "1") {
-  fail(`${dir}/.herenow/proxy.json not found. Build with DUBDECK_API_HOST set.`);
+  fail(`${dir}/.herenow/proxy.json not found. Did the build run?`);
 }
 console.log(`Publishing ${files.length} files from ${dir} to ${SLUG || "a new Site"}`);
 
 const body = {
   files: files.map(({ path, size, contentType, hash }) => ({ path, size, contentType, hash })),
   spaMode: true,
-  displayName: "DubDeck",
-  displayDescription: "Private video and audio downloader (web front end).",
+  displayName: "Vortex Engine",
+  displayDescription: "Games, docs, slides and utilities.",
 };
 const created = SLUG
   ? await call("PUT", `/api/v1/publish/${encodeURIComponent(SLUG)}`, body)

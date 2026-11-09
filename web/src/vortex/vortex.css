@@ -1,0 +1,89 @@
+/* Vortex Engine — layout and components. Theme tokens come from styles.css. */
+
+.vx {
+  --vx-accent: #6c4ce0;
+  --vx-accent-soft: color-mix(in srgb, var(--vx-accent) 13%, transparent);
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+}
+:root[data-theme="dark"] .vx { --vx-accent: #9b84ff; }
+
+.vx-top {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: calc(10px + env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 10px max(16px, env(safe-area-inset-left));
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+}
+.vx-brand { display: flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; font-weight: 700; font-size: 18px; letter-spacing: -0.3px; }
+.vx-brand em { font-style: normal; color: var(--vx-accent); }
+.vx-top nav { display: flex; gap: 4px; }
+.vx-top nav a { padding: 8px 12px; border-radius: 999px; color: var(--muted); text-decoration: none; font-weight: 500; font-size: 15px; }
+.vx-top nav a[aria-current="page"] { background: var(--vx-accent-soft); color: var(--ink); }
+
+.vx-main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+.vx-page { display: flex; flex-direction: column; gap: 16px; }
+.vx-page-head h1 { margin: 2px 0 6px; font-size: clamp(26px, 5vw, 34px); letter-spacing: -0.6px; }
+.vx-eyebrow { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--vx-accent); }
+.vx-muted { color: var(--muted); margin: 0; }
+.vx-small { font-size: 13px; }
+.vx-fine { color: var(--muted); font-size: 12px; text-align: center; margin-top: 8px; }
+
+.vx-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.vx-tile {
+  display: flex; flex-direction: column; gap: 6px; padding: 18px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  color: var(--ink); text-decoration: none; min-height: 120px;
+}
+.vx-tile strong { font-size: 18px; }
+.vx-tile[aria-disabled="true"] { opacity: 0.6; }
+.vx-tile-live { border-color: color-mix(in srgb, var(--vx-accent) 45%, var(--border)); }
+.vx-tile-live:hover { box-shadow: 0 6px 20px rgb(0 0 0 / 0.07); }
+
+.vx-search { display: flex; gap: 8px; flex-wrap: wrap; }
+.vx-search input {
+  flex: 1 1 240px; min-width: 0; height: 48px; padding: 0 14px;
+  font: inherit; font-size: 16px; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: 12px;
+}
+.vx-search input:focus { outline: 2px solid var(--vx-accent); outline-offset: 1px; }
+.vx-btn {
+  height: 48px; padding: 0 18px; border-radius: 12px; border: 1px solid transparent;
+  font: inherit; font-weight: 600; font-size: 15px; cursor: pointer;
+}
+.vx-btn:disabled { opacity: 0.55; cursor: default; }
+.vx-btn-primary { background: var(--vx-accent); color: #fff; }
+.vx-btn-ghost { background: var(--surface); color: var(--ink); border-color: var(--border-strong); }
+
+.vx-alert { margin: 0; padding: 12px 14px; border-radius: 12px; background: var(--vx-accent-soft); font-size: 14px; }
+.vx-alert-error { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
+
+.vx-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 16px; }
+.vx-skeleton { height: 180px; background: linear-gradient(90deg, var(--surface) 0%, var(--surface-2) 50%, var(--surface) 100%); background-size: 200% 100%; animation: vx-shimmer 1.2s linear infinite; }
+@keyframes vx-shimmer { to { background-position: -200% 0; } }
+
+.vx-result { display: flex; flex-direction: column; gap: 18px; }
+.vx-video { display: grid; grid-template-columns: minmax(120px, 200px) 1fr; gap: 14px; align-items: start; }
+.vx-video img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 10px; background: var(--surface-2); }
+.vx-video h2 { margin: 0 0 4px; font-size: 17px; line-height: 1.3; overflow-wrap: anywhere; }
+@media (max-width: 480px) { .vx-video { grid-template-columns: 1fr; } }
+
+.vx-group h3 { margin: 0 0 4px; font-size: 14px; color: var(--ink-2); }
+.vx-presets { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+.vx-preset {
+  position: relative; overflow: hidden;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 14px; min-height: 56px; border-radius: 12px;
+  border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--ink); text-decoration: none;
+}
+.vx-preset:hover { border-color: var(--vx-accent); }
+.vx-preset-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.vx-preset-side { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 14px; color: var(--vx-accent); white-space: nowrap; }
+.vx-kind-silent .vx-preset-side { color: var(--muted); }
+.vx-progress { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--vx-accent); transition: width 0.2s; }
+
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

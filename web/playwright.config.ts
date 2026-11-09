@@ -1,8 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// End-to-end tests run the real UI (Vite dev server, which injects the backend
-// key exactly like the here.now proxy route) against a real backend started
-// with DUBDECK_DEV_LOGIN=1. See README → "Running the end-to-end tests".
+// End-to-end tests for Vortex Engine. Start `npm run dev` first (or set DUBDECK_E2E_URL).
 export default defineConfig({
   testDir: "./e2e",
   timeout: 180_000,
