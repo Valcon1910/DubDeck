@@ -111,7 +111,7 @@ function Gate() {
     return (
       <div className="splash" aria-busy="true">
         <LogoMark size={48} />
-        <span className="sr-only">Loading DubDeck</span>
+        <span className="sr-only">Loading Vortex Engine</span>
       </div>
     );
   }

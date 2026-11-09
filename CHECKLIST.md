@@ -1,14 +1,5 @@
 # What you need to do by hand
 
-**No computer (Hugging Face, free, no card):**
-- [ ] Hugging Face account → **Write** access token.
-- [ ] GitHub secrets: `HF_TOKEN`, `HERENOW_API_KEY`, `DUBDECK_OWNER_PASSCODE`.
-- [ ] **Actions → Deploy web to here.now → Run workflow**, then save the printed slug as the variable `HERENOW_SLUG`.
-- [ ] Wait until the Space says **Running**, then open your `https://<slug>.here.now` address and enter your passcode.
-(Details: [README → Easiest setup](README.md#easiest-setup-no-computer-needed-hugging-face-free-no-card).)
-
-**Home computer** (list below):
-
 Everything else is automated. Details for each step are in the [README](README.md#one-time-setup).
 
 - [ ] **Secrets**: run `openssl rand -hex 32` twice, once for `DUBDECK_BACKEND_KEY` and once for `DUBDECK_SIGNING_SECRET`.

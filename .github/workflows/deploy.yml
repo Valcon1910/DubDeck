@@ -21,8 +21,6 @@ jobs:
     env:
       HERENOW_API_KEY: ${{ secrets.HERENOW_API_KEY }}
       HERENOW_SLUG: ${{ vars.HERENOW_SLUG }}
-      # Optional: with HF_TOKEN set, the backend is deployed to a free Hugging Face Space.
-      HF_TOKEN: ${{ secrets.HF_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -35,29 +33,8 @@ jobs:
       - name: Check configuration
         run: |
           test -n "$HERENOW_API_KEY" || { echo "::error::Add the HERENOW_API_KEY repository secret."; exit 1; }
-          if [ -z "$HF_TOKEN" ] && [ -z "${{ vars.DUBDECK_API_HOST }}" ]; then
-            echo "::error::Add the HF_TOKEN secret (Hugging Face backend) or the DUBDECK_API_HOST variable (your own backend)."; exit 1
-          fi
+          test -n "${{ vars.DUBDECK_API_HOST }}" || { echo "::error::Add the DUBDECK_API_HOST repository variable (your backend's hostname)."; exit 1; }
           node scripts/sync-access.mjs --check
-
-      - uses: actions/setup-python@v5
-        if: env.HF_TOKEN != ''
-        with:
-          python-version: "3.13"
-
-      # Creates/updates the Space, its secrets, and the here.now backend-key variable.
-      - name: Deploy backend to Hugging Face
-        id: hf
-        if: env.HF_TOKEN != ''
-        env:
-          HF_SPACE: ${{ vars.HF_SPACE }}
-          DUBDECK_OWNER_PASSCODE: ${{ secrets.DUBDECK_OWNER_PASSCODE }}
-          DUBDECK_OWNER_EMAIL: ${{ vars.DUBDECK_OWNER_EMAIL }}
-          DUBDECK_BACKEND_KEY: ${{ secrets.DUBDECK_BACKEND_KEY }}
-          DUBDECK_SIGNING_SECRET: ${{ secrets.DUBDECK_SIGNING_SECRET }}
-        run: |
-          pip install --quiet huggingface_hub==2.2.0
-          python scripts/deploy-hf-space.py
 
       - name: Install
         working-directory: web
@@ -66,7 +43,7 @@ jobs:
       - name: Build
         working-directory: web
         env:
-          DUBDECK_API_HOST: ${{ steps.hf.outputs.host || vars.DUBDECK_API_HOST }}
+          DUBDECK_API_HOST: ${{ vars.DUBDECK_API_HOST }}
         run: npm run build
 
       # create → upload → finalize; fails on proxy.json / data.json warnings.

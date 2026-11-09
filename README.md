@@ -1,4 +1,8 @@
-# DubDeck
+# Vortex Engine
+
+**Vortex Engine** is a private games, docs, slides and utilities website. Its sections aren't built yet; for now it contains DubDeck, a video/audio downloader utility.
+
+## DubDeck (utility)
 
 A private, personal web app for downloading video and audio. Paste links, preview them, pick a preset, and DubDeck downloads, converts, tags and stores the files on your own machine.
 
@@ -33,27 +37,6 @@ Large files bypass the proxy. The backend returns a signed URL for **one file** 
 Other protections: URL validation that blocks private and loopback addresses; yt-dlp always runs as an argument list (never a shell) with `--ignore-config` and `--` before the URL; filenames are rendered by DubDeck, not by yt-dlp templates; React escapes all metadata; a Content-Security-Policy is set; the backend has per-route rate limits; the container runs as a non-root user.
 
 ---
-
-## Easiest setup: no computer needed (Hugging Face, free, no card)
-
-GitHub deploys everything: the backend to a free Hugging Face Docker Space and the website to here.now. You only use the website, for example on an iPad.
-
-**Trade-offs:** the Space sleeps after a period of no use, so the first visit after that can take a minute or two. Its disk is wiped on restart, so finished downloads are **saved straight to your device** and the Library is temporary. YouTube often blocks cloud servers ("confirm you're not a bot"); many other sites work. Hugging Face may remove Spaces it considers against its rules.
-
-1. **Hugging Face**: sign up at <https://huggingface.co/join> (no card). Open **Settings → Access Tokens → Create new token**, choose type **Write**, and copy it.
-2. **GitHub** (your repo → **Settings → Secrets and variables → Actions → New repository secret**). Add three secrets:
-   - `HF_TOKEN`: the Hugging Face token
-   - `HERENOW_API_KEY`: your here.now API key
-   - `DUBDECK_OWNER_PASSCODE`: your passcode (10+ characters)
-3. **Run it**: **Actions → Deploy web to here.now → Run workflow**. It creates the Space `<your-hf-name>/dubdeck`, sets its secrets, connects here.now, and publishes the site. The log ends with `Live: https://<slug>.here.now/`: **that's your DubDeck address.** Save the slug as the repository **variable** `HERENOW_SLUG` so later runs update the same site.
-4. **Wait for the Space**: open `https://huggingface.co/spaces/<your-hf-name>/dubdeck`. The first build takes about 5–10 minutes; it's ready when it says **Running**.
-5. **Use it**: open your DubDeck address, pass here.now's gate, enter your passcode once, and add it to your home screen.
-
-The backend key and signing secret are derived from `HF_TOKEN` automatically (or set your own `DUBDECK_BACKEND_KEY` / `DUBDECK_SIGNING_SECRET` secrets). Every push to `main` redeploys both parts. The signed-in email defaults to the first one in `config/allowed-emails.json`; set the variable `DUBDECK_OWNER_EMAIL` to choose another.
-
-*(Render's free plan works the same way via `render.yaml`, but Render may ask for a card.)*
-
-The steps below are the **home-computer setup** (more reliable for YouTube, keeps a Library).
 
 ## One-time setup
 
