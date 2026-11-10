@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ContentContext, normalize, pendingLogos, safeUrl, type Content, type Game, type SectionText } from "./content";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ContentContext, normalize, pendingLogos, safeUrl, type Content, type Game } from "./content";
+import { EditContext, setTextIn, type EditApi } from "./editable";
 import {
   ACCESS_PATH, commit, CONTENT_PATH, deployState, GitHubError, readJson, REPO, tokenStore, verify,
   type DeployState, type FileChange,
@@ -8,8 +9,8 @@ import { Downloader } from "./Downloader";
 import { GameLogo, GamesPage, HomePage } from "./pages";
 
 interface Access { emails: string[]; domains: string[] }
-type Tab = "texts" | "games" | "access" | "look";
-type PreviewPage = "home" | "games" | "downloader";
+type Panel = "pages" | "theme" | "access";
+type Page = "home" | "games" | "downloader";
 
 const DRAFT_KEY = "vortex.admin.draft";
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -106,27 +107,88 @@ interface EditorProps {
   onSignOut: () => void;
 }
 
+interface Snapshot { content: Content; access: Access }
+
 function Editor({ token, user, saved, onSaved, onSignOut }: EditorProps) {
-  const [draft, setDraft] = useState<Content>(() => restoreDraft()?.content ?? clone(saved.content));
-  const [access, setAccess] = useState<Access>(() => restoreDraft()?.access ?? clone(saved.access));
+  const initial = useMemo<Snapshot>(() => restoreDraft() ?? { content: clone(saved.content), access: clone(saved.access) }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [snap, setSnap] = useState<Snapshot>(initial);
+  const history = useRef<{ past: Snapshot[]; future: Snapshot[]; lastKey: string; lastAt: number }>({ past: [], future: [], lastKey: "", lastAt: 0 });
+  const [, bump] = useState(0);
   const [uploads, setUploads] = useState<Map<string, Uint8Array>>(new Map());
-  const [tab, setTab] = useState<Tab>("texts");
-  const [preview, setPreview] = useState<PreviewPage>("home");
-  const [showPreview, setShowPreview] = useState(true);
+  const [page, setPage] = useState<Page>("home");
+  const [panel, setPanel] = useState<Panel>("pages");
+  const [panelOpen, setPanelOpen] = useState(() => window.matchMedia?.("(min-width: 1000px)").matches ?? true);
+  const [previewing, setPreviewing] = useState(false);
+  const [dialog, setDialog] = useState<Game | null | undefined>(undefined); // undefined = closed, null = new
   const [publishing, setPublishing] = useState(false);
   const [deploy, setDeploy] = useState<{ sha: string; state: DeployState } | null>(null);
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
 
+  const draft = snap.content;
+  const access = snap.access;
   const dirty = !same(draft, saved.content) || !same(access, saved.access) || uploads.size > 0;
 
-  // Keep unsaved work across reloads.
+  /** Apply a change; typing in one field within 1.5 s counts as one undo step. */
+  const change = useCallback((fn: (s: Snapshot) => void, key = "") => {
+    setSnap((cur) => {
+      const h = history.current;
+      const now = Date.now();
+      if (!key || key !== h.lastKey || now - h.lastAt > 1500) { h.past.push(cur); if (h.past.length > 100) h.past.shift(); }
+      h.future = []; h.lastKey = key; h.lastAt = now;
+      const next = clone(cur);
+      fn(next);
+      return next;
+    });
+    bump((n) => n + 1);
+  }, []);
+  const set = useCallback((fn: (c: Content) => void, key = "") => change((s) => fn(s.content), key), [change]);
+  const setAccess = useCallback((a: Access) => change((s) => { s.access = clone(a); }), [change]);
+
+  function undo() {
+    const h = history.current;
+    const prev = h.past.pop();
+    if (!prev) return;
+    h.future.push(snap); h.lastKey = "";
+    setSnap(prev); bump((n) => n + 1);
+  }
+  function redo() {
+    const h = history.current;
+    const next = h.future.pop();
+    if (!next) return;
+    h.past.push(snap); h.lastKey = "";
+    setSnap(next); bump((n) => n + 1);
+  }
+
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z") return;
+      e.preventDefault();
+      if (e.shiftKey) redo(); else undo();
+    };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  });
+
+  const api = useMemo<EditApi>(() => ({
+    setText: (path, value) => set((c) => setTextIn(c, path, value), `text:${path}`),
+    toggleSection: (k) => set((c) => { c.sections[k].visible = !c.sections[k].visible; }),
+    editGame: (g) => setDialog(g ? clone(g) : null),
+    moveGame: (id, by) => set((c) => {
+      const i = c.games.items.findIndex((g) => g.id === id);
+      const j = i + by;
+      if (i < 0 || j < 0 || j >= c.games.items.length) return;
+      [c.games.items[i], c.games.items[j]] = [c.games.items[j], c.games.items[i]];
+    }),
+    removeGame: (id) => set((c) => { c.games.items = c.games.items.filter((g) => g.id !== id); }),
+  }), [set]);
+
+  // Keep unsaved work across reloads, and warn before leaving.
   useEffect(() => {
     try {
-      if (dirty) localStorage.setItem(DRAFT_KEY, JSON.stringify({ content: draft, access }));
+      if (dirty) localStorage.setItem(DRAFT_KEY, JSON.stringify(snap));
       else localStorage.removeItem(DRAFT_KEY);
     } catch { /* ignore */ }
-  }, [draft, access, dirty]);
-
+  }, [snap, dirty]);
   useEffect(() => {
     const warn = (e: BeforeUnloadEvent) => { if (dirty) e.preventDefault(); };
     window.addEventListener("beforeunload", warn);
@@ -135,7 +197,7 @@ function Editor({ token, user, saved, onSaved, onSignOut }: EditorProps) {
 
   // Follow the deploy until the site is live.
   useEffect(() => {
-    if (!deploy || deploy.state === "live" || deploy.state === "failed") return;
+    if (!deploy || deploy.state === "live" || deploy.state === "failed" || deploy.state === "unknown") return;
     const started = Date.now();
     const id = setInterval(async () => {
       const state = await deployState(token, deploy.sha);
@@ -145,8 +207,6 @@ function Editor({ token, user, saved, onSaved, onSignOut }: EditorProps) {
     return () => clearInterval(id);
   }, [deploy, token]);
 
-  const set = (fn: (c: Content) => void) => setDraft((d) => { const n = clone(d); fn(n); return n; });
-
   async function publish() {
     setPublishing(true); setMessage(null);
     const content = normalize(draft);
@@ -154,22 +214,20 @@ function Editor({ token, user, saved, onSaved, onSignOut }: EditorProps) {
     const bad = content.games.items.find((g) => !g.name || !safeUrl(g.url));
     if (bad) {
       setMessage({ kind: "error", text: `Every game needs a name and a link starting with https:// (check “${bad.name || "untitled"}”).` });
-      setPublishing(false); setTab("games"); return;
+      setPublishing(false); setPage("games"); return;
     }
     const files: FileChange[] = [];
     const parts: string[] = [];
     if (!same(content, saved.content)) { files.push({ path: CONTENT_PATH, text: JSON.stringify(content, null, 2) + "\n" }); parts.push("content"); }
-    if (!same(access, saved.access)) {
-      files.push({ path: ACCESS_PATH, text: JSON.stringify(access, null, 2) + "\n" }); parts.push("access list");
-    }
+    if (!same(access, saved.access)) { files.push({ path: ACCESS_PATH, text: JSON.stringify(access, null, 2) + "\n" }); parts.push("access list"); }
     for (const [path, bytes] of uploads) {
       if (content.games.items.some((g) => g.logo === path)) files.push({ path: `web/public${path}`, bytes });
     }
-    if (!files.length) { setPublishing(false); return; }
+    if (!files.length) { setPublishing(false); setUploads(new Map()); return; }
     try {
       const sha = await commit(token, `Edit ${parts.join(" and ") || "logos"} from the Vortex Engine editor`, files);
       onSaved({ content, access: clone(access) });
-      setDraft(content); setUploads(new Map());
+      setSnap({ content, access: clone(access) }); setUploads(new Map());
       setDeploy({ sha, state: "waiting" });
       setMessage({ kind: "ok", text: "Saved permanently. The live site updates in about a minute." });
     } catch (e) {
@@ -181,85 +239,239 @@ function Editor({ token, user, saved, onSaved, onSignOut }: EditorProps) {
 
   function discard() {
     if (!confirm("Discard all unsaved changes?")) return;
-    setDraft(clone(saved.content)); setAccess(clone(saved.access)); setUploads(new Map());
+    change((s) => { s.content = clone(saved.content); s.access = clone(saved.access); });
+    setUploads(new Map());
   }
 
+  const h = history.current;
+  const pages: [Page, string][] = [["home", "Home"], ["games", draft.sections.games.title || "Games"], ["downloader", draft.sections.downloader.title || "Downloader"]];
+
   return (
-    <div className="vx-admin">
-      <div className="vx-admin-bar">
-        <div>
-          <p className="vx-eyebrow">Admin · {user}</p>
-          <strong>{dirty ? "Unsaved changes" : "All changes saved"}</strong>
-          {deploy && <DeployBadge state={deploy.state} />}
+    <div className={`vx-ed ${previewing ? "vx-ed-previewing" : ""}`}>
+      <div className="vx-ed-bar">
+        <div className="vx-ed-bar-left">
+          <div className="vx-ed-status">
+            <span className="vx-eyebrow">Editing · {user}</span>
+            <strong>{dirty ? "Unsaved changes" : "All changes saved"}</strong>
+            {deploy && <DeployBadge state={deploy.state} />}
+          </div>
         </div>
-        <div className="vx-admin-actions">
-          <button className="vx-btn vx-btn-ghost vx-hide-wide" onClick={() => setShowPreview((v) => !v)}>
-            {showPreview ? "Hide preview" : "Preview"}
+        <div className="vx-seg vx-ed-pages" role="tablist" aria-label="Page">
+          {pages.map(([k, label]) => (
+            <button key={k} role="tab" aria-selected={page === k} onClick={() => setPage(k)}>{label}</button>
+          ))}
+        </div>
+        <div className="vx-ed-actions">
+          <button className="vx-icon-btn" onClick={undo} disabled={!h.past.length} aria-label="Undo" title="Undo">↶</button>
+          <button className="vx-icon-btn" onClick={redo} disabled={!h.future.length} aria-label="Redo" title="Redo">↷</button>
+          <button className="vx-btn vx-btn-ghost vx-btn-sm" aria-pressed={previewing} onClick={() => setPreviewing((v) => !v)}>
+            {previewing ? "Back to editing" : "Preview"}
           </button>
-          <button className="vx-btn vx-btn-ghost" onClick={discard} disabled={!dirty || publishing}>Discard</button>
-          <button className="vx-btn vx-btn-primary" onClick={publish} disabled={!dirty || publishing}>
+          <button className="vx-btn vx-btn-ghost vx-btn-sm" onClick={() => setPanelOpen((v) => !v)} aria-expanded={panelOpen}>
+            {panelOpen ? "Hide panel" : "Panel"}
+          </button>
+          <button className="vx-btn vx-btn-ghost vx-btn-sm" onClick={discard} disabled={!dirty || publishing}>Discard</button>
+          <button className="vx-btn vx-btn-primary vx-btn-sm" onClick={publish} disabled={!dirty || publishing}>
             {publishing ? "Saving…" : "Publish"}
           </button>
         </div>
       </div>
       {message && <p className={`vx-alert ${message.kind === "error" ? "vx-alert-error" : ""}`} role="status">{message.text}</p>}
 
-      <div className={`vx-admin-body ${showPreview ? "" : "vx-no-preview"}`}>
-        <div className="vx-admin-edit">
-          <nav className="vx-tabs" role="tablist">
-            {([["texts", "Texts"], ["games", "Games"], ["access", "Access"], ["look", "Look"]] as const).map(([k, label]) => (
-              <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{label}</button>
-            ))}
-          </nav>
-
-          {tab === "texts" && <TextsTab draft={draft} set={set} />}
-          {tab === "games" && (
-            <GamesTab
-              draft={draft} set={set}
-              onUpload={(path, bytes, url) => {
-                pendingLogos.set(path, url);
-                setUploads((u) => new Map(u).set(path, bytes));
-              }}
-              onFocusPreview={() => setPreview("games")}
-            />
-          )}
-          {tab === "access" && <AccessTab access={access} setAccess={setAccess} />}
-          {tab === "look" && <LookTab draft={draft} set={set} />}
-
-          <footer className="vx-admin-foot">
-            <span className="vx-muted vx-small">Saving to <code>{REPO}</code></span>
-            <button className="vx-link" onClick={() => { if (!dirty || confirm("Sign out? Unsaved changes stay on this device.")) onSignOut(); }}>Sign out</button>
-          </footer>
+      <div className={`vx-ed-body ${panelOpen && !previewing ? "" : "vx-ed-nopanel"}`}>
+        <div className="vx-ed-canvas" style={{ ["--vx-accent" as string]: draft.site.accent }}>
+          {!previewing && <p className="vx-ed-hint">Click any text to change it. Changes are saved when you press Publish.</p>}
+          <div className="vx-ed-window">
+            <ContentContext.Provider value={draft}>
+              <EditContext.Provider value={previewing ? null : api}>
+                <div className="vx-ed-site-top">
+                  <span className="vx-ed-mark" aria-hidden="true" />
+                  <SiteName editing={!previewing} value={draft.site.name} onChange={(v) => set((c) => { c.site.name = v; }, "text:site.name")} />
+                  <nav className="vx-ed-site-nav">
+                    {pages.filter(([k]) => k === "home" || draft.sections[k as "games" | "downloader"].visible).map(([k, label]) => (
+                      <button key={k} aria-current={page === k ? "page" : undefined} onClick={() => setPage(k)}>{label}</button>
+                    ))}
+                  </nav>
+                </div>
+                <div className="vx-ed-site-main">
+                  {page === "home" && <HomePage />}
+                  {page === "games" && <GamesPage />}
+                  {page === "downloader" && <Downloader />}
+                </div>
+              </EditContext.Provider>
+            </ContentContext.Provider>
+          </div>
         </div>
 
-        {showPreview && (
-          <aside className="vx-admin-preview" aria-label="Live preview">
-            <div className="vx-preview-head">
-              <span className="vx-eyebrow">Live preview</span>
-              <div className="vx-seg">
-                {(["home", "games", "downloader"] as const).map((p) => (
-                  <button key={p} aria-pressed={preview === p} onClick={() => setPreview(p)}>{p[0].toUpperCase() + p.slice(1)}</button>
-                ))}
-              </div>
-            </div>
-            <div className="vx-preview-frame" style={{ ["--vx-accent" as string]: draft.site.accent }} inert>
-              <ContentContext.Provider value={draft}>
-                <div className="vx-preview-top"><strong>{draft.site.name}</strong></div>
-                <div className="vx-preview-main">
-                  {preview === "home" && <HomePage />}
-                  {preview === "games" && <GamesPage />}
-                  {preview === "downloader" && <Downloader />}
-                </div>
-              </ContentContext.Provider>
-            </div>
+        {panelOpen && !previewing && (
+          <aside className="vx-ed-panel" aria-label="Editor panel">
+            <nav className="vx-tabs" role="tablist">
+              {([["pages", "Pages"], ["theme", "Theme"], ["access", "Access"]] as const).map(([k, label]) => (
+                <button key={k} role="tab" aria-selected={panel === k} onClick={() => setPanel(k)}>{label}</button>
+              ))}
+            </nav>
+            {panel === "pages" && (
+              <PagesPanel draft={draft} page={page} setPage={setPage}
+                toggle={(k) => api.toggleSection(k)} addGame={() => { setPage("games"); setDialog(null); }} />
+            )}
+            {panel === "theme" && <LookTab draft={draft} set={(fn) => set(fn)} />}
+            {panel === "access" && <AccessTab access={access} setAccess={setAccess} />}
+            <footer className="vx-admin-foot">
+              <span className="vx-muted vx-small">Saving to <code>{REPO}</code></span>
+              <button className="vx-link" onClick={() => { if (!dirty || confirm("Sign out? Unsaved changes stay on this device.")) onSignOut(); }}>Sign out</button>
+            </footer>
           </aside>
         )}
       </div>
+
+      {dialog !== undefined && (
+        <GameDialog
+          game={dialog}
+          onCancel={() => setDialog(undefined)}
+          onUpload={(path, bytes, url) => { pendingLogos.set(path, url); setUploads((u) => new Map(u).set(path, bytes)); }}
+          onSave={(g) => {
+            set((c) => {
+              const i = c.games.items.findIndex((x) => x.id === g.id);
+              if (i >= 0) c.games.items[i] = g; else c.games.items.push(g);
+            });
+            setDialog(undefined);
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function restoreDraft(): { content: Content; access: Access } | null {
+function SiteName({ editing, value, onChange }: { editing: boolean; value: string; onChange: (v: string) => void }) {
+  const ref = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    if (ref.current && document.activeElement !== ref.current && ref.current.textContent !== value) ref.current.textContent = value;
+  });
+  if (!editing) return <strong className="vx-ed-site-name">{value}</strong>;
+  return (
+    <strong ref={ref} className="vx-ed-site-name vx-editable" contentEditable="plaintext-only" suppressContentEditableWarning
+      role="textbox" aria-label="Site name" data-placeholder="Site name"
+      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); } }}
+      onInput={(e) => onChange((e.currentTarget.textContent ?? "").slice(0, 40))} />
+  );
+}
+
+function PagesPanel({ draft, page, setPage, toggle, addGame }: {
+  draft: Content; page: Page; setPage: (p: Page) => void;
+  toggle: (k: keyof Content["sections"]) => void; addGame: () => void;
+}) {
+  const rows: { key: keyof Content["sections"]; page: Page | null; note: string }[] = [
+    { key: "downloader", page: "downloader", note: "Utility" },
+    { key: "games", page: "games", note: `${draft.games.items.length} game${draft.games.items.length === 1 ? "" : "s"}` },
+    { key: "docs", page: null, note: "Coming soon" },
+    { key: "slides", page: null, note: "Coming soon" },
+  ];
+  return (
+    <div className="vx-stack">
+      <button className={`vx-page-row ${page === "home" ? "on" : ""}`} onClick={() => setPage("home")}>
+        <span><strong>Home</strong><em>Start page</em></span>
+      </button>
+      {rows.map((r) => (
+        <div key={r.key} className={`vx-page-row ${r.page && page === r.page ? "on" : ""}`}>
+          <button className="vx-page-open" disabled={!r.page} onClick={() => r.page && setPage(r.page)}>
+            <span><strong>{draft.sections[r.key].title || "Untitled"}</strong><em>{r.note}</em></span>
+          </button>
+          <label className="vx-switch" title="Show on the site">
+            <input type="checkbox" role="switch" checked={draft.sections[r.key].visible} onChange={() => toggle(r.key)}
+              aria-label={`Show ${draft.sections[r.key].title}`} />
+            <span aria-hidden="true" />
+          </label>
+        </div>
+      ))}
+      <button className="vx-btn vx-btn-primary" onClick={addGame}>+ Add a game</button>
+      <p className="vx-muted vx-small">Tip: on the page, click any title or text to edit it. Use the switches to show or hide sections.</p>
+    </div>
+  );
+}
+
+function GameDialog({ game, onCancel, onSave, onUpload }: {
+  game: Game | null;
+  onCancel: () => void;
+  onSave: (g: Game) => void;
+  onUpload: (path: string, bytes: Uint8Array, previewUrl: string) => void;
+}) {
+  const [g, setG] = useState<Game>(() => game ?? { id: crypto.randomUUID(), name: "", url: "", logo: "", description: "" });
+  const [err, setErr] = useState<string | null>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const first = useRef<HTMLInputElement>(null);
+  useEffect(() => { first.current?.focus(); }, []);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") onCancel(); };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, [onCancel]);
+
+  async function picked(file: File | undefined) {
+    if (!file) return;
+    setErr(null);
+    if (!/^image\/(png|jpeg|webp|gif|svg\+xml)$/.test(file.type)) { setErr("Use a PNG, JPG, WebP, GIF or SVG image."); return; }
+    if (file.size > MAX_LOGO) { setErr("That image is over 512 KB. Use a smaller one."); return; }
+    const ext = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif", "image/svg+xml": "svg" }[file.type]!;
+    const path = `/logos/${g.id.slice(0, 8)}-${Date.now().toString(36)}.${ext}`;
+    onUpload(path, new Uint8Array(await file.arrayBuffer()), URL.createObjectURL(file));
+    setG((x) => ({ ...x, logo: path }));
+  }
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    let url = g.url.trim();
+    if (url && !/^https?:\/\//i.test(url)) url = `https://${url}`;
+    if (!g.name.trim()) { setErr("Give the game a name."); return; }
+    if (!safeUrl(url)) { setErr("Add the game's link, like https://example.com/game."); return; }
+    onSave({ ...g, name: g.name.trim(), url, description: g.description.trim() });
+  }
+
+  return (
+    <div className="tut-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
+      <form className="tut vx-dialog" role="dialog" aria-modal="true" aria-labelledby="gd-title" onSubmit={submit}>
+        <div className="tut-head">
+          <h2 id="gd-title">{game ? "Edit game" : "Add a game"}</h2>
+          <button type="button" className="tut-close" onClick={onCancel} aria-label="Close">×</button>
+        </div>
+        <div className="vx-gd-preview">
+          <GameLogo game={g} size={72} />
+          <div className="vx-stack" style={{ gap: 6 }}>
+            <div className="vx-row">
+              <button type="button" className="vx-btn vx-btn-ghost vx-btn-sm" onClick={() => input.current?.click()}>Upload logo</button>
+              {g.logo && <button type="button" className="vx-btn vx-btn-ghost vx-btn-sm" onClick={() => setG({ ...g, logo: "" })}>Use site icon</button>}
+            </div>
+            <small className="vx-muted">{g.logo.startsWith("/logos/") ? "Using your uploaded logo." : g.logo ? "Using the logo link." : "Showing the website's own icon."}</small>
+          </div>
+          <input ref={input} type="file" hidden accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+            onChange={(e) => { void picked(e.target.files?.[0]); e.target.value = ""; }} />
+        </div>
+        <label className="vx-field"><span>Name</span>
+          <input ref={first} type="text" maxLength={80} value={g.name} onChange={(e) => setG({ ...g, name: e.target.value })} placeholder="e.g. Slope" />
+        </label>
+        <label className="vx-field"><span>Link</span>
+          <input type="text" inputMode="url" autoCapitalize="off" spellCheck={false} maxLength={500} value={g.url} onChange={(e) => setG({ ...g, url: e.target.value })} placeholder="https://…" />
+        </label>
+        <label className="vx-field"><span>Logo image link (optional)</span>
+          <input type="text" inputMode="url" autoCapitalize="off" spellCheck={false} maxLength={500} value={g.logo.startsWith("/logos/") ? "" : g.logo} placeholder="Paste an image link, or use Upload logo"
+            onChange={(e) => setG({ ...g, logo: e.target.value.trim() })} />
+        </label>
+        <label className="vx-field"><span>Short description (optional)</span>
+          <input type="text" maxLength={160} value={g.description} onChange={(e) => setG({ ...g, description: e.target.value })} />
+        </label>
+        {err && <p className="vx-alert vx-alert-error" role="alert">{err}</p>}
+        <div className="tut-foot">
+          <span />
+          <div className="vx-row">
+            <button type="button" className="vx-btn vx-btn-ghost vx-btn-sm" onClick={onCancel}>Cancel</button>
+            <button className="vx-btn vx-btn-primary vx-btn-sm">{game ? "Done" : "Add game"}</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function restoreDraft(): Snapshot | null {
   try {
     const raw = localStorage.getItem(DRAFT_KEY);
     if (!raw) return null;
@@ -294,131 +506,7 @@ function Field({ label, value, onChange, multiline, hint, maxLength = 300 }: {
   );
 }
 
-function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <label className="vx-toggle">
-      <input type="checkbox" role="switch" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-      <span>{label}</span>
-    </label>
-  );
-}
-
 type SetFn = (fn: (c: Content) => void) => void;
-
-function TextsTab({ draft, set }: { draft: Content; set: SetFn }) {
-  const sections: [keyof Content["sections"], string][] = [
-    ["downloader", "Downloader card"], ["games", "Games card"], ["docs", "Docs card"], ["slides", "Slides card"],
-  ];
-  return (
-    <div className="vx-stack">
-      <fieldset className="vx-card vx-fieldset">
-        <legend>Home page</legend>
-        <Field label="Title" value={draft.home.title} onChange={(v) => set((c) => { c.home.title = v; })} />
-        <Field label="Subtitle" multiline value={draft.home.subtitle} onChange={(v) => set((c) => { c.home.subtitle = v; })} />
-      </fieldset>
-      {sections.map(([k, label]) => {
-        const s: SectionText = draft.sections[k];
-        return (
-          <fieldset key={k} className="vx-card vx-fieldset">
-            <legend>{label}</legend>
-            <Toggle label="Show on the home page" checked={s.visible} onChange={(v) => set((c) => { c.sections[k].visible = v; })} />
-            <Field label="Title" value={s.title} onChange={(v) => set((c) => { c.sections[k].title = v; })} />
-            <Field label="Description" multiline value={s.description} onChange={(v) => set((c) => { c.sections[k].description = v; })} />
-          </fieldset>
-        );
-      })}
-      <fieldset className="vx-card vx-fieldset">
-        <legend>Games page</legend>
-        <Field label="Title" value={draft.games.title} onChange={(v) => set((c) => { c.games.title = v; })} />
-        <Field label="Subtitle" value={draft.games.subtitle} onChange={(v) => set((c) => { c.games.subtitle = v; })} />
-        <Field label="Introduction" multiline value={draft.games.intro} onChange={(v) => set((c) => { c.games.intro = v; })} />
-        <Field label="Text when there are no games" value={draft.games.empty} onChange={(v) => set((c) => { c.games.empty = v; })} />
-      </fieldset>
-      <fieldset className="vx-card vx-fieldset">
-        <legend>Downloader page</legend>
-        <Field label="Title" value={draft.downloader.title} onChange={(v) => set((c) => { c.downloader.title = v; })} />
-        <Field label="Introduction" multiline value={draft.downloader.intro} onChange={(v) => set((c) => { c.downloader.intro = v; })} />
-        <Field label="Footer note" value={draft.downloader.footer} onChange={(v) => set((c) => { c.downloader.footer = v; })} />
-      </fieldset>
-    </div>
-  );
-}
-
-function GamesTab({ draft, set, onUpload, onFocusPreview }: {
-  draft: Content; set: SetFn;
-  onUpload: (path: string, bytes: Uint8Array, previewUrl: string) => void;
-  onFocusPreview: () => void;
-}) {
-  const items = draft.games.items;
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const fileFor = useRef<string | null>(null);
-  const input = useRef<HTMLInputElement>(null);
-
-  useEffect(onFocusPreview, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const update = (id: string, fn: (g: Game) => void) => set((c) => {
-    const g = c.games.items.find((x) => x.id === id);
-    if (g) fn(g);
-  });
-  const move = (i: number, d: number) => set((c) => {
-    const j = i + d;
-    if (j < 0 || j >= c.games.items.length) return;
-    [c.games.items[i], c.games.items[j]] = [c.games.items[j], c.games.items[i]];
-  });
-
-  async function picked(file: File | undefined) {
-    const id = fileFor.current;
-    if (!file || !id) return;
-    setUploadError(null);
-    if (!/^image\/(png|jpeg|webp|gif|svg\+xml)$/.test(file.type)) { setUploadError("Use a PNG, JPG, WebP, GIF or SVG image."); return; }
-    if (file.size > MAX_LOGO) { setUploadError("That image is over 512 KB. Use a smaller one."); return; }
-    const ext = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif", "image/svg+xml": "svg" }[file.type]!;
-    const path = `/logos/${id.slice(0, 8)}-${Date.now().toString(36)}.${ext}`;
-    onUpload(path, new Uint8Array(await file.arrayBuffer()), URL.createObjectURL(file));
-    update(id, (g) => { g.logo = path; });
-  }
-
-  return (
-    <div className="vx-stack">
-      <p className="vx-muted vx-small">
-        Games listed under “{draft.games.subtitle}”. Each opens the game's website in a new tab. Without a logo, the website's own icon is shown.
-      </p>
-      <input ref={input} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" hidden
-        onChange={(e) => { void picked(e.target.files?.[0]); e.target.value = ""; }} />
-      {uploadError && <p className="vx-alert vx-alert-error" role="alert">{uploadError}</p>}
-      {items.length === 0 && <p className="vx-empty">No games yet. Add the first one below.</p>}
-      {items.map((g, i) => (
-        <fieldset key={g.id} className="vx-card vx-fieldset vx-game-edit">
-          <legend>{g.name || "New game"}</legend>
-          <div className="vx-game-edit-head">
-            <GameLogo game={g} size={56} />
-            <div className="vx-row">
-              <button type="button" className="vx-btn vx-btn-ghost vx-btn-sm" onClick={() => { fileFor.current = g.id; input.current?.click(); }}>Upload logo</button>
-              {g.logo && <button type="button" className="vx-btn vx-btn-ghost vx-btn-sm" onClick={() => update(g.id, (x) => { x.logo = ""; })}>Use site icon</button>}
-            </div>
-          </div>
-          <Field label="Name" value={g.name} maxLength={80} onChange={(v) => update(g.id, (x) => { x.name = v; })} />
-          <Field label="Link" value={g.url} maxLength={500} hint={g.url && !safeUrl(g.url) ? "Must start with https://" : undefined}
-            onChange={(v) => update(g.id, (x) => { x.url = v; })} />
-          <Field label="Logo image link (optional)" value={g.logo.startsWith("/logos/") ? "" : g.logo} maxLength={500}
-            hint={g.logo.startsWith("/logos/") ? "Using the uploaded logo." : "Paste an image link, or use Upload logo."}
-            onChange={(v) => update(g.id, (x) => { x.logo = v.trim(); })} />
-          <Field label="Short description (optional)" value={g.description} maxLength={160} onChange={(v) => update(g.id, (x) => { x.description = v; })} />
-          <div className="vx-row">
-            <button type="button" className="vx-btn vx-btn-ghost vx-btn-sm" disabled={i === 0} onClick={() => move(i, -1)}>Move up</button>
-            <button type="button" className="vx-btn vx-btn-ghost vx-btn-sm" disabled={i === items.length - 1} onClick={() => move(i, 1)}>Move down</button>
-            <button type="button" className="vx-btn vx-btn-danger vx-btn-sm"
-              onClick={() => { if (confirm(`Remove “${g.name || "this game"}”?`)) set((c) => { c.games.items.splice(i, 1); }); }}>Remove</button>
-          </div>
-        </fieldset>
-      ))}
-      <button type="button" className="vx-btn vx-btn-primary"
-        onClick={() => set((c) => { c.games.items.push({ id: crypto.randomUUID(), name: "", url: "", logo: "", description: "" }); })}>
-        + Add game
-      </button>
-    </div>
-  );
-}
 
 function AccessTab({ access, setAccess }: { access: Access; setAccess: (a: Access) => void }) {
   const [email, setEmail] = useState("");

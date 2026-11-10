@@ -1,5 +1,8 @@
 import { useRef, useState } from "react";
 import { useContent } from "./content";
+import { combine, preloadMerger } from "./merge";
+import { Tutorial } from "./Tutorial";
+import { Editable, useEdit } from "./editable";
 import {
   bestThumb, buildPresets, fetchInfo, formatBytes, formatDuration, parseVideoId, relayUrl, safeFilename,
   StreamError, type Preset, type StreamInfo,
@@ -8,10 +11,12 @@ import {
 // Files above this are opened directly instead of being buffered in memory,
 // which an iPad can't do for very large videos.
 const BUFFER_LIMIT = 400 * 1024 * 1024;
+// Combining needs the picture, the sound and the result in memory at once.
+const COMBINE_LIMIT = 450 * 1024 * 1024;
 // Download in pieces so no single request through the site's proxy is too large.
 const CHUNK = 8 * 1024 * 1024;
 
-type SaveState = { key: string; progress: number | null } | null;
+type SaveState = { key: string; progress: number | null; stage: string } | null;
 
 /** Download the whole file, in ranged pieces when the server supports them. */
 async function download(url: string, total: number | null, onProgress: (p: number | null) => void): Promise<Uint8Array[]> {
@@ -45,6 +50,7 @@ async function download(url: string, total: number | null, onProgress: (p: numbe
 
 export function Downloader() {
   const c = useContent().downloader;
+  const edit = useEdit();
   const [link, setLink] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,6 +60,7 @@ export function Downloader() {
   const [saving, setSaving] = useState<SaveState>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const abort = useRef<AbortController | null>(null);
+  const [tutorial, setTutorial] = useState(false);
 
   async function lookUp(e?: React.FormEvent) {
     e?.preventDefault();
@@ -93,33 +100,64 @@ export function Downloader() {
     );
   }
 
+  /** Fetch one file: through the site's own address first, then straight from YouTube. */
+  async function fetchFile(url: string, bytes: number | null, onProgress: (p: number | null) => void): Promise<Uint8Array[]> {
+    for (const u of [relayUrl(url), url]) {
+      if (!u) continue;
+      try { return await download(u, bytes, onProgress); } catch { /* try the next way */ }
+    }
+    throw new Error("blocked");
+  }
+
+  function hand(file: Blob, name: string) {
+    const href = URL.createObjectURL(file);
+    const a = document.createElement("a");
+    a.href = href;
+    a.download = name;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(href), 120_000);
+    setNotice(`Saved as “${name}”. On iPad it's in the Files app → Downloads. Tap “How to save” for help.`);
+  }
+
   async function save(p: Preset) {
     if (!info || saving) return;
-    setNotice(null);
-    if (p.bytes && p.bytes > BUFFER_LIMIT) { openDirect(p); return; }
-    setSaving({ key: p.key, progress: 0 });
-    try {
-      // Through the site's own address first (lets the page name the file),
-      // then straight from YouTube's server.
-      let chunks: Uint8Array[] | null = null;
-      for (const url of [relayUrl(p.url), p.url]) {
-        if (!url) continue;
-        try {
-          chunks = await download(url, p.bytes, (progress) => setSaving({ key: p.key, progress }));
-          break;
-        } catch { /* try the next way */ }
+    setNotice(null); setError(null);
+    const name = safeFilename(info.title, p.ext);
+    if (p.audio) {
+      // Picture + sound → one MP4 with sound, made on this device.
+      if (p.bytes && p.bytes > COMBINE_LIMIT) {
+        setError("That quality is too big to combine on this device. Choose a lower one.");
+        return;
       }
-      if (!chunks) throw new Error("no route");
+      preloadMerger();
+      const vBytes = (p.bytes ?? 0) - (p.audio.bytes ?? 0) || null;
+      const share = p.bytes && p.audio.bytes ? (p.bytes - p.audio.bytes) / p.bytes : 0.9;
+      setSaving({ key: p.key, progress: 0, stage: "Downloading video" });
+      try {
+        const video = await fetchFile(p.url, vBytes, (x) => setSaving({ key: p.key, progress: x === null ? null : x * share * 0.95, stage: "Downloading video" }));
+        const audio = await fetchFile(p.audio.url, p.audio.bytes, (x) => setSaving({ key: p.key, progress: x === null ? null : (share + x * (1 - share)) * 0.95, stage: "Downloading sound" }));
+        setSaving({ key: p.key, progress: 0.95, stage: "Combining" });
+        const v = await new Blob(video as BlobPart[]).arrayBuffer();
+        const a = await new Blob(audio as BlobPart[]).arrayBuffer();
+        const out = await combine(new Uint8Array(v), new Uint8Array(a), (x) => setSaving({ key: p.key, progress: 0.95 + x * 0.05, stage: "Combining" }));
+        hand(new Blob([out as BlobPart], { type: "video/mp4" }), name);
+      } catch (e) {
+        setError((e as Error).message === "blocked"
+          ? "YouTube's server didn't allow this download from the site. Try “Video 360p” instead."
+          : "Combining the video and sound failed on this device. Try a lower quality.");
+      } finally {
+        setSaving(null);
+      }
+      return;
+    }
+    if (p.bytes && p.bytes > BUFFER_LIMIT) { openDirect(p); return; }
+    setSaving({ key: p.key, progress: 0, stage: "Downloading" });
+    try {
+      const chunks = await fetchFile(p.url, p.bytes, (progress) => setSaving({ key: p.key, progress, stage: "Downloading" }));
       const type = p.kind === "audio" ? (p.ext === "m4a" ? "audio/mp4" : "audio/webm") : "video/mp4";
-      const href = URL.createObjectURL(new Blob(chunks as BlobPart[], { type }));
-      const a = document.createElement("a");
-      a.href = href;
-      a.download = safeFilename(info.title, p.ext);
-      document.body.append(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(href), 60_000);
-      setNotice(`Saved as “${a.download}”. On iPad it's in the Files app → Downloads (or tap the download icon in Safari's toolbar).`);
+      hand(new Blob(chunks as BlobPart[], { type }), name);
     } catch {
       // The video host didn't allow a direct save (or the link expired): open it instead.
       openDirect(p);
@@ -129,20 +167,23 @@ export function Downloader() {
   }
 
   const groups: { kind: Preset["kind"]; title: string; note?: string }[] = [
-    { kind: "video", title: "Video with sound" },
+    { kind: "video", title: "Video with sound", note: "Qualities above 360p are combined from YouTube's separate picture and sound files on this device. It takes a few extra seconds." },
     { kind: "audio", title: "Audio only" },
-    { kind: "silent", title: "Higher quality, picture only", note: "YouTube keeps sound separate above 360p. These files have no sound." },
   ];
 
   return (
     <section className="vx-page">
       <header className="vx-page-head">
         <p className="vx-eyebrow">Utilities</p>
-        <h1>{c.title}</h1>
-        <p className="vx-muted">{c.intro}</p>
+        <Editable as="h1" path="downloader.title" placeholder="Page title" />
+        <Editable as="p" className="vx-muted" path="downloader.intro" placeholder="Introduction" multiline />
+        <button type="button" inert={!!edit} className="vx-btn vx-btn-ghost vx-btn-sm vx-tutorial-btn" onClick={() => setTutorial(true)}>
+          How to save to Files
+        </button>
       </header>
+      {tutorial && <Tutorial onClose={() => setTutorial(false)} />}
 
-      <form className="vx-search" onSubmit={lookUp}>
+      <form className="vx-search" onSubmit={lookUp} inert={!!edit}>
         <label className="sr-only" htmlFor="vx-link">YouTube link</label>
         <input
           id="vx-link" type="text" inputMode="url" autoComplete="off" autoCapitalize="off" spellCheck={false}
@@ -197,7 +238,7 @@ export function Downloader() {
                           </span>
                           <span className="vx-preset-side">
                             {active
-                              ? saving?.progress != null ? `${Math.round(saving.progress * 100)}%` : "Saving…"
+                              ? `${saving!.stage}${saving!.progress != null ? ` ${Math.round(saving!.progress * 100)}%` : "…"}`
                               : formatBytes(p.bytes) || "Save"}
                           </span>
                           {active && saving?.progress != null && (
@@ -219,7 +260,7 @@ export function Downloader() {
         </article>
       )}
 
-      {c.footer && <p className="vx-fine">{c.footer}</p>}
+      {(c.footer || edit) && <Editable as="p" className="vx-fine" path="downloader.footer" placeholder="Footer note (optional)" />}
     </section>
   );
 }

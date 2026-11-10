@@ -1,35 +1,43 @@
 import { useState } from "react";
-import { logoFor, safeUrl, useContent, type Game } from "./content";
+import { logoFor, safeUrl, useContent, type Content, type Game } from "./content";
+import { Editable, useEdit } from "./editable";
 
 export function HomePage() {
   const c = useContent();
+  const edit = useEdit();
   const s = c.sections;
-  const tiles = [
-    { key: "downloader", sec: s.downloader, href: "#/downloader", label: "Utilities" },
-    { key: "games", sec: s.games, href: "#/games", label: "Games" },
-    { key: "docs", sec: s.docs, href: null, label: "Coming soon" },
-    { key: "slides", sec: s.slides, href: null, label: "Coming soon" },
-  ].filter((t) => t.sec.visible);
+  const tiles: { key: keyof Content["sections"]; href: string | null; label: string }[] = [
+    { key: "downloader", href: "#/downloader", label: "Utilities" },
+    { key: "games", href: "#/games", label: "Games" },
+    { key: "docs", href: null, label: "Coming soon" },
+    { key: "slides", href: null, label: "Coming soon" },
+  ];
   return (
     <section className="vx-page">
       <header className="vx-page-head">
-        <h1>{c.home.title}</h1>
-        <p className="vx-muted">{c.home.subtitle}</p>
+        <Editable as="h1" path="home.title" placeholder="Page title" />
+        <Editable as="p" className="vx-muted" path="home.subtitle" placeholder="Subtitle" multiline />
       </header>
       <div className="vx-grid">
-        {tiles.map((t) => t.href ? (
-          <a key={t.key} className="vx-tile vx-tile-live" href={t.href}>
-            <span className="vx-eyebrow">{t.label}</span>
-            <strong>{t.sec.title}</strong>
-            <span className="vx-muted">{t.sec.description}</span>
-          </a>
-        ) : (
-          <div key={t.key} className="vx-tile" aria-disabled="true">
-            <span className="vx-eyebrow">{t.label}</span>
-            <strong>{t.sec.title}</strong>
-            <span className="vx-muted">{t.sec.description}</span>
-          </div>
-        ))}
+        {tiles.filter((t) => edit || s[t.key].visible).map((t) => {
+          const body = (
+            <>
+              <span className="vx-eyebrow">{t.label}</span>
+              <Editable as="strong" path={`sections.${t.key}.title`} placeholder="Title" />
+              <Editable as="span" className="vx-muted" path={`sections.${t.key}.description`} placeholder="Description" multiline />
+              {edit && (
+                <button type="button" className="vx-chip-btn" aria-pressed={s[t.key].visible}
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); edit.toggleSection(t.key); }}>
+                  {s[t.key].visible ? "Shown" : "Hidden"}
+                </button>
+              )}
+            </>
+          );
+          const cls = `vx-tile ${t.href ? "vx-tile-live" : ""} ${edit && !s[t.key].visible ? "vx-hidden-tile" : ""}`;
+          return t.href && !edit
+            ? <a key={t.key} className={cls} href={t.href}>{body}</a>
+            : <div key={t.key} className={cls} aria-disabled={t.href ? undefined : "true"}>{body}</div>;
+        })}
       </div>
     </section>
   );
@@ -37,44 +45,77 @@ export function HomePage() {
 
 export function GamesPage() {
   const g = useContent().games;
-  const items = g.items.filter((x) => x.name.trim() && safeUrl(x.url));
+  const edit = useEdit();
+  const items = edit ? g.items : g.items.filter((x) => x.name.trim() && safeUrl(x.url));
   return (
     <section className="vx-page">
       <header className="vx-page-head">
-        <h1>{g.title}</h1>
-        {g.intro && <p className="vx-muted">{g.intro}</p>}
+        <Editable as="h1" path="games.title" placeholder="Page title" />
+        <Editable as="p" className="vx-muted" path="games.intro" placeholder="Introduction (optional)" multiline />
       </header>
-      <h2 className="vx-subtitle">{g.subtitle}</h2>
-      {items.length === 0 ? (
-        <p className="vx-empty">{g.empty}</p>
-      ) : (
+      <Editable as="h2" className="vx-subtitle" path="games.subtitle" placeholder="Subtitle" />
+      {items.length === 0 && !edit && <p className="vx-empty">{g.empty}</p>}
+      {items.length === 0 && edit && (
+        <p className="vx-empty"><Editable path="games.empty" placeholder="Text shown when there are no games" /></p>
+      )}
+      {(items.length > 0 || edit) && (
         <ul className="vx-games">
-          {items.map((game) => (
-            <li key={game.id}>
-              <a className="vx-game" href={safeUrl(game.url)!} target="_blank" rel="noopener noreferrer">
-                <GameLogo game={game} />
-                <span className="vx-game-text">
-                  <strong>{game.name}</strong>
-                  {game.description && <span className="vx-muted vx-small">{game.description}</span>}
-                  <span className="vx-game-host">{new URL(safeUrl(game.url)!).hostname.replace(/^www\./, "")}</span>
-                </span>
-              </a>
+          {items.map((game, i) => (
+            <li key={game.id} className={edit ? "vx-game-slot" : undefined}>
+              {edit ? (
+                <div className="vx-game vx-game-editing" role="button" tabIndex={0}
+                  onClick={() => edit.editGame(game)} onKeyDown={(e) => { if (e.key === "Enter") edit.editGame(game); }}>
+                  <GameCardBody game={game} />
+                  <span className="vx-game-tools" onClick={(e) => e.stopPropagation()}>
+                    <button type="button" aria-label="Move left" disabled={i === 0} onClick={() => edit.moveGame(game.id, -1)}>‹</button>
+                    <button type="button" aria-label="Move right" disabled={i === items.length - 1} onClick={() => edit.moveGame(game.id, 1)}>›</button>
+                    <button type="button" aria-label={`Remove ${game.name || "game"}`} className="danger"
+                      onClick={() => { if (confirm(`Remove “${game.name || "this game"}”?`)) edit.removeGame(game.id); }}>✕</button>
+                  </span>
+                </div>
+              ) : (
+                <a className="vx-game" href={safeUrl(game.url)!} target="_blank" rel="noopener noreferrer">
+                  <GameCardBody game={game} />
+                </a>
+              )}
             </li>
           ))}
+          {edit && (
+            <li>
+              <button type="button" className="vx-game vx-game-add" onClick={() => edit.editGame(null)}>
+                <span className="vx-logo vx-logo-add" style={{ width: 64, height: 64 }}>+</span>
+                <strong>Add game</strong>
+              </button>
+            </li>
+          )}
         </ul>
       )}
     </section>
   );
 }
 
+function GameCardBody({ game }: { game: Game }) {
+  const url = safeUrl(game.url);
+  return (
+    <>
+      <GameLogo game={game} />
+      <span className="vx-game-text">
+        <strong>{game.name || "Untitled game"}</strong>
+        {game.description && <span className="vx-muted vx-small">{game.description}</span>}
+        <span className="vx-game-host">{url ? new URL(url).hostname.replace(/^www\./, "") : "No link yet"}</span>
+      </span>
+    </>
+  );
+}
+
 export function GameLogo({ game, size = 64 }: { game: Game; size?: number }) {
-  const [broken, setBroken] = useState(false);
+  const [broken, setBroken] = useState<string | null>(null);
   const src = logoFor(game);
   const initial = (game.name.trim()[0] ?? "?").toUpperCase();
   return (
     <span className="vx-logo" style={{ width: size, height: size }}>
-      {src && !broken
-        ? <img src={src} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setBroken(true)} />
+      {src && broken !== src
+        ? <img src={src} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setBroken(src)} />
         : <span aria-hidden="true">{initial}</span>}
     </span>
   );

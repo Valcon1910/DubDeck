@@ -1,6 +1,6 @@
 # Vortex Engine
 
-**Vortex Engine** is a private games, docs, slides and utilities website hosted on here.now. Games, Docs and Slides are not built yet. The first utility is the **Downloader**: paste a YouTube link and save the video (360p with sound), the audio (M4A), or higher-quality picture-only video to your device. It runs entirely in the browser, with no computer or server of your own.
+**Vortex Engine** is a private games, docs, slides and utilities website hosted on here.now. Games, Docs and Slides are not built yet. The first utility is the **Downloader**: paste a YouTube link (or a Google result that leads to one) and save the video with sound in 360p, 720p or 1080p, or just the audio, to your device. Above 360p YouTube keeps picture and sound apart; the page downloads both and combines them on the device with ffmpeg (WebAssembly, served from the site), trimming any part where one runs longer than the other. It runs entirely in the browser, with no computer or server of your own.
 
 ```
  iPad/browser ──▶ here.now Site (restricted access)
@@ -18,13 +18,13 @@
 3. **Deploy**: open **Actions → Deploy Vortex Engine to here.now → Run workflow** (pushes to `main` also deploy). The workflow stores the RapidAPI key in your here.now account as the variable `RAPIDAPI_KEY`. here.now only sends it to the YTStream host, and it never reaches the browser. The log ends with `Live: https://<slug>.here.now/`. Save the slug as the repository **variable** `HERENOW_SLUG` so later runs update the same site.
 4. **Use it**: open the address on the iPad, pass here.now's sign-in gate, and tap **Downloader**. Add it to your home screen with **Share → Add to Home Screen**.
 
-**Saving on iPad:** tap a format. Files under 400 MB are saved straight to **Files → Downloads**. Files are named after the video's exact title. Larger files open in a new tab; save those with **Share → Save to Files**, or press and hold the format and choose **Download Linked File**.
+**Saving on iPad:** the Downloader has a **How to save to Files** button with an illustrated step-by-step guide. tap a format. Files under 400 MB are saved straight to **Files → Downloads**. Files are named after the video's exact title. Larger files open in a new tab; save those with **Share → Save to Files**, or press and hold the format and choose **Download Linked File**.
 
-**Limits:** YouTube serves video with sound only up to 360p; higher qualities are picture only. Links expire after about 6 hours. The free RapidAPI plan has a monthly quota, and the page shows how many lookups are left. Links are generated for Colombia (`COUNTRY` in `web/src/vortex/youtube.ts`).
+**Limits:** combining needs the picture, the sound and the result in memory, so files over about 450 MB (for example long 1080p videos) aren't offered for combining. Links expire after about 6 hours. The free RapidAPI plan has a monthly quota, and the page shows how many lookups are left. Links are generated for Colombia (`COUNTRY` in `web/src/vortex/youtube.ts`).
 
 ### Admin editor
 
-Open **Admin** (bottom of every page, or `#/admin`) to change texts, add or remove external games (with logos), choose who can open the site, and change the site name and color. A live preview shows changes as you type. **Publish** saves everything permanently as one commit to this repository (`web/content.json`, `config/allowed-emails.json`, and uploaded logos in `web/public/logos/`). GitHub then redeploys the site within about a minute, and the editor shows when it is live.
+Open **Admin** (bottom of every page, or `#/admin`). The editor works like Google Sites: the real pages are shown, you click any text to change it, and a side panel holds Pages (show or hide sections), Theme and Access. It has undo and redo and a Preview mode. Use it to change texts, add or remove external games (with logos), choose who can open the site, and change the site name and color. A live preview shows changes as you type. **Publish** saves everything permanently as one commit to this repository (`web/content.json`, `config/allowed-emails.json`, and uploaded logos in `web/public/logos/`). GitHub then redeploys the site within about a minute, and the editor shows when it is live.
 
 The editor needs a **fine-grained GitHub token** that only you have. Create it once: GitHub → Settings → Developer settings → Fine-grained tokens. Limit it to this repository, with **Contents: Read and write** and **Actions: Read-only**. Paste it into the editor; it is stored only in that browser. Visitors without the token can't change anything.
 
