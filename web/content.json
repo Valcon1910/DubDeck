@@ -34,7 +34,29 @@
     "subtitle": "External games",
     "intro": "Games from other websites. They open in a new tab.",
     "empty": "No games yet.",
-    "items": []
+    "items": [
+      {
+        "id": "7ffb98d0-577d-48b0-b358-220536046e3e",
+        "name": "Classroom Games Google Sites",
+        "url": "https://sites.google.com/view/drive-u-7-home/home?pli=1&authuser=0",
+        "logo": "",
+        "description": "A unblocked site with embedded games, no external links."
+      },
+      {
+        "id": "af78805b-7ae7-40ae-adab-1093d8d2a77f",
+        "name": "WatchDocumentaries Games",
+        "url": "https://watchdocumentaries.com/games/",
+        "logo": "",
+        "description": "Collection of games directly on the site secretly."
+      },
+      {
+        "id": "2088f75e-a1e9-436b-83a0-15f2bff214ca",
+        "name": "CalcSolver Games",
+        "url": "https://calcsolver.net",
+        "logo": "",
+        "description": "A discreet gaming platform for a variety of games accessed with Code Mode on with 0000. Does not affect search history."
+      }
+    ]
   },
   "downloader": {
     "title": "Downloader",
