@@ -145,7 +145,7 @@ export function buildPresets(info: StreamInfo): Preset[] {
 
   // Higher qualities: YouTube keeps picture and sound apart, so each is paired
   // with the best M4A audio and combined on this device. H.264 plays everywhere.
-  if (m4a) {
+  if (m4a && hdEnabled()) {
     const seen = new Set<string>(out.filter((p) => p.kind === "video").map((p) => p.label));
     const combos: Preset[] = [];
     for (const f of (info.adaptiveFormats ?? [])
@@ -167,6 +167,20 @@ export function buildPresets(info: StreamInfo): Preset[] {
     return [...[...combos, ...progressive].sort((a, b) => height(b) - height(a)), ...rest];
   }
   return out;
+}
+
+/**
+ * 720p/1080p (combined on the device) are hidden for now: YouTube refuses
+ * these links when the site's relay fetches them (HTTP 403), and the browser
+ * may not read them directly. Add ?hd to the address (e.g. #/downloader?hd) (or set
+ * localStorage "vortex.hd" = "1") to show them for testing.
+ */
+export function hdEnabled(): boolean {
+  try {
+    return /[?&]hd\b/.test(location.hash) || localStorage.getItem("vortex.hd") === "1";
+  } catch {
+    return false;
+  }
 }
 
 export function formatBytes(n: number | null): string {

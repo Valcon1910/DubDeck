@@ -187,7 +187,7 @@ export function Downloader() {
   }
 
   const groups: { kind: Preset["kind"]; title: string; note?: string }[] = [
-    { kind: "video", title: "Video with sound", note: "Qualities above 360p are combined from YouTube's separate picture and sound files on this device. It takes a few extra seconds." },
+    { kind: "video", title: "Video with sound", note: presets.some((x) => x.audio) ? "Qualities above 360p are combined from YouTube's separate picture and sound files on this device. It takes a few extra seconds." : undefined },
     { kind: "audio", title: "Audio only" },
   ];
 

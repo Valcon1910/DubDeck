@@ -54,7 +54,7 @@ test("look up a video and save the 360p file", async ({ page }) => {
 
   await expect(page.getByRole("link", { name: /Video 360p/ })).toBeVisible();
   await expect(page.getByRole("link", { name: /Audio · best for iPad/ })).toHaveCount(1); // dubbed track skipped
-  await expect(page.getByRole("link", { name: /Video 720p/ })).toHaveCount(1); // H.264 only
+  await expect(page.getByRole("link", { name: /Video 720p/ })).toHaveCount(0); // HD hidden for now
   await expect(page.getByText("42 lookups left this month.")).toBeVisible();
   await expect(page.getByText("cobalt")).toHaveCount(0);
 
@@ -148,7 +148,7 @@ test("admin: sign in, add a game and an email, publish one commit", async ({ pag
 test("accepts Google redirect links and shows the tutorial", async ({ page }) => {
   let requested = "";
   await page.route("**/yt/dl?**", (route) => { requested = route.request().url(); return route.fulfill({ json: info }); });
-  await page.goto("/#/downloader");
+  await page.goto("/#/downloader?hd");
   await page.getByLabel("YouTube link").fill("https://www.google.com/url?sa=t&source=web&rct=j&opi=89978449&url=https://www.youtube.com/watch%3Fv%3DofigWubFbr0&ved=2ahUKE&usg=AOvVaw2");
   await page.getByRole("button", { name: "Get formats" }).click();
   await expect(page.getByRole("heading", { name: info.title })).toBeVisible();
@@ -184,7 +184,7 @@ test("when the relay is blocked, the error explains why and offers 360p", async 
   await page.route("**/yt/dl?**", (route) => route.fulfill({ json: hd }));
   await page.route("**/gv/**", (route) => route.fulfill({ status: 403, body: "no" }));
   await page.route("https://redirector.googlevideo.com/**", (route) => route.abort());
-  await page.goto("/#/downloader");
+  await page.goto("/#/downloader?hd");
   await page.getByLabel("YouTube link").fill("dQw4w9WgXcQ");
   await page.getByRole("button", { name: "Get formats" }).click();
   await page.getByRole("link", { name: /Video 720p/ }).click();
