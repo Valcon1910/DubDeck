@@ -14,10 +14,12 @@ const CHUNK = 8 * 1024 * 1024;
 // out of the page's memory, so large videos don't run the tab out of memory.
 const PACK = 32 * 1024 * 1024;
 
+class BlockedError extends Error {}
+
 type SaveState = { key: string; progress: number | null; stage: string } | null;
 
 /** Download the whole file as a Blob, in ranged pieces when the server supports them. */
-async function download(url: string, total: number | null, type: string, onProgress: (p: number | null) => void): Promise<Blob> {
+async function download(url: string, total: number | null, type: string, onProgress: (p: number | null) => void, chunk = CHUNK): Promise<Blob> {
   const packed: Blob[] = [];
   let pending: Uint8Array[] = [];
   let pendingBytes = 0;
@@ -28,10 +30,18 @@ async function download(url: string, total: number | null, type: string, onProgr
   };
   for (;;) {
     const start = got;
-    const end = total ? Math.min(start + CHUNK, total) - 1 : start + CHUNK - 1;
-    const res = await fetch(url, { headers: { Range: `bytes=${start}-${end}` } });
+    const end = total ? Math.min(start + chunk, total) - 1 : start + chunk - 1;
+    let res: Response;
+    try {
+      res = await fetch(url, { headers: { Range: `bytes=${start}-${end}` } });
+    } catch {
+      throw new Error("blocked by the browser (no permission to read the file)");
+    }
     if (res.status === 416 && start > 0) break; // nothing left
-    if (!res.ok || !res.body) throw new Error(String(res.status));
+    if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}${res.redirected ? ` after a redirect to ${new URL(res.url).hostname}` : ""}`);
+    if (/text\/html|application\/json/.test(res.headers.get("content-type") ?? "")) {
+      throw new Error(`got a web page instead of the video (HTTP ${res.status}, ${res.headers.get("content-type")})`);
+    }
     const ranged = res.status === 206;
     if (!ranged && start > 0) throw new Error("range ignored");
     const fromRange = Number(res.headers.get("content-range")?.split("/")[1]);
@@ -68,6 +78,7 @@ export function Downloader() {
   const [notice, setNotice] = useState<string | null>(null);
   const abort = useRef<AbortController | null>(null);
   const [tutorial, setTutorial] = useState(false);
+  const [fallback, setFallback] = useState<Preset | null>(null);
 
   async function lookUp(e?: React.FormEvent) {
     e?.preventDefault();
@@ -109,11 +120,16 @@ export function Downloader() {
 
   /** Fetch one file: through the site's own address first, then straight from YouTube. */
   async function fetchFile(url: string, bytes: number | null, type: string, onProgress: (p: number | null) => void): Promise<Blob> {
-    for (const u of [relayUrl(url), url]) {
-      if (!u) continue;
-      try { return await download(u, bytes, type, onProgress); } catch { /* try the next way */ }
+    const reasons: string[] = [];
+    const relay = relayUrl(url);
+    const attempts: [string, string, number][] = [
+      ...(relay ? [["site relay", relay, CHUNK], ["site relay, small pieces", relay, 1024 * 1024]] as [string, string, number][] : []),
+      ["YouTube directly", url, CHUNK],
+    ];
+    for (const [label, u, size] of attempts) {
+      try { return await download(u, bytes, type, onProgress, size); } catch (e) { reasons.push(`${label}: ${(e as Error).message}`); }
     }
-    throw new Error("blocked");
+    throw new BlockedError(reasons.join(" · "));
   }
 
   function hand(file: Blob, name: string) {
@@ -130,7 +146,7 @@ export function Downloader() {
 
   async function save(p: Preset) {
     if (!info || saving) return;
-    setNotice(null); setError(null);
+    setNotice(null); setError(null); setFallback(null);
     const name = safeFilename(info.title, p.ext);
     if (p.audio) {
       // Picture + sound → one MP4 with sound, made on this device.
@@ -147,8 +163,9 @@ export function Downloader() {
         const out = await combine(video, audio, (x) => setSaving({ key: p.key, progress: 0.95 + x * 0.05, stage: "Combining" }));
         hand(out, name);
       } catch (e) {
-        setError((e as Error).message === "blocked"
-          ? "YouTube's server didn't allow this download from the site. Try “Video 360p” instead."
+        if (e instanceof BlockedError) setFallback(presets.find((x) => x.kind === "video" && !x.audio) ?? null);
+        setError(e instanceof BlockedError
+          ? `This quality couldn't be downloaded through the site. “Video 360p” and the audio still work. Details: ${e.message}`
           : step === "combine"
             ? "This device ran out of memory while combining such a large video. Close other tabs and apps and try again, or choose a lower quality."
             : "The download stopped. Check the connection and try again.");
@@ -198,7 +215,17 @@ export function Downloader() {
         </button>
       </form>
 
-      {error && <p className="vx-alert vx-alert-error" role="alert">{error}</p>}
+      {error && (
+        <div className="vx-alert vx-alert-error" role="alert">
+          <p style={{ margin: 0 }}>{error}</p>
+          {fallback && (
+            <button type="button" className="vx-btn vx-btn-primary vx-btn-sm" style={{ marginTop: 10 }}
+              onClick={() => { const f = fallback; setFallback(null); setError(null); void save(f); }}>
+              Download {fallback.label} instead
+            </button>
+          )}
+        </div>
+      )}
       {notice && <p className="vx-alert" role="status">{notice}</p>}
 
       {busy && <div className="vx-card vx-skeleton" aria-hidden="true" />}
