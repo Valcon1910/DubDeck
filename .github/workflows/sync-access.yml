@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: herenow-access
+  group: herenow-deploy
   cancel-in-progress: false
 
 jobs:

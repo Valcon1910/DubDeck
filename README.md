@@ -15,7 +15,7 @@
 2. **GitHub**: in the repository, open **Settings → Secrets and variables → Actions → New repository secret**, and add:
    - `RAPIDAPI_KEY`: your RapidAPI key
    - `HERENOW_API_KEY`: your here.now API key
-3. **Deploy**: open **Actions → Deploy Vortex Engine to here.now → Run workflow** (pushes to `main` also deploy). The workflow stores the RapidAPI key in your here.now account as the variable `RAPIDAPI_KEY`. here.now only sends it to the YTStream host, and it never reaches the browser. The log ends with `Live: https://<slug>.here.now/`. Later deploys find the site by its name ("Vortex Engine") and update it, so the address never changes (setting the repository variable `HERENOW_SLUG` pins it explicitly).
+3. **Deploy**: open **Actions → Deploy Vortex Engine to here.now → Run workflow** (pushes to `main` also deploy). The workflow stores the RapidAPI key in your here.now account as the variable `RAPIDAPI_KEY`. here.now only sends it to the YTStream host, and it never reaches the browser. The log ends with `Live: https://<slug>.here.now/`. The site address is saved in `config/site.json`, and every later deploy updates that same site, so the address never changes.
 4. **Use it**: open the address on the iPad, pass here.now's sign-in gate, and tap **Downloader**. Add it to your home screen with **Share → Add to Home Screen**.
 
 **Saving on iPad:** the Downloader has a **How to save to Files** button with an illustrated step-by-step guide. tap a format. Files under 400 MB are saved straight to **Files → Downloads**. Files are named after the video's exact title. Larger files open in a new tab; save those with **Share → Save to Files**, or press and hold the format and choose **Download Linked File**.
