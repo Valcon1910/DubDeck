@@ -26,26 +26,32 @@ export function preloadMerger(): void {
   void load().catch(() => undefined);
 }
 
-export async function combine(
-  video: Uint8Array, audio: Uint8Array, onProgress?: (p: number) => void,
-): Promise<Uint8Array> {
+/**
+ * The inputs are read straight from the Blobs (WORKERFS) instead of being
+ * copied into ffmpeg's memory, so only the result has to fit in memory.
+ */
+export async function combine(video: Blob, audio: Blob, onProgress?: (p: number) => void): Promise<Blob> {
   const ff = await load();
+  const { FFFSType } = await import("@ffmpeg/ffmpeg");
   const progress = ({ progress }: { progress: number }) => onProgress?.(Math.max(0, Math.min(1, progress)));
   ff.on("progress", progress);
+  const dir = `/in${Date.now()}`;
   try {
-    await ff.writeFile("video.mp4", video);
-    await ff.writeFile("audio.m4a", audio);
+    await ff.createDir(dir);
+    await ff.mount(FFFSType.WORKERFS, { blobs: [{ name: "video.mp4", data: video }, { name: "audio.m4a", data: audio }] }, dir);
     const code = await ff.exec([
-      "-i", "video.mp4", "-i", "audio.m4a",
+      "-i", `${dir}/video.mp4`, "-i", `${dir}/audio.m4a`,
       "-map", "0:v:0", "-map", "1:a:0", "-c", "copy", "-shortest",
-      "-movflags", "+faststart", "out.mp4",
+      "out.mp4",
     ]);
     if (code !== 0) throw new Error(`ffmpeg exited with ${code}`);
     const out = await ff.readFile("out.mp4");
     if (typeof out === "string" || out.length === 0) throw new Error("empty output");
-    return out;
+    return new Blob([out as BlobPart], { type: "video/mp4" });
   } finally {
     ff.off("progress", progress);
-    for (const f of ["video.mp4", "audio.m4a", "out.mp4"]) await ff.deleteFile(f).catch(() => undefined);
+    await ff.deleteFile("out.mp4").catch(() => undefined);
+    await ff.unmount(dir).catch(() => undefined);
+    await ff.deleteDir(dir).catch(() => undefined);
   }
 }

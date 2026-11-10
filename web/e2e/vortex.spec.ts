@@ -162,3 +162,16 @@ test("accepts Google redirect links and shows the tutorial", async ({ page }) =>
   await dialog.getByRole("button", { name: "Done" }).click();
   await expect(dialog).toHaveCount(0);
 });
+
+test("the Editor button shows only for the editors' emails", async ({ page }) => {
+  await page.route("**/.herenow/me", (route) => route.fulfill({ json: { email: "someone@else.com" } }));
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Vortex Engine" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Editor" })).toHaveCount(0);
+
+  await page.unroute("**/.herenow/me");
+  await page.route("**/.herenow/me", (route) => route.fulfill({ json: { email: "Vale.Conde.Arango@gmail.com" } }));
+  await page.reload();
+  await page.getByRole("link", { name: "Editor" }).click();
+  await expect(page.getByRole("heading", { name: "Sign in to edit" })).toBeVisible();
+});

@@ -3,19 +3,19 @@
 //
 //   HERENOW_API_KEY=hnk_... [HERENOW_SLUG=my-site-ab12] node scripts/herenow-publish.mjs web/dist
 //
-// Without HERENOW_SLUG a new Site is created and its slug is printed; save it as
-// the HERENOW_SLUG repository variable so later runs update the same Site.
+// Without HERENOW_SLUG it updates the existing Site named "Vortex Engine", so the
+// address never changes; a new Site is created only if there is none yet.
 // The job fails if finalize reports warnings about .herenow/proxy.json or
 // .herenow/data.json (here.now still publishes, but silently disables the routes).
 
 import { createHash } from "node:crypto";
 import { appendFileSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
+import { findSlug } from "./herenow-site.mjs";
 
 const API = (process.env.HERENOW_API ?? "https://here.now").replace(/\/$/, "");
 const CLIENT = process.env.HERENOW_CLIENT ?? "github-actions/dubdeck-deploy";
 const KEY = process.env.HERENOW_API_KEY;
-const SLUG = (process.env.HERENOW_SLUG ?? "").trim();
 const dir = process.argv[2];
 
 const TYPES = {
@@ -99,6 +99,7 @@ async function upload(u, file) {
   fail(`Uploading ${file.path} failed.`);
 }
 
+const SLUG = (await findSlug({ api: API, key: KEY, client: CLIENT })) ?? "";
 const files = walk(dir);
 if (!files.some((f) => f.path === "index.html")) fail(`${dir}/index.html not found. Did the build run?`);
 if (!files.some((f) => f.path === ".herenow/proxy.json") && process.env.DUBDECK_ALLOW_NO_PROXY !== "1") {
@@ -141,5 +142,5 @@ if (process.env.GITHUB_STEP_SUMMARY) {
 }
 if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `slug=${slug}\nsite_url=${fin.siteUrl}\n`);
 if (!SLUG) {
-  console.log(`::notice::New Site created. Save "${slug}" as the HERENOW_SLUG repository variable.`);
+  console.log(`::notice::New Site created: ${slug}. Later deploys find it by name and keep this address.`);
 }

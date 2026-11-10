@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
+import { isEditor, useVisitorEmail } from "./admins";
 import { ContentContext, normalize, PUBLISHED } from "./content";
 import { Downloader } from "./Downloader";
 import { GamesPage, HomePage } from "./pages";
@@ -18,6 +19,7 @@ const content = normalize(PUBLISHED);
 
 export function VortexApp() {
   const [route, setRoute] = useState<Route>(readRoute);
+  const editor = isEditor(useVisitorEmail());
 
   useEffect(() => {
     const on = () => { setRoute(readRoute()); window.scrollTo(0, 0); };
@@ -26,7 +28,7 @@ export function VortexApp() {
   }, []);
 
   useEffect(() => {
-    const page = { home: "", games: content.games.title, downloader: content.downloader.title, admin: "Admin" }[route];
+    const page = { home: "", games: content.games.title, downloader: content.downloader.title, admin: "Editor" }[route];
     document.title = page ? `${page} · ${content.site.name}` : content.site.name;
   }, [route]);
 
@@ -49,6 +51,9 @@ export function VortexApp() {
             {nav.filter(([, , show]) => show).map(([r, label]) => (
               <a key={r} href={r === "home" ? "#/" : `#/${r}`} aria-current={route === r ? "page" : undefined}>{label}</a>
             ))}
+            {(editor || route === "admin") && (
+              <a className="vx-editor-btn" href="#/admin" aria-current={route === "admin" ? "page" : undefined}>Editor</a>
+            )}
           </nav>
         </header>
 
@@ -61,9 +66,6 @@ export function VortexApp() {
           )}
         </main>
 
-        <footer className="vx-foot">
-          <a href="#/admin" aria-current={route === "admin" ? "page" : undefined}>Admin</a>
-        </footer>
       </div>
     </ContentContext.Provider>
   );
