@@ -8,10 +8,26 @@
     "subtitle": "Games, docs, slides and utilities in one place."
   },
   "sections": {
-    "games": { "title": "Games", "description": "Games from around the web.", "visible": true },
-    "docs": { "title": "Docs", "description": "Notes and documents.", "visible": true },
-    "slides": { "title": "Slides", "description": "Presentations.", "visible": true },
-    "downloader": { "title": "Downloader", "description": "Save YouTube videos and audio.", "visible": true }
+    "games": {
+      "title": "Games",
+      "description": "Unblocked games from around the web.",
+      "visible": true
+    },
+    "docs": {
+      "title": "Docs",
+      "description": "Notes and documents.",
+      "visible": true
+    },
+    "slides": {
+      "title": "Slides",
+      "description": "Presentations and the \"Free Slides\".",
+      "visible": true
+    },
+    "downloader": {
+      "title": "Downloader",
+      "description": "Save YouTube videos and audio.",
+      "visible": true
+    }
   },
   "games": {
     "title": "Games",
