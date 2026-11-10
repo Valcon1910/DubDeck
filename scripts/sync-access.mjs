@@ -8,11 +8,12 @@
 // It never sends invite emails (notify: false).
 
 import { appendFileSync, readFileSync } from "node:fs";
+import { findSlug } from "./herenow-site.mjs";
 
 const API = (process.env.HERENOW_API ?? "https://here.now").replace(/\/$/, "");
 const CLIENT = process.env.HERENOW_CLIENT ?? "github-actions/dubdeck-access";
 const KEY = process.env.HERENOW_API_KEY;
-const SLUG = (process.env.HERENOW_SLUG ?? "").trim();
+let SLUG = "";
 const FILE = process.argv.slice(2).find((a) => !a.startsWith("--")) ?? "config/allowed-emails.json";
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const DOMAIN = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
@@ -62,7 +63,8 @@ if (process.argv.includes("--check")) {
   process.exit(0);
 }
 if (!KEY) fail("HERENOW_API_KEY is not set.");
-if (!SLUG) fail("HERENOW_SLUG is not set (repository variable). Deploy the Site first.");
+SLUG = (await findSlug({ api: API, key: KEY, client: CLIENT })) ?? "";
+if (!SLUG) fail("No Vortex Engine Site found. Deploy the Site first.");
 
 const current = await call("GET");
 const have = {

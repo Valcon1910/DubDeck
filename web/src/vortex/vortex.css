@@ -331,3 +331,10 @@ strong.vx-editable, span.vx-editable { display: inline-block; }
 .vx-dialog { width: min(480px, 100%); gap: 12px; }
 .vx-dialog h2 { margin: 0; font-size: 20px; }
 .vx-gd-preview { display: flex; align-items: center; gap: 14px; }
+.vx-top nav a.vx-editor-btn { background: var(--vx-accent); color: #fff; font-weight: 600; margin-left: 4px; }
+.vx-top nav a.vx-editor-btn[aria-current="page"] { background: var(--vx-accent); color: #fff; box-shadow: 0 0 0 3px var(--vx-accent-soft); }
+@media (max-width: 560px) {
+  .vx-top { flex-wrap: wrap; row-gap: 6px; }
+  .vx-top nav { width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .vx-top nav a { padding: 7px 10px; font-size: 14px; white-space: nowrap; }
+}

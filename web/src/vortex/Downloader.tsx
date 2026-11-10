@@ -8,20 +8,24 @@ import {
   StreamError, type Preset, type StreamInfo,
 } from "./youtube";
 
-// Files above this are opened directly instead of being buffered in memory,
-// which an iPad can't do for very large videos.
-const BUFFER_LIMIT = 400 * 1024 * 1024;
-// Combining needs the picture, the sound and the result in memory at once.
-const COMBINE_LIMIT = 450 * 1024 * 1024;
 // Download in pieces so no single request through the site's proxy is too large.
 const CHUNK = 8 * 1024 * 1024;
+// Received data is packed into Blobs every 32 MB, which the browser can keep
+// out of the page's memory, so large videos don't run the tab out of memory.
+const PACK = 32 * 1024 * 1024;
 
 type SaveState = { key: string; progress: number | null; stage: string } | null;
 
-/** Download the whole file, in ranged pieces when the server supports them. */
-async function download(url: string, total: number | null, onProgress: (p: number | null) => void): Promise<Uint8Array[]> {
-  const chunks: Uint8Array[] = [];
+/** Download the whole file as a Blob, in ranged pieces when the server supports them. */
+async function download(url: string, total: number | null, type: string, onProgress: (p: number | null) => void): Promise<Blob> {
+  const packed: Blob[] = [];
+  let pending: Uint8Array[] = [];
+  let pendingBytes = 0;
   let got = 0;
+  const pack = () => {
+    if (pending.length) packed.push(new Blob(pending as BlobPart[]));
+    pending = []; pendingBytes = 0;
+  };
   for (;;) {
     const start = got;
     const end = total ? Math.min(start + CHUNK, total) - 1 : start + CHUNK - 1;
@@ -36,16 +40,19 @@ async function download(url: string, total: number | null, onProgress: (p: numbe
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
-      chunks.push(value);
+      pending.push(value);
+      pendingBytes += value.length;
       got += value.length;
+      if (pendingBytes >= PACK) pack();
       onProgress(total ? Math.min(got / total, 1) : null);
     }
     if (!ranged) break; // the whole file came at once
     if (got === start) break;
     if (total ? got >= total : got - start < end - start + 1) break;
   }
+  pack();
   if (!got) throw new Error("empty");
-  return chunks;
+  return new Blob(packed, { type });
 }
 
 export function Downloader() {
@@ -101,10 +108,10 @@ export function Downloader() {
   }
 
   /** Fetch one file: through the site's own address first, then straight from YouTube. */
-  async function fetchFile(url: string, bytes: number | null, onProgress: (p: number | null) => void): Promise<Uint8Array[]> {
+  async function fetchFile(url: string, bytes: number | null, type: string, onProgress: (p: number | null) => void): Promise<Blob> {
     for (const u of [relayUrl(url), url]) {
       if (!u) continue;
-      try { return await download(u, bytes, onProgress); } catch { /* try the next way */ }
+      try { return await download(u, bytes, type, onProgress); } catch { /* try the next way */ }
     }
     throw new Error("blocked");
   }
@@ -117,8 +124,8 @@ export function Downloader() {
     document.body.append(a);
     a.click();
     a.remove();
-    setTimeout(() => URL.revokeObjectURL(href), 120_000);
-    setNotice(`Saved as “${name}”. On iPad it's in the Files app → Downloads. Tap “How to save” for help.`);
+    setTimeout(() => URL.revokeObjectURL(href), 10 * 60_000);
+    setNotice(`Saved as “${name}”. On iPad it's in the Files app → Downloads. Tap “How to save to Files” for help.`);
   }
 
   async function save(p: Preset) {
@@ -127,37 +134,33 @@ export function Downloader() {
     const name = safeFilename(info.title, p.ext);
     if (p.audio) {
       // Picture + sound → one MP4 with sound, made on this device.
-      if (p.bytes && p.bytes > COMBINE_LIMIT) {
-        setError("That quality is too big to combine on this device. Choose a lower one.");
-        return;
-      }
       preloadMerger();
       const vBytes = (p.bytes ?? 0) - (p.audio.bytes ?? 0) || null;
       const share = p.bytes && p.audio.bytes ? (p.bytes - p.audio.bytes) / p.bytes : 0.9;
       setSaving({ key: p.key, progress: 0, stage: "Downloading video" });
+      let step = "download";
       try {
-        const video = await fetchFile(p.url, vBytes, (x) => setSaving({ key: p.key, progress: x === null ? null : x * share * 0.95, stage: "Downloading video" }));
-        const audio = await fetchFile(p.audio.url, p.audio.bytes, (x) => setSaving({ key: p.key, progress: x === null ? null : (share + x * (1 - share)) * 0.95, stage: "Downloading sound" }));
+        const video = await fetchFile(p.url, vBytes, "video/mp4", (x) => setSaving({ key: p.key, progress: x === null ? null : x * share * 0.95, stage: "Downloading video" }));
+        const audio = await fetchFile(p.audio.url, p.audio.bytes, "audio/mp4", (x) => setSaving({ key: p.key, progress: x === null ? null : (share + x * (1 - share)) * 0.95, stage: "Downloading sound" }));
+        step = "combine";
         setSaving({ key: p.key, progress: 0.95, stage: "Combining" });
-        const v = await new Blob(video as BlobPart[]).arrayBuffer();
-        const a = await new Blob(audio as BlobPart[]).arrayBuffer();
-        const out = await combine(new Uint8Array(v), new Uint8Array(a), (x) => setSaving({ key: p.key, progress: 0.95 + x * 0.05, stage: "Combining" }));
-        hand(new Blob([out as BlobPart], { type: "video/mp4" }), name);
+        const out = await combine(video, audio, (x) => setSaving({ key: p.key, progress: 0.95 + x * 0.05, stage: "Combining" }));
+        hand(out, name);
       } catch (e) {
         setError((e as Error).message === "blocked"
           ? "YouTube's server didn't allow this download from the site. Try “Video 360p” instead."
-          : "Combining the video and sound failed on this device. Try a lower quality.");
+          : step === "combine"
+            ? "This device ran out of memory while combining such a large video. Close other tabs and apps and try again, or choose a lower quality."
+            : "The download stopped. Check the connection and try again.");
       } finally {
         setSaving(null);
       }
       return;
     }
-    if (p.bytes && p.bytes > BUFFER_LIMIT) { openDirect(p); return; }
     setSaving({ key: p.key, progress: 0, stage: "Downloading" });
     try {
-      const chunks = await fetchFile(p.url, p.bytes, (progress) => setSaving({ key: p.key, progress, stage: "Downloading" }));
       const type = p.kind === "audio" ? (p.ext === "m4a" ? "audio/mp4" : "audio/webm") : "video/mp4";
-      hand(new Blob(chunks as BlobPart[], { type }), name);
+      hand(await fetchFile(p.url, p.bytes, type, (progress) => setSaving({ key: p.key, progress, stage: "Downloading" })), name);
     } catch {
       // The video host didn't allow a direct save (or the link expired): open it instead.
       openDirect(p);
