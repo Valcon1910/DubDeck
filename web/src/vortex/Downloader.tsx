@@ -4,7 +4,7 @@ import { combine, preloadMerger } from "./merge";
 import { Tutorial } from "./Tutorial";
 import { Editable, useEdit } from "./editable";
 import {
-  bestThumb, buildPresets, fetchInfo, formatBytes, formatDuration, parseVideoId, relayUrl, safeFilename,
+  bestThumb, buildPresets, fetchInfo, formatBytes, formatDuration, parseVideoId, prepareServer, relayUrl, safeFilename,
   StreamError, type Preset, type StreamInfo,
 } from "./youtube";
 
@@ -148,6 +148,19 @@ export function Downloader() {
     if (!info || saving) return;
     setNotice(null); setError(null); setFallback(null);
     const name = safeFilename(info.title, p.ext);
+    if (p.server) {
+      setSaving({ key: p.key, progress: 0, stage: "Preparing" });
+      try {
+        const url = await prepareServer(info.id, p.server, (x) => setSaving({ key: p.key, progress: x * 0.5, stage: "Preparing" }));
+        hand(await download(url, null, "video/mp4", (x) => setSaving({ key: p.key, progress: x === null ? null : 0.5 + x * 0.5, stage: "Downloading" })), name);
+      } catch (e) {
+        setFallback(presets.find((x) => x.kind === "video" && !x.audio && !x.server) ?? null);
+        setError(e instanceof StreamError ? e.message : "The HD download stopped. Check the connection and try again.");
+      } finally {
+        setSaving(null);
+      }
+      return;
+    }
     if (p.audio) {
       // Picture + sound → one MP4 with sound, made on this device.
       preloadMerger();

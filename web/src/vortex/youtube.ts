@@ -44,6 +44,8 @@ export interface Preset {
   bytes: number | null;
   /** Separate audio to combine with the video on this device (higher qualities). */
   audio?: { url: string; bytes: number | null };
+  /** Made into one MP4 with sound on the downloader's servers (format name, e.g. "720"). */
+  server?: string;
 }
 
 const ID_RE = /^[A-Za-z0-9_-]{11}$/;
@@ -143,6 +145,17 @@ export function buildPresets(info: StreamInfo): Preset[] {
     detail: `WebM (Opus) · ~${Math.round((opus.bitrate ?? 0) / 1000)} kbps · may not play in Apple apps`, ext: "webm", url: opus.url!, bytes: size(opus),
   });
 
+  // 720p/1080p with sound: joined on the YouTube Info & Download API's servers.
+  if (!hdEnabled()) {
+    const vids = out.filter((p) => p.kind === "video");
+    const rest = out.filter((p) => p.kind !== "video");
+    const server: Preset[] = ["1080", "720"].map((f) => ({
+      key: `s${f}`, kind: "video", label: `Video ${f}p`, detail: "MP4 with sound · prepared online, may take a minute",
+      ext: "mp4", url: `https://www.youtube.com/watch?v=${info.id}`, bytes: null, server: f,
+    }));
+    return [...server, ...vids, ...rest];
+  }
+
   // Higher qualities: YouTube keeps picture and sound apart, so each is paired
   // with the best M4A audio and combined on this device. H.264 plays everywhere.
   if (m4a && hdEnabled()) {
@@ -218,4 +231,25 @@ export function relayUrl(url: string): string | null {
 export function bestThumb(info: StreamInfo): string | undefined {
   const t = [...(info.thumbnail ?? [])].sort((a, b) => b.width - a.width);
   return (t.find((x) => x.width <= 720) ?? t[0])?.url ?? `https://i.ytimg.com/vi/${info.id}/hqdefault.jpg`;
+}
+
+/** Ask the server to make one MP4 with sound, wait until it's ready, return its link. */
+export async function prepareServer(id: string, format: string, onProgress: (p: number) => void, signal?: AbortSignal): Promise<string> {
+  const yt = encodeURIComponent(`https://www.youtube.com/watch?v=${id}`);
+  const res = await fetch(`/sn/ajax/download.php?format=${format}&url=${yt}`, { signal });
+  if (res.status === 429) throw new StreamError("The free monthly quota for HD is used up. Try again later, or pick 360p.");
+  if (res.status === 401 || res.status === 403) throw new StreamError("The HD downloader isn't connected: subscribe to YouTube Info & Download API on RapidAPI.");
+  const start = await res.json().catch(() => null) as { success?: boolean; progress_url?: string; message?: string } | null;
+  if (!res.ok || !start?.success || !start.progress_url) throw new StreamError(`The HD downloader refused this video${start?.message ? `: ${start.message}` : ""}.`);
+  const until = Date.now() + 10 * 60_000;
+  while (Date.now() < until) {
+    await new Promise((r) => setTimeout(r, 2500));
+    const p = await fetch(start.progress_url, { signal }).then((r) => r.json()).catch(() => null) as
+      { download_url?: string | null; progress?: number; success?: number; text?: string } | null;
+    if (!p) continue;
+    if (p.download_url && (p.progress ?? 0) >= 1000) return p.download_url;
+    if (p.text && /error|fail/i.test(p.text)) throw new StreamError(`The HD downloader couldn't make this video: ${p.text}`);
+    onProgress(Math.min(1, (p.progress ?? 0) / 1000));
+  }
+  throw new StreamError("Preparing the video took too long. Try again.");
 }
