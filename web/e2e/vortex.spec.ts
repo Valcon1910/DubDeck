@@ -54,7 +54,7 @@ test("look up a video and save the 360p file", async ({ page }) => {
 
   await expect(page.getByRole("link", { name: /Video 360p/ })).toBeVisible();
   await expect(page.getByRole("link", { name: /Audio · best for iPad/ })).toHaveCount(1); // dubbed track skipped
-  await expect(page.getByRole("link", { name: /Video 720p/ })).toHaveCount(0); // HD hidden for now
+  await expect(page.getByRole("link", { name: /Video 720p/ })).toHaveCount(1); // made on the server
   await expect(page.getByText("42 lookups left this month.")).toBeVisible();
   await expect(page.getByText("cobalt")).toHaveCount(0);
 
@@ -191,4 +191,33 @@ test("when the relay is blocked, the error explains why and offers 360p", async 
   const alert = page.getByRole("alert");
   await expect(alert).toContainText("site relay: HTTP 403");
   await expect(alert.getByRole("button", { name: "Download Video 360p instead" })).toBeVisible();
+});
+
+test("720p with sound is prepared on the server, then saved", async ({ page }) => {
+  await page.route("**/yt/dl?**", (route) => route.fulfill({ json: info }));
+  let start = "";
+  await page.route("**/sn/ajax/download.php?**", (route) => {
+    start = route.request().url();
+    return route.fulfill({ json: { success: true, progress_url: "https://p.savenow.to/api/progress?id=x" } });
+  });
+  let polls = 0;
+  await page.route((u) => u.hostname === "p.savenow.to", (route) => {
+    polls++;
+    return route.fulfill({ headers: { "access-control-allow-origin": "*" }, json: polls < 2
+      ? { progress: 400, success: 0, text: "Downloading", download_url: null }
+      : { progress: 1000, success: 1, text: "Finished", download_url: "https://leo3.savenow.to/api/v2/download/abc" } });
+  });
+  await page.route((u) => u.hostname === "leo3.savenow.to", (route) =>
+    route.fulfill({ status: 200, body: Buffer.alloc(4096, 1), headers: { "content-type": "video/mp4", "access-control-allow-origin": "*" } }));
+
+  await page.goto("/#/downloader");
+  await page.getByLabel("YouTube link").fill("dQw4w9WgXcQ");
+  await page.getByRole("button", { name: "Get formats" }).click();
+  const download = page.waitForEvent("download");
+  await page.getByRole("link", { name: /Video 720p/ }).click();
+  const file = await download;
+  expect(start).toContain("format=720");
+  expect(start).toContain(encodeURIComponent("https://www.youtube.com/watch?v=dQw4w9WgXcQ"));
+  expect(file.suggestedFilename()).toBe("Test_ video - title.mp4");
+  await expect(page.getByRole("status")).toContainText("Saved");
 });

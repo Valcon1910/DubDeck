@@ -24,7 +24,7 @@ function herenow(apiHost: string | null, isBuild: boolean): Plugin {
     "script-src 'self' 'wasm-unsafe-eval' blob:",
     "worker-src 'self' blob:",
     "style-src 'self' 'unsafe-inline'",
-    `connect-src 'self' ${yt} https://api.github.com${isBuild ? "" : " ws: http://localhost:* http://127.0.0.1:*"}`,
+    `connect-src 'self' ${yt} https://*.savenow.to https://api.github.com${isBuild ? "" : " ws: http://localhost:* http://127.0.0.1:*"}`,
     "img-src 'self' data: blob: https:",
     `media-src 'self' blob: ${yt}`,
     "font-src 'self'",

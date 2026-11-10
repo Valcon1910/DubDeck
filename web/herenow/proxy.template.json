@@ -13,6 +13,15 @@
       "upstream": "https://redirector.googlevideo.com",
       "method": "GET",
       "rateLimit": "3000/hour/ip"
+    },
+    "/sn/*": {
+      "upstream": "https://youtube-info-download-api.p.rapidapi.com",
+      "method": "GET",
+      "headers": {
+        "X-RapidAPI-Key": "${RAPIDAPI_KEY}",
+        "X-RapidAPI-Host": "youtube-info-download-api.p.rapidapi.com"
+      },
+      "rateLimit": "60/hour/ip"
     }
   }
 }
