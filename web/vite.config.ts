@@ -20,7 +20,9 @@ function herenow(apiHost: string | null, isBuild: boolean): Plugin {
   const yt = "https://*.googlevideo.com";
   const csp = [
     "default-src 'self'",
-    "script-src 'self'",
+    // ffmpeg (WebAssembly) combines video and sound on the device.
+    "script-src 'self' 'wasm-unsafe-eval' blob:",
+    "worker-src 'self' blob:",
     "style-src 'self' 'unsafe-inline'",
     `connect-src 'self' ${yt} https://api.github.com${isBuild ? "" : " ws: http://localhost:* http://127.0.0.1:*"}`,
     "img-src 'self' data: blob: https:",
@@ -32,6 +34,13 @@ function herenow(apiHost: string | null, isBuild: boolean): Plugin {
   ].join("; ");
   return {
     name: "vortex-herenow",
+    buildStart() {
+      // Serve the ffmpeg core from the site itself (not committed: it's copied from node_modules).
+      const from = path.resolve(__dirname, "node_modules/@ffmpeg/core/dist/esm");
+      const to = path.resolve(__dirname, "public/ffmpeg");
+      fs.mkdirSync(to, { recursive: true });
+      for (const f of ["ffmpeg-core.js", "ffmpeg-core.wasm"]) fs.copyFileSync(path.join(from, f), path.join(to, f));
+    },
     transformIndexHtml(html) {
       return html.replace("__CSP__", csp);
     },
@@ -72,6 +81,8 @@ export default defineConfig(({ command, mode }) => {
     plugins: [react(), herenow(apiHost, isBuild)],
     // The repository the admin editor saves to (set automatically in GitHub Actions).
     define: { __VORTEX_REPO__: JSON.stringify(env.GITHUB_REPOSITORY || "Valcon1910/DubDeck") },
+    optimizeDeps: { exclude: ["@ffmpeg/ffmpeg", "@ffmpeg/util"] },
+    worker: { format: "es" },
     build: { outDir: "dist", emptyOutDir: true, sourcemap: false, target: "es2022" },
     server: { port: 5173, proxy: ytProxy },
     preview: { port: 4173, proxy: ytProxy },

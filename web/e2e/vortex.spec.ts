@@ -109,15 +109,26 @@ test("admin: sign in, add a game and an email, publish one commit", async ({ pag
   await page.getByRole("button", { name: "Open editor" }).click();
   await expect(page.getByText("All changes saved")).toBeVisible();
 
-  await page.getByRole("tab", { name: "Games" }).click();
-  await page.getByRole("button", { name: "+ Add game" }).click();
-  await page.getByLabel("Name").fill("Krunker");
-  await page.getByLabel("Link", { exact: true }).fill("https://krunker.io");
+  // Edit the home title in place, like Google Sites.
+  const title = page.getByRole("textbox", { name: "Page title" });
+  await title.click();
+  await page.keyboard.press("End");
+  await page.keyboard.type(" Hub");
+  await expect(title).toHaveText("Vortex Engine Hub");
+
+  await page.getByRole("tab", { name: "Games" }).first().click();
+  await page.locator(".vx-game-add").click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Name").fill("Krunker");
+  await dialog.getByLabel("Link", { exact: true }).fill("krunker.io");
+  await dialog.getByRole("button", { name: "Add game" }).click();
+  await expect(page.getByText("krunker.io")).toBeVisible();
   await expect(page.getByText("Unsaved changes")).toBeVisible();
 
+  if (!(await page.getByRole("tab", { name: "Access" }).isVisible())) await page.getByRole("button", { name: "Panel" }).click();
   await page.getByRole("tab", { name: "Access" }).click();
   await page.getByLabel("Email to add").fill("Friend@Example.com");
-  await page.getByRole("button", { name: "Add" }).first().click();
+  await page.getByRole("button", { name: "Add", exact: true }).first().click();
   await expect(page.getByText("friend@example.com")).toBeVisible();
 
   await page.getByRole("button", { name: "Publish" }).click();
@@ -130,5 +141,24 @@ test("admin: sign in, add a game and an email, publish one commit", async ({ pag
   const content = files.find((f) => f.games);
   expect(content.games.items).toHaveLength(1);
   expect(content.games.items[0]).toMatchObject({ name: "Krunker", url: "https://krunker.io" });
+  expect(content.home.title).toBe("Vortex Engine Hub");
   expect(files.find((f) => f.emails).emails).toEqual(["friend@example.com", "me@school.edu.co"]);
+});
+
+test("accepts Google redirect links and shows the tutorial", async ({ page }) => {
+  let requested = "";
+  await page.route("**/yt/dl?**", (route) => { requested = route.request().url(); return route.fulfill({ json: info }); });
+  await page.goto("/#/downloader");
+  await page.getByLabel("YouTube link").fill("https://www.google.com/url?sa=t&source=web&rct=j&opi=89978449&url=https://www.youtube.com/watch%3Fv%3DofigWubFbr0&ved=2ahUKE&usg=AOvVaw2");
+  await page.getByRole("button", { name: "Get formats" }).click();
+  await expect(page.getByRole("heading", { name: info.title })).toBeVisible();
+  expect(requested).toContain("id=ofigWubFbr0");
+
+  await page.getByRole("button", { name: "How to save to Files" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("Paste the link");
+  for (let i = 0; i < 5; i++) await dialog.getByRole("button", { name: "Next" }).click();
+  await expect(dialog).toContainText("put it in Photos");
+  await dialog.getByRole("button", { name: "Done" }).click();
+  await expect(dialog).toHaveCount(0);
 });

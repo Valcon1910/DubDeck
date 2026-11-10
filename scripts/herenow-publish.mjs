@@ -33,6 +33,7 @@ const TYPES = {
   woff: "font/woff",
   txt: "text/plain; charset=utf-8",
   webmanifest: "application/manifest+json",
+  wasm: "application/wasm",
 };
 
 function fail(msg) {

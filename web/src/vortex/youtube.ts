@@ -32,7 +32,7 @@ export interface StreamInfo {
   adaptiveFormats?: StreamFormat[];
 }
 
-export type PresetKind = "video" | "audio" | "silent";
+export type PresetKind = "video" | "audio";
 
 export interface Preset {
   key: string;
@@ -42,12 +42,17 @@ export interface Preset {
   ext: string;
   url: string;
   bytes: number | null;
+  /** Separate audio to combine with the video on this device (higher qualities). */
+  audio?: { url: string; bytes: number | null };
 }
 
 const ID_RE = /^[A-Za-z0-9_-]{11}$/;
 
+/** Hosts whose links just forward to another address (Google search results, etc.). */
+const REDIRECTORS = /^(?:www\.)?(?:google\.[a-z.]+|l\.facebook\.com|lm\.facebook\.com|l\.instagram\.com|t\.co|out\.reddit\.com)$/;
+
 /** Extract the 11-character video ID from any common YouTube link (or a bare ID). */
-export function parseVideoId(input: string): string | null {
+export function parseVideoId(input: string, depth = 0): string | null {
   const text = input.trim();
   if (ID_RE.test(text)) return text;
   let url: URL;
@@ -55,6 +60,16 @@ export function parseVideoId(input: string): string | null {
     url = new URL(/^https?:\/\//i.test(text) ? text : `https://${text}`);
   } catch {
     return null;
+  }
+  // google.com/url?url=… or ?q=… (and similar forwarders): follow the real link inside.
+  if (depth < 3 && (REDIRECTORS.test(url.hostname) || url.pathname === "/url")) {
+    for (const key of ["url", "q", "u", "target"]) {
+      const inner = url.searchParams.get(key);
+      if (inner) {
+        const id = parseVideoId(inner, depth + 1);
+        if (id) return id;
+      }
+    }
   }
   const host = url.hostname.replace(/^(www|m|music)\./, "");
   let id: string | null = null;
@@ -128,18 +143,28 @@ export function buildPresets(info: StreamInfo): Preset[] {
     detail: `WebM (Opus) · ~${Math.round((opus.bitrate ?? 0) / 1000)} kbps · may not play in Apple apps`, ext: "webm", url: opus.url!, bytes: size(opus),
   });
 
-  // Picture-only streams: H.264 MP4 plays on every Apple device. One per quality label.
-  const seen = new Set<string>();
-  for (const f of (info.adaptiveFormats ?? [])
-    .filter((f) => f.url && !isAudio(f) && isH264(f))
-    .sort((a, b) => (b.height ?? 0) - (a.height ?? 0) || (b.fps ?? 0) - (a.fps ?? 0))) {
-    const q = f.qualityLabel ?? `${f.height}p`;
-    if (seen.has(q)) continue;
-    seen.add(q);
-    out.push({
-      key: `s${f.itag}`, kind: "silent", label: `Video ${q}`,
-      detail: "MP4 · picture only, no sound", ext: "mp4", url: f.url!, bytes: size(f),
-    });
+  // Higher qualities: YouTube keeps picture and sound apart, so each is paired
+  // with the best M4A audio and combined on this device. H.264 plays everywhere.
+  if (m4a) {
+    const seen = new Set<string>(out.filter((p) => p.kind === "video").map((p) => p.label));
+    const combos: Preset[] = [];
+    for (const f of (info.adaptiveFormats ?? [])
+      .filter((f) => f.url && !isAudio(f) && isH264(f))
+      .sort((a, b) => (b.height ?? 0) - (a.height ?? 0) || (b.fps ?? 0) - (a.fps ?? 0))) {
+      const label = `Video ${f.qualityLabel ?? `${f.height}p`}`;
+      if (seen.has(label)) continue;
+      seen.add(label);
+      const v = size(f), a = size(m4a);
+      combos.push({
+        key: `c${f.itag}`, kind: "video", label,
+        detail: "MP4 with sound · combined on this device", ext: "mp4", url: f.url!,
+        bytes: v && a ? v + a : null, audio: { url: m4a.url!, bytes: a },
+      });
+    }
+    const progressive = out.filter((p) => p.kind === "video");
+    const rest = out.filter((p) => p.kind !== "video");
+    const height = (p: Preset) => parseInt(p.label.replace(/\D+/, ""), 10) || 0;
+    return [...[...combos, ...progressive].sort((a, b) => height(b) - height(a)), ...rest];
   }
   return out;
 }
