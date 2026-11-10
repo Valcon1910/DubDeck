@@ -33,7 +33,7 @@ test("720p is combined with sound and named after the video", async ({ page }, i
       headers: { "content-type": "video/mp4", "content-range": `bytes ${a}-${end}/${body.length}` } });
   });
 
-  await page.goto("/#/downloader");
+  await page.goto("/#/downloader?hd");
   await page.getByLabel("YouTube link").fill("https://www.google.com/url?sa=t&source=web&rct=j&url=https://www.youtube.com/watch%3Fv%3DdQw4w9WgXcQ&ved=x");
   await page.getByRole("button", { name: "Get formats" }).click();
   const row = page.getByRole("link", { name: /Video 720p/ });
