@@ -64,7 +64,11 @@ if (process.argv.includes("--check")) {
 }
 if (!KEY) fail("HERENOW_API_KEY is not set.");
 SLUG = (await findSlug({ api: API, key: KEY, client: CLIENT })) ?? "";
-if (!SLUG) fail("No Vortex Engine Site found. Deploy the Site first.");
+if (!SLUG) {
+  // Nothing to update yet; the deploy workflow applies the list when it creates the Site.
+  console.log("::notice::No Vortex Engine Site yet; the next deploy applies the access list.");
+  process.exit(0);
+}
 
 const current = await call("GET");
 const have = {

@@ -11,7 +11,7 @@
 import { createHash } from "node:crypto";
 import { appendFileSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import { findSlug } from "./herenow-site.mjs";
+import { findSlug, saveSlug } from "./herenow-site.mjs";
 
 const API = (process.env.HERENOW_API ?? "https://here.now").replace(/\/$/, "");
 const CLIENT = process.env.HERENOW_CLIENT ?? "github-actions/dubdeck-deploy";
@@ -142,5 +142,6 @@ if (process.env.GITHUB_STEP_SUMMARY) {
 }
 if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `slug=${slug}\nsite_url=${fin.siteUrl}\n`);
 if (!SLUG) {
-  console.log(`::notice::New Site created: ${slug}. Later deploys find it by name and keep this address.`);
+  saveSlug(slug);
+  console.log(`::notice::New Site created: ${slug}. Saved to config/site.json so every later deploy keeps this address.`);
 }
