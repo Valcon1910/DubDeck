@@ -175,3 +175,20 @@ test("the Editor button shows only for the editors' emails", async ({ page }) =>
   await page.getByRole("link", { name: "Editor" }).click();
   await expect(page.getByRole("heading", { name: "Sign in to edit" })).toBeVisible();
 });
+
+test("when the relay is blocked, the error explains why and offers 360p", async ({ page }) => {
+  const hd = { ...info, adaptiveFormats: [
+    { itag: 136, url: "https://redirector.googlevideo.com/videoplayback?itag=136", mimeType: 'video/mp4; codecs="avc1.4D401F"', height: 720, qualityLabel: "720p", contentLength: "4096" },
+    ...info.adaptiveFormats.filter((f) => f.itag === 140),
+  ] };
+  await page.route("**/yt/dl?**", (route) => route.fulfill({ json: hd }));
+  await page.route("**/gv/**", (route) => route.fulfill({ status: 403, body: "no" }));
+  await page.route("https://redirector.googlevideo.com/**", (route) => route.abort());
+  await page.goto("/#/downloader");
+  await page.getByLabel("YouTube link").fill("dQw4w9WgXcQ");
+  await page.getByRole("button", { name: "Get formats" }).click();
+  await page.getByRole("link", { name: /Video 720p/ }).click();
+  const alert = page.getByRole("alert");
+  await expect(alert).toContainText("site relay: HTTP 403");
+  await expect(alert.getByRole("button", { name: "Download Video 360p instead" })).toBeVisible();
+});
