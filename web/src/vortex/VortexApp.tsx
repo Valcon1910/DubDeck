@@ -1,18 +1,20 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { ContentContext, normalize, PUBLISHED } from "./content";
 import { Downloader } from "./Downloader";
+import { GamesPage, HomePage } from "./pages";
 import "./vortex.css";
 
-type Route = "home" | "downloader";
+const Admin = lazy(() => import("./Admin").then((m) => ({ default: m.Admin })));
+
+type Route = "home" | "games" | "downloader" | "admin";
+const ROUTES: Route[] = ["games", "downloader", "admin"];
 
 function readRoute(): Route {
-  return location.hash.replace(/^#\/?/, "") === "downloader" ? "downloader" : "home";
+  const r = location.hash.replace(/^#\/?/, "").split(/[/?]/)[0] as Route;
+  return ROUTES.includes(r) ? r : "home";
 }
 
-const SECTIONS = [
-  { name: "Games", text: "Quick browser games.", soon: true },
-  { name: "Docs", text: "Notes and documents.", soon: true },
-  { name: "Slides", text: "Presentations.", soon: true },
-] as const;
+const content = normalize(PUBLISHED);
 
 export function VortexApp() {
   const [route, setRoute] = useState<Route>(readRoute);
@@ -24,47 +26,46 @@ export function VortexApp() {
   }, []);
 
   useEffect(() => {
-    document.title = route === "downloader" ? "Downloader · Vortex Engine" : "Vortex Engine";
+    const page = { home: "", games: content.games.title, downloader: content.downloader.title, admin: "Admin" }[route];
+    document.title = page ? `${page} · ${content.site.name}` : content.site.name;
   }, [route]);
 
-  return (
-    <div className="vx">
-      <header className="vx-top">
-        <a className="vx-brand" href="#/" aria-label="Vortex Engine home">
-          <VortexMark />
-          <span>Vortex <em>Engine</em></span>
-        </a>
-        <nav aria-label="Main">
-          <a href="#/" aria-current={route === "home" ? "page" : undefined}>Home</a>
-          <a href="#/downloader" aria-current={route === "downloader" ? "page" : undefined}>Downloader</a>
-        </nav>
-      </header>
+  const s = content.sections;
+  const nav: [Route, string, boolean][] = [
+    ["home", "Home", true],
+    ["games", s.games.title, s.games.visible],
+    ["downloader", s.downloader.title, s.downloader.visible],
+  ];
 
-      <main className="vx-main">
-        {route === "downloader" ? <Downloader /> : (
-          <section className="vx-page">
-            <header className="vx-page-head">
-              <h1>Vortex Engine</h1>
-              <p className="vx-muted">Games, docs, slides and utilities in one place.</p>
-            </header>
-            <div className="vx-grid">
-              <a className="vx-tile vx-tile-live" href="#/downloader">
-                <span className="vx-eyebrow">Utilities</span>
-                <strong>Downloader</strong>
-                <span className="vx-muted">Save YouTube videos and audio.</span>
-              </a>
-              {SECTIONS.map((s) => (
-                <div key={s.name} className="vx-tile" aria-disabled="true">
-                  <span className="vx-eyebrow">Coming soon</span>
-                  <strong>{s.name}</strong>
-                  <span className="vx-muted">{s.text}</span>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-      </main>
-    </div>
+  return (
+    <ContentContext.Provider value={content}>
+      <div className="vx" style={{ ["--vx-accent" as string]: content.site.accent }}>
+        <header className="vx-top">
+          <a className="vx-brand" href="#/" aria-label={`${content.site.name} home`}>
+            <VortexMark />
+            <span>{content.site.name}</span>
+          </a>
+          <nav aria-label="Main">
+            {nav.filter(([, , show]) => show).map(([r, label]) => (
+              <a key={r} href={r === "home" ? "#/" : `#/${r}`} aria-current={route === r ? "page" : undefined}>{label}</a>
+            ))}
+          </nav>
+        </header>
+
+        <main className={`vx-main ${route === "admin" ? "vx-main-wide" : ""}`}>
+          {route === "home" && <HomePage />}
+          {route === "games" && <GamesPage />}
+          {route === "downloader" && <Downloader />}
+          {route === "admin" && (
+            <Suspense fallback={<div className="vx-card vx-skeleton" aria-hidden="true" />}><Admin /></Suspense>
+          )}
+        </main>
+
+        <footer className="vx-foot">
+          <a href="#/admin" aria-current={route === "admin" ? "page" : undefined}>Admin</a>
+        </footer>
+      </div>
+    </ContentContext.Provider>
   );
 }
 

@@ -160,9 +160,20 @@ export function formatDuration(sec?: string): string {
   return `${h ? `${h}:` : ""}${mm}:${String(r).padStart(2, "0")}`;
 }
 
+/**
+ * The video's exact title as the file name. Only "/" and "\\" (which can't be in
+ * any file name) and invisible control characters are changed; the browser
+ * handles the rest (Safari keeps the title as is).
+ */
 export function safeFilename(title: string, ext: string): string {
-  const base = title.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 120) || "video";
+  const base = title.replace(/[\\/]/g, "-").replace(/[\u0000-\u001f\u007f]/g, "").trim().replace(/^\.+/, "").slice(0, 200) || "video";
   return `${base}.${ext}`;
+}
+
+const RELAY_HOST = "https://redirector.googlevideo.com/";
+/** The same file through the site's /gv proxy route (same origin), when possible. */
+export function relayUrl(url: string): string | null {
+  return url.startsWith(RELAY_HOST) ? `/gv/${url.slice(RELAY_HOST.length)}` : null;
 }
 
 export function bestThumb(info: StreamInfo): string | undefined {

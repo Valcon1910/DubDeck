@@ -22,8 +22,8 @@ function herenow(apiHost: string | null, isBuild: boolean): Plugin {
     "default-src 'self'",
     "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
-    `connect-src 'self' ${yt}${isBuild ? "" : " ws: http://localhost:* http://127.0.0.1:*"}`,
-    "img-src 'self' data: https:",
+    `connect-src 'self' ${yt} https://api.github.com${isBuild ? "" : " ws: http://localhost:* http://127.0.0.1:*"}`,
+    "img-src 'self' data: blob: https:",
     `media-src 'self' blob: ${yt}`,
     "font-src 'self'",
     "object-src 'none'",
@@ -60,6 +60,7 @@ export default defineConfig(({ command, mode }) => {
   // In dev, Vite plays the role of the here.now proxy: it adds the key server-side.
   // Set RAPIDAPI_KEY in web/.env.local (never commit it) to try real lookups locally.
   const ytProxy = {
+    "/gv": { target: "https://redirector.googlevideo.com", changeOrigin: true, rewrite: (p: string) => p.replace(/^\/gv/, "") },
     "/yt": {
       target: `https://${YT_HOST}`, changeOrigin: true,
       headers: { "X-RapidAPI-Key": env.RAPIDAPI_KEY || "", "X-RapidAPI-Host": YT_HOST },
@@ -69,6 +70,8 @@ export default defineConfig(({ command, mode }) => {
 
   return {
     plugins: [react(), herenow(apiHost, isBuild)],
+    // The repository the admin editor saves to (set automatically in GitHub Actions).
+    define: { __VORTEX_REPO__: JSON.stringify(env.GITHUB_REPOSITORY || "Valcon1910/DubDeck") },
     build: { outDir: "dist", emptyOutDir: true, sourcemap: false, target: "es2022" },
     server: { port: 5173, proxy: ytProxy },
     preview: { port: 4173, proxy: ytProxy },

@@ -1,16 +1,50 @@
 import { useRef, useState } from "react";
+import { useContent } from "./content";
 import {
-  bestThumb, buildPresets, fetchInfo, formatBytes, formatDuration, parseVideoId, safeFilename,
+  bestThumb, buildPresets, fetchInfo, formatBytes, formatDuration, parseVideoId, relayUrl, safeFilename,
   StreamError, type Preset, type StreamInfo,
 } from "./youtube";
 
 // Files above this are opened directly instead of being buffered in memory,
 // which an iPad can't do for very large videos.
 const BUFFER_LIMIT = 400 * 1024 * 1024;
+// Download in pieces so no single request through the site's proxy is too large.
+const CHUNK = 8 * 1024 * 1024;
 
 type SaveState = { key: string; progress: number | null } | null;
 
+/** Download the whole file, in ranged pieces when the server supports them. */
+async function download(url: string, total: number | null, onProgress: (p: number | null) => void): Promise<Uint8Array[]> {
+  const chunks: Uint8Array[] = [];
+  let got = 0;
+  for (;;) {
+    const start = got;
+    const end = total ? Math.min(start + CHUNK, total) - 1 : start + CHUNK - 1;
+    const res = await fetch(url, { headers: { Range: `bytes=${start}-${end}` } });
+    if (res.status === 416 && start > 0) break; // nothing left
+    if (!res.ok || !res.body) throw new Error(String(res.status));
+    const ranged = res.status === 206;
+    if (!ranged && start > 0) throw new Error("range ignored");
+    const fromRange = Number(res.headers.get("content-range")?.split("/")[1]);
+    if (!total) total = (ranged ? fromRange : Number(res.headers.get("content-length"))) || null;
+    const reader = res.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      got += value.length;
+      onProgress(total ? Math.min(got / total, 1) : null);
+    }
+    if (!ranged) break; // the whole file came at once
+    if (got === start) break;
+    if (total ? got >= total : got - start < end - start + 1) break;
+  }
+  if (!got) throw new Error("empty");
+  return chunks;
+}
+
 export function Downloader() {
+  const c = useContent().downloader;
   const [link, setLink] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -65,19 +99,17 @@ export function Downloader() {
     if (p.bytes && p.bytes > BUFFER_LIMIT) { openDirect(p); return; }
     setSaving({ key: p.key, progress: 0 });
     try {
-      const res = await fetch(p.url);
-      if (!res.ok || !res.body) throw new Error(String(res.status));
-      const total = p.bytes ?? Number(res.headers.get("content-length") ?? 0);
-      const reader = res.body.getReader();
-      const chunks: Uint8Array[] = [];
-      let got = 0;
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        got += value.length;
-        setSaving({ key: p.key, progress: total ? got / total : null });
+      // Through the site's own address first (lets the page name the file),
+      // then straight from YouTube's server.
+      let chunks: Uint8Array[] | null = null;
+      for (const url of [relayUrl(p.url), p.url]) {
+        if (!url) continue;
+        try {
+          chunks = await download(url, p.bytes, (progress) => setSaving({ key: p.key, progress }));
+          break;
+        } catch { /* try the next way */ }
       }
+      if (!chunks) throw new Error("no route");
       const type = p.kind === "audio" ? (p.ext === "m4a" ? "audio/mp4" : "audio/webm") : "video/mp4";
       const href = URL.createObjectURL(new Blob(chunks as BlobPart[], { type }));
       const a = document.createElement("a");
@@ -87,7 +119,7 @@ export function Downloader() {
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(href), 60_000);
-      setNotice("Saved. On iPad it's in the Files app → Downloads (or tap the download icon in Safari's toolbar).");
+      setNotice(`Saved as “${a.download}”. On iPad it's in the Files app → Downloads (or tap the download icon in Safari's toolbar).`);
     } catch {
       // The video host didn't allow a direct save (or the link expired): open it instead.
       openDirect(p);
@@ -106,8 +138,8 @@ export function Downloader() {
     <section className="vx-page">
       <header className="vx-page-head">
         <p className="vx-eyebrow">Utilities</p>
-        <h1>Downloader</h1>
-        <p className="vx-muted">Paste a YouTube link, choose a format and save it to this device.</p>
+        <h1>{c.title}</h1>
+        <p className="vx-muted">{c.intro}</p>
       </header>
 
       <form className="vx-search" onSubmit={lookUp}>
@@ -181,14 +213,13 @@ export function Downloader() {
           })}
 
           <p className="vx-muted vx-small">
-            Links work for about 6 hours. Need 1080p or 4K with sound?{" "}
-            <a href="https://cobalt.tools" target="_blank" rel="noopener noreferrer">Use cobalt.tools</a>.
-            {remaining !== null && <> · {remaining} lookups left this month.</>}
+            Links work for about 6 hours.
+            {remaining !== null && <> {remaining} lookups left this month.</>}
           </p>
         </article>
       )}
 
-      <p className="vx-fine">Only download videos you have the right to keep.</p>
+      {c.footer && <p className="vx-fine">{c.footer}</p>}
     </section>
   );
 }

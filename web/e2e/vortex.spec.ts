@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 // The Vortex Engine downloader against a mocked YTStream API and video host.
 // (The DubDeck backend tests live in e2e-dubdeck/ and need that backend running.)
 
-const VIDEO = "https://rr1---sn-test.googlevideo.com/videoplayback?itag=18";
+const VIDEO = "https://redirector.googlevideo.com/videoplayback?itag=18";
 const AUDIO = "https://rr1---sn-test.googlevideo.com/videoplayback?itag=140";
 const SILENT = "https://rr1---sn-test.googlevideo.com/videoplayback?itag=136";
 
@@ -27,12 +27,20 @@ test("look up a video and save the 360p file", async ({ page }) => {
     requested = route.request().url();
     return route.fulfill({ json: info, headers: { "x-ratelimit-requests-remaining": "42" } });
   });
-  await page.route("https://rr1---sn-test.googlevideo.com/**", (route) =>
-    route.fulfill({ body: Buffer.alloc(2048), headers: { "content-type": "video/mp4", "access-control-allow-origin": "*" } }));
+  // The 360p file arrives through the site's /gv relay in two ranged pieces.
+  const ranges: string[] = [];
+  await page.route("**/gv/videoplayback?**", (route) => {
+    const range = route.request().headers()["range"] ?? "";
+    ranges.push(range);
+    const [a, b] = range.replace("bytes=", "").split("-").map(Number);
+    const end = Math.min(b, 2047);
+    return route.fulfill({ status: 206, body: Buffer.alloc(end - a + 1, 7),
+      headers: { "content-type": "video/mp4", "content-range": `bytes ${a}-${end}/2048` } });
+  });
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Vortex Engine" })).toBeVisible();
-  await page.getByRole("link", { name: /Downloader/ }).first().click();
+  await page.getByRole("link", { name: /Save YouTube/ }).click();
 
   await page.getByLabel("YouTube link").fill("not a link");
   await page.getByRole("button", { name: "Get formats" }).click();
@@ -48,10 +56,14 @@ test("look up a video and save the 360p file", async ({ page }) => {
   await expect(page.getByRole("link", { name: /Audio · best for iPad/ })).toHaveCount(1); // dubbed track skipped
   await expect(page.getByRole("link", { name: /Video 720p/ })).toHaveCount(1); // H.264 only
   await expect(page.getByText("42 lookups left this month.")).toBeVisible();
+  await expect(page.getByText("cobalt")).toHaveCount(0);
 
   const download = page.waitForEvent("download");
   await page.getByRole("link", { name: /Video 360p/ }).click();
-  expect((await download).suggestedFilename()).toBe("Test video title.mp4");
+  const file = await download;
+  // Chromium turns ":" into "_"; Safari keeps it.
+  expect(file.suggestedFilename()).toBe("Test_ video - title.mp4");
+  expect(ranges[0]).toBe("bytes=0-2047");
   await expect(page.getByRole("status")).toContainText("Saved");
 });
 
@@ -61,4 +73,62 @@ test("shows a clear message when the API key is missing", async ({ page }) => {
   await page.getByLabel("YouTube link").fill("dQw4w9WgXcQ");
   await page.getByRole("button", { name: "Get formats" }).click();
   await expect(page.getByRole("alert")).toContainText("RapidAPI key");
+});
+
+test("games page starts empty with the External games subtitle", async ({ page }) => {
+  await page.goto("/#/games");
+  await expect(page.getByRole("heading", { name: "External games" })).toBeVisible();
+  await expect(page.getByText("No games yet.")).toBeVisible();
+});
+
+test("admin: sign in, add a game and an email, publish one commit", async ({ page }) => {
+  const repo = "https://api.github.com/repos/Valcon1910/DubDeck";
+  const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64");
+  const blobs: string[] = [];
+  let committed: { message: string; tree: string } | null = null;
+  let treeBody: { tree: { path: string }[] } | null = null;
+  await page.route("https://api.github.com/**", async (route) => {
+    const url = route.request().url();
+    const method = route.request().method();
+    if (url === repo) return route.fulfill({ json: { permissions: { push: true } } });
+    if (url.endsWith("/user")) return route.fulfill({ json: { login: "owner" } });
+    if (url.includes("/contents/web/content.json")) return route.fulfill({ json: { content: b64({ games: { items: [] } }) } });
+    if (url.includes("/contents/config/allowed-emails.json")) return route.fulfill({ json: { content: b64({ emails: ["me@school.edu.co"], domains: [] }) } });
+    if (url.endsWith("/git/ref/heads/main")) return route.fulfill({ json: { object: { sha: "base" } } });
+    if (url.endsWith("/git/commits/base")) return route.fulfill({ json: { tree: { sha: "basetree" } } });
+    if (url.endsWith("/git/blobs")) { blobs.push(route.request().postDataJSON().content); return route.fulfill({ json: { sha: `blob${blobs.length}` } }); }
+    if (url.endsWith("/git/trees")) { treeBody = route.request().postDataJSON(); return route.fulfill({ json: { sha: "newtree" } }); }
+    if (url.endsWith("/git/commits") && method === "POST") { committed = route.request().postDataJSON(); return route.fulfill({ json: { sha: "newcommit" } }); }
+    if (url.endsWith("/git/refs/heads/main")) return route.fulfill({ json: {} });
+    if (url.includes("/actions/runs")) return route.fulfill({ json: { workflow_runs: [{ name: "Deploy Vortex Engine to here.now", status: "completed", conclusion: "success" }] } });
+    return route.fulfill({ status: 404, json: {} });
+  });
+
+  await page.goto("/#/admin");
+  await page.getByLabel("GitHub token").fill("github_pat_test");
+  await page.getByRole("button", { name: "Open editor" }).click();
+  await expect(page.getByText("All changes saved")).toBeVisible();
+
+  await page.getByRole("tab", { name: "Games" }).click();
+  await page.getByRole("button", { name: "+ Add game" }).click();
+  await page.getByLabel("Name").fill("Krunker");
+  await page.getByLabel("Link", { exact: true }).fill("https://krunker.io");
+  await expect(page.getByText("Unsaved changes")).toBeVisible();
+
+  await page.getByRole("tab", { name: "Access" }).click();
+  await page.getByLabel("Email to add").fill("Friend@Example.com");
+  await page.getByRole("button", { name: "Add" }).first().click();
+  await expect(page.getByText("friend@example.com")).toBeVisible();
+
+  await page.getByRole("button", { name: "Publish" }).click();
+  await expect(page.getByText("Saved permanently")).toBeVisible();
+  await expect(page.getByText("Live now")).toBeVisible({ timeout: 20_000 });
+
+  expect(committed!.message).toContain("content and access list");
+  expect(treeBody!.tree.map((f) => f.path).sort()).toEqual(["config/allowed-emails.json", "web/content.json"]);
+  const files = blobs.map((b) => JSON.parse(Buffer.from(b, "base64").toString()));
+  const content = files.find((f) => f.games);
+  expect(content.games.items).toHaveLength(1);
+  expect(content.games.items[0]).toMatchObject({ name: "Krunker", url: "https://krunker.io" });
+  expect(files.find((f) => f.emails).emails).toEqual(["friend@example.com", "me@school.edu.co"]);
 });

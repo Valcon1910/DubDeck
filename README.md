@@ -18,9 +18,15 @@
 3. **Deploy**: open **Actions → Deploy Vortex Engine to here.now → Run workflow** (pushes to `main` also deploy). The workflow stores the RapidAPI key in your here.now account as the variable `RAPIDAPI_KEY`. here.now only sends it to the YTStream host, and it never reaches the browser. The log ends with `Live: https://<slug>.here.now/`. Save the slug as the repository **variable** `HERENOW_SLUG` so later runs update the same site.
 4. **Use it**: open the address on the iPad, pass here.now's sign-in gate, and tap **Downloader**. Add it to your home screen with **Share → Add to Home Screen**.
 
-**Saving on iPad:** tap a format. Files under 400 MB are saved straight to **Files → Downloads**. Larger files open in a new tab; save those with **Share → Save to Files**, or press and hold the format and choose **Download Linked File**.
+**Saving on iPad:** tap a format. Files under 400 MB are saved straight to **Files → Downloads**. Files are named after the video's exact title. Larger files open in a new tab; save those with **Share → Save to Files**, or press and hold the format and choose **Download Linked File**.
 
-**Limits:** YouTube serves video with sound only up to 360p; higher qualities are picture only. For 1080p or 4K with sound, the page links to cobalt.tools. Links expire after about 6 hours. The free RapidAPI plan has a monthly quota, and the page shows how many lookups are left. Links are generated for Colombia (`COUNTRY` in `web/src/vortex/youtube.ts`).
+**Limits:** YouTube serves video with sound only up to 360p; higher qualities are picture only. Links expire after about 6 hours. The free RapidAPI plan has a monthly quota, and the page shows how many lookups are left. Links are generated for Colombia (`COUNTRY` in `web/src/vortex/youtube.ts`).
+
+### Admin editor
+
+Open **Admin** (bottom of every page, or `#/admin`) to change texts, add or remove external games (with logos), choose who can open the site, and change the site name and color. A live preview shows changes as you type. **Publish** saves everything permanently as one commit to this repository (`web/content.json`, `config/allowed-emails.json`, and uploaded logos in `web/public/logos/`). GitHub then redeploys the site within about a minute, and the editor shows when it is live.
+
+The editor needs a **fine-grained GitHub token** that only you have. Create it once: GitHub → Settings → Developer settings → Fine-grained tokens. Limit it to this repository, with **Contents: Read and write** and **Actions: Read-only**. Paste it into the editor; it is stored only in that browser. Visitors without the token can't change anything.
 
 **Local development:** put `RAPIDAPI_KEY=...` in `web/.env.local` (git-ignored), then run `npm run dev` in `web/`. Vite adds the key just like the here.now route does. Tests: `npx playwright test` (the API and video host are mocked).
 

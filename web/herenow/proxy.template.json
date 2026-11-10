@@ -8,6 +8,11 @@
         "X-RapidAPI-Host": "ytstream-download-youtube-videos.p.rapidapi.com"
       },
       "rateLimit": "60/hour/ip"
+    },
+    "/gv/*": {
+      "upstream": "https://redirector.googlevideo.com",
+      "method": "GET",
+      "rateLimit": "3000/hour/ip"
     }
   }
 }

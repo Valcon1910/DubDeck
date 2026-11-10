@@ -1,0 +1,28 @@
+{
+  "site": {
+    "name": "Vortex Engine",
+    "accent": "#6c4ce0"
+  },
+  "home": {
+    "title": "Vortex Engine",
+    "subtitle": "Games, docs, slides and utilities in one place."
+  },
+  "sections": {
+    "games": { "title": "Games", "description": "Games from around the web.", "visible": true },
+    "docs": { "title": "Docs", "description": "Notes and documents.", "visible": true },
+    "slides": { "title": "Slides", "description": "Presentations.", "visible": true },
+    "downloader": { "title": "Downloader", "description": "Save YouTube videos and audio.", "visible": true }
+  },
+  "games": {
+    "title": "Games",
+    "subtitle": "External games",
+    "intro": "Games from other websites. They open in a new tab.",
+    "empty": "No games yet.",
+    "items": []
+  },
+  "downloader": {
+    "title": "Downloader",
+    "intro": "Paste a YouTube link, choose a format and save it to this device.",
+    "footer": "Only download videos you have the right to keep."
+  }
+}
