@@ -368,3 +368,5 @@ a.vx-roblox:hover { border-color: var(--vx-accent); transform: translateY(-1px);
 .vx-roblox-logo { flex: none; width: 96px; height: 96px; border-radius: 20px; object-fit: cover; background: var(--border); box-shadow: 0 3px 10px rgb(0 0 0 / 0.12); }
 .vx-roblox-edit { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end; }
 @media (max-width: 560px) { .vx-roblox-logo { width: 72px; height: 72px; } .vx-roblox-edit { grid-template-columns: 1fr; } }
+.vx-site-switch { border: 1px dashed var(--border); }
+.vx-site-switch:hover { border-color: var(--vx-accent); }

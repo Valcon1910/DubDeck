@@ -18,6 +18,12 @@ function readRoute(): Route {
 
 const content = normalize(PUBLISHED);
 
+/** The test site links to the published site, and the published site to the test site. */
+const IS_TEST = __VORTEX_BRANCH__ === "test";
+const OTHER_SITE = IS_TEST
+  ? { label: "Published site", url: __VORTEX_SITES__.real }
+  : { label: "Test site", url: __VORTEX_SITES__.test };
+
 export function VortexApp() {
   const [route, setRoute] = useState<Route>(readRoute);
   const editor = isEditor(useVisitorEmail());
@@ -52,6 +58,9 @@ export function VortexApp() {
             {nav.filter(([, , show]) => show).map(([r, label]) => (
               <a key={r} href={r === "home" ? "#/" : `#/${r}`} aria-current={route === r ? "page" : undefined}>{label}</a>
             ))}
+            {OTHER_SITE.url && (
+              <a className="vx-site-switch" href={OTHER_SITE.url}>{OTHER_SITE.label}</a>
+            )}
             {(editor || route === "admin") && (
               <a className="vx-editor-btn" href="#/admin" aria-current={route === "admin" ? "page" : undefined}>Editor</a>
             )}
