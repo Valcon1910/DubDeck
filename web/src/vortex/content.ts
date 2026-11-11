@@ -5,7 +5,7 @@ import published from "../../content.json";
 // web/content.json; the editor commits a new version to GitHub, which
 // redeploys the site, so edits are permanent.
 
-export interface SectionText { label: string; title: string; description: string; visible: boolean; url?: string }
+export interface SectionText { label: string; title: string; description: string; visible: boolean; url?: string; logo?: string }
 
 export interface Game {
   id: string;

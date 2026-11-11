@@ -360,4 +360,11 @@ strong.vx-editable, span.vx-editable { display: inline-block; }
 @keyframes vx-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .vx-spinner { animation-duration: 2.4s; } }
 .vx-games > li { min-width: 0; }
-.vx-tile-logo { width: 56px; height: 56px; border-radius: 14px; object-fit: cover; margin-bottom: 4px; box-shadow: 0 2px 8px rgb(0 0 0 / 0.12); }
+.vx-roblox { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; padding: 22px; color: var(--ink); text-decoration: none; transition: border-color 0.15s, transform 0.15s var(--ease); }
+a.vx-roblox:hover { border-color: var(--vx-accent); transform: translateY(-1px); }
+.vx-roblox-name { margin: 0; font-family: "Space Grotesk Variable", system-ui, sans-serif; font-size: 24px; letter-spacing: -0.4px; }
+.vx-roblox-row { display: flex; align-items: center; gap: 18px; }
+.vx-roblox-row p { margin: 0; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.vx-roblox-logo { flex: none; width: 96px; height: 96px; border-radius: 20px; object-fit: cover; background: var(--border); box-shadow: 0 3px 10px rgb(0 0 0 / 0.12); }
+.vx-roblox-edit { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end; }
+@media (max-width: 560px) { .vx-roblox-logo { width: 72px; height: 72px; } .vx-roblox-edit { grid-template-columns: 1fr; } }

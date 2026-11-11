@@ -6,10 +6,9 @@ export function HomePage() {
   const c = useContent();
   const edit = useEdit();
   const s = c.sections;
-  const tiles: { key: keyof Content["sections"]; href: string | null; logo?: string; external?: boolean }[] = [
+  const tiles: { key: keyof Content["sections"]; href: string | null; external?: boolean }[] = [
     { key: "downloader", href: "#/downloader" },
     { key: "games", href: "#/games" },
-    { key: "roblox", href: safeUrl(s.roblox.url ?? "") ?? null, logo: "/roblox-group.png", external: true },
     { key: "docs", href: null },
     { key: "slides", href: null },
   ];
@@ -23,7 +22,6 @@ export function HomePage() {
         {tiles.filter((t) => edit || s[t.key].visible).map((t) => {
           const body = (
             <>
-              {t.logo && <img className="vx-tile-logo" src={t.logo} alt="" width={56} height={56} />}
               <Editable as="span" className="vx-eyebrow" path={`sections.${t.key}.label`} placeholder="Label" />
               <Editable as="strong" path={`sections.${t.key}.title`} placeholder="Title" />
               <Editable as="span" className="vx-muted" path={`sections.${t.key}.description`} placeholder="Description" multiline />
@@ -41,8 +39,43 @@ export function HomePage() {
             : <div key={t.key} className={cls} aria-disabled={t.href ? undefined : "true"}>{body}</div>;
         })}
       </div>
+      {(edit || s.roblox.visible) && <RobloxCard />}
     </section>
   );
+}
+
+/** The Roblox group: name on top, then the logo with the description at its right. */
+function RobloxCard() {
+  const r = useContent().sections.roblox;
+  const edit = useEdit();
+  const href = safeUrl(r.url ?? "");
+  const logo = r.logo?.startsWith("/") ? r.logo : safeUrl(r.logo ?? "");
+  const inner = (
+    <>
+      <Editable as="span" className="vx-eyebrow" path="sections.roblox.label" placeholder="Label" />
+      <Editable as="h2" className="vx-roblox-name" path="sections.roblox.title" placeholder="Group name" />
+      <div className="vx-roblox-row">
+        {logo ? <img className="vx-roblox-logo" src={logo} alt="" width={96} height={96} referrerPolicy="no-referrer" /> : <span className="vx-roblox-logo" />}
+        <Editable as="p" className="vx-muted" path="sections.roblox.description" placeholder="Description" multiline />
+      </div>
+      {edit && (
+        <div className="vx-roblox-edit">
+          <label className="vx-field"><span>Group link</span>
+            <input type="text" value={r.url ?? ""} onChange={(e) => edit.setText("sections.roblox.url", e.target.value)} placeholder="https://www.roblox.com/communities/…" />
+          </label>
+          <label className="vx-field"><span>Logo image link</span>
+            <input type="text" value={r.logo ?? ""} onChange={(e) => edit.setText("sections.roblox.logo", e.target.value)} placeholder="https://…png" />
+          </label>
+          <button type="button" className="vx-chip-btn" aria-pressed={r.visible} onClick={() => edit.toggleSection("roblox")}>
+            {r.visible ? "Shown" : "Hidden"}
+          </button>
+        </div>
+      )}
+    </>
+  );
+  return href && !edit
+    ? <a className="vx-card vx-roblox" href={href} target="_blank" rel="noopener noreferrer">{inner}</a>
+    : <div className={`vx-card vx-roblox ${edit && !r.visible ? "vx-hidden-tile" : ""}`}>{inner}</div>;
 }
 
 export function GamesPage() {
