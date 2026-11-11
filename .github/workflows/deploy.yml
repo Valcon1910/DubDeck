@@ -41,7 +41,7 @@ jobs:
         if: env.RAPIDAPI_KEY != ''
         env:
           VALUE: ${{ secrets.RAPIDAPI_KEY }}
-        run: node scripts/herenow-variable.mjs RAPIDAPI_KEY ytstream-download-youtube-videos.p.rapidapi.com
+        run: node scripts/herenow-variable.mjs RAPIDAPI_KEY ytstream-download-youtube-videos.p.rapidapi.com youtube-info-download-api.p.rapidapi.com
 
       - name: Install
         working-directory: web
