@@ -245,10 +245,15 @@ export function Downloader() {
 
       <form className="vx-search" onSubmit={submit} inert={!!edit}>
         <label className="sr-only" htmlFor="vx-link">Search YouTube or paste a link</label>
+        <span className="vx-search-box">
         <input
-          id="vx-link" type="text" inputMode="url" autoComplete="off" autoCapitalize="off" spellCheck={false}
-          placeholder="Search YouTube or paste a link" value={link} onChange={(e) => setLink(e.target.value)}
-        />
+            id="vx-link" type="text" inputMode="url" autoComplete="off" autoCapitalize="off" spellCheck={false}
+            placeholder="Search YouTube or paste a link" value={link} onChange={(e) => setLink(e.target.value)}
+          />
+          {link && (
+            <button type="button" className="vx-clear" aria-label="Clear" onClick={() => { setLink(""); setSearch(null); setInfo(null); setPresets([]); setError(null); setNotice(null); document.getElementById("vx-link")?.focus(); }}>×</button>
+          )}
+        </span>
         <button type="button" className="vx-btn vx-btn-ghost" onClick={paste}>Paste</button>
         <button type="submit" className="vx-btn vx-btn-primary" disabled={busy || !link.trim()}>
           {busy ? "Loading…" : parseVideoId(link.trim()) || !link.trim() ? "Get formats" : "Search"}

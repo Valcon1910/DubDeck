@@ -268,7 +268,7 @@ test("account: name and picture at the top right, settings change the look for t
   await user.click();
   await expect(page.getByRole("menuitem", { name: "Log out" })).toBeVisible();
   await page.getByRole("menuitem", { name: "Settings" }).click();
-  await page.getByLabel("Name").fill("Majo");
+  await page.getByLabel("Full name", { exact: true }).fill("Majo");
   await page.getByRole("radio", { name: "Dark" }).click();
   await page.getByRole("button", { name: "Done" }).click();
   await expect(user).toContainText("Majo");
@@ -320,4 +320,40 @@ test("search YouTube, open a channel, and pick a video to download", async ({ pa
   await expect(page.getByRole("heading", { name: info.title })).toBeVisible();
   expect(looked).toContain("id=dQw4w9WgXcQ");
   await expect(page.getByLabel("Search YouTube or paste a link")).toHaveValue("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+});
+
+test("welcome with the full name, hide the side menu, clear search, not found page and log out", async ({ page }) => {
+  await page.route("**/.herenow/me", (route) => route.fulfill({ json: { email: "maria.lopez@school.edu.co" } }));
+  await page.route("https://gravatar.com/**", (route) => route.fulfill({ status: 404, body: "" }));
+  await page.goto("/");
+  await expect(page.getByRole("region", { name: "Welcome" })).toContainText("Maria!");
+  await page.getByLabel("Your full name").fill("María José López");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Welcome" })).toContainText("María José López!");
+  await expect(page.locator(".vx-user")).toContainText("María José López");
+
+  const hide = page.getByRole("button", { name: "Hide menu" });
+  if ((page.viewportSize()?.width ?? 0) > 860) {
+    await hide.click();
+    await expect(page.locator(".vx-side")).toBeHidden();
+    await page.getByRole("button", { name: "Show menu" }).click();
+    await expect(page.locator(".vx-side")).toBeVisible();
+  }
+
+  await page.goto("/#/downloader");
+  const box = page.getByLabel("Search YouTube or paste a link");
+  await box.fill("something");
+  await page.getByRole("button", { name: "Clear" }).click();
+  await expect(box).toHaveValue("");
+
+  await page.goto("/#/does-not-exist");
+  await expect(page.getByRole("heading", { name: "This page got lost in the vortex" })).toBeVisible();
+  await page.getByRole("link", { name: "Back to home" }).click();
+  await expect(page.getByRole("region", { name: "Welcome" })).toBeVisible();
+
+  await page.locator(".vx-user").click();
+  await page.getByRole("menuitem", { name: "Log out" }).click();
+  await expect(page.getByRole("heading", { name: "You're signed out" })).toBeVisible();
+  await page.getByRole("button", { name: "Sign in again" }).click();
+  await expect(page.getByRole("region", { name: "Welcome" })).toBeVisible();
 });
