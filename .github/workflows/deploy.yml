@@ -2,7 +2,12 @@ name: Publish test site to real site
 
 # Run by hand when the test site looks right: merges the test branch into
 # main and publishes main to the real site. Also runs on every push to main
-# (Editor saves on the real site) to publish them.
+# (Editor saves and access changes on the real site) to publish them.
+# Either way, main is then merged into test and the test site republished,
+# so the test site always has everything the published site has.
+# Text, games and people are merged item by item (scripts/merge-json.mjs):
+# nothing added on either site is lost, and when both sites changed the same
+# text, the published site's version wins.
 on:
   workflow_dispatch:
   push:
@@ -32,7 +37,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git merge --no-edit origin/test || { echo "::error::test and main changed the same lines. Ask Claude to resolve the conflict."; exit 1; }
+          git config merge.vortexjson.driver "node scripts/merge-json.mjs %O %A %B"
+          VORTEX_MAIN=ours git merge --no-edit origin/test || { echo "::error::test and main changed the same lines of code. Ask Claude to resolve the conflict."; exit 1; }
           git push origin HEAD:main
 
   publish:
@@ -41,4 +47,34 @@ jobs:
     uses: ./.github/workflows/publish.yml
     with:
       site: real
+    secrets: inherit
+
+  # Bring everything from main into test, so the test site never loses what
+  # was added on the published site.
+  sync-test:
+    needs: merge
+    if: always() && (needs.merge.result == 'success' || needs.merge.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: test
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Merge main into test
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config merge.vortexjson.driver "node scripts/merge-json.mjs %O %A %B"
+          git fetch origin main
+          VORTEX_MAIN=theirs git merge --no-edit origin/main || { echo "::error::main and test changed the same lines of code. Ask Claude to resolve the conflict."; exit 1; }
+          git push origin HEAD:test
+
+  publish-test:
+    needs: sync-test
+    uses: ./.github/workflows/publish.yml
+    with:
+      site: test
     secrets: inherit

@@ -31,8 +31,15 @@ jobs:
       - name: Validate file
         run: node scripts/sync-access.mjs --check
 
-      - name: Read current policy and write the file's contents
+      - name: Apply to the published site
         env:
           HERENOW_API_KEY: ${{ secrets.HERENOW_API_KEY }}
           HERENOW_SLUG: ${{ vars.HERENOW_SLUG }}
+        run: node scripts/sync-access.mjs
+
+      - name: Apply to the test site
+        env:
+          HERENOW_API_KEY: ${{ secrets.HERENOW_API_KEY }}
+          HERENOW_SITE_NAME: Vortex Engine (test)
+          HERENOW_SITE_FILE: config/site-test.json
         run: node scripts/sync-access.mjs
