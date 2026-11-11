@@ -238,7 +238,10 @@ export async function prepareServer(id: string, format: string, onProgress: (p: 
   const yt = encodeURIComponent(`https://www.youtube.com/watch?v=${id}`);
   const res = await fetch(`/sn/ajax/download.php?format=${format}&url=${yt}`, { signal });
   if (res.status === 429) throw new StreamError("The free monthly quota for HD is used up. Try again later, or pick 360p.");
-  if (res.status === 401 || res.status === 403) throw new StreamError("The HD downloader isn't connected: subscribe to YouTube Info & Download API on RapidAPI.");
+  if (res.status === 401 || res.status === 403) {
+    const why = (await res.text().catch(() => "")).slice(0, 200);
+    throw new StreamError(`The HD downloader isn't connected (HTTP ${res.status}${why ? `: ${why}` : ""}). Check that the RAPIDAPI_KEY secret is the key of the app subscribed to YouTube Info & Download API.`);
+  }
   const start = await res.json().catch(() => null) as { success?: boolean; progress_url?: string; message?: string } | null;
   if (!res.ok || !start?.success || !start.progress_url) throw new StreamError(`The HD downloader refused this video${start?.message ? `: ${start.message}` : ""}.`);
   const until = Date.now() + 10 * 60_000;
