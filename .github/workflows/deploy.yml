@@ -11,6 +11,7 @@ on:
       - "**/*.md"
       - config/site.json
       - config/site-test.json
+      - config/allowed-emails.json # applied by "Sync access allowlist"
 
 permissions:
   contents: write

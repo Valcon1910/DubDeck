@@ -370,3 +370,12 @@ a.vx-roblox:hover { border-color: var(--vx-accent); transform: translateY(-1px);
 @media (max-width: 560px) { .vx-roblox-logo { width: 72px; height: 72px; } .vx-roblox-edit { grid-template-columns: 1fr; } }
 .vx-site-switch { border: 1px dashed var(--border); }
 .vx-site-switch:hover { border-color: var(--vx-accent); }
+.vx-top nav a.vx-admin-btn { background: var(--ink); }
+.vx-card-title { margin: 0; font-size: 18px; }
+.vx-action-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.vx-runs { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.vx-runs li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.vx-runs a { color: var(--ink); font-weight: 600; }
+.vx-run-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+.vx-run-dot.ok { background: #16a34a; } .vx-run-dot.bad { background: #dc2626; }
+.vx-run-dot.running { background: #f59e0b; animation: vx-spin 1s linear infinite; border-radius: 2px; }

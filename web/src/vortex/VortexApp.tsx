@@ -6,10 +6,11 @@ import { GamesPage, HomePage } from "./pages";
 import "@fontsource-variable/space-grotesk";
 import "./vortex.css";
 
+const Manage = lazy(() => import("./Manage").then((m) => ({ default: m.Manage })));
 const Admin = lazy(() => import("./Admin").then((m) => ({ default: m.Admin })));
 
-type Route = "home" | "games" | "downloader" | "admin";
-const ROUTES: Route[] = ["games", "downloader", "admin"];
+type Route = "home" | "games" | "downloader" | "admin" | "manage";
+const ROUTES: Route[] = ["games", "downloader", "admin", "manage"];
 
 function readRoute(): Route {
   const r = location.hash.replace(/^#\/?/, "").split(/[/?]/)[0] as Route;
@@ -35,7 +36,7 @@ export function VortexApp() {
   }, []);
 
   useEffect(() => {
-    const page = { home: "", games: content.games.title, downloader: content.downloader.title, admin: "Editor" }[route];
+    const page = { home: "", games: content.games.title, downloader: content.downloader.title, admin: "Editor", manage: "Admin" }[route];
     document.title = page ? `${page} · ${content.site.name}` : content.site.name;
   }, [route]);
 
@@ -61,6 +62,9 @@ export function VortexApp() {
             {OTHER_SITE.url && (
               <a className="vx-site-switch" href={OTHER_SITE.url}>{OTHER_SITE.label}</a>
             )}
+            {(editor || route === "manage") && (
+              <a className="vx-editor-btn vx-admin-btn" href="#/manage" aria-current={route === "manage" ? "page" : undefined}>Admin</a>
+            )}
             {(editor || route === "admin") && (
               <a className="vx-editor-btn" href="#/admin" aria-current={route === "admin" ? "page" : undefined}>Editor</a>
             )}
@@ -71,6 +75,9 @@ export function VortexApp() {
           {route === "home" && <HomePage />}
           {route === "games" && <GamesPage />}
           {route === "downloader" && <Downloader />}
+          {route === "manage" && (
+            <Suspense fallback={<div className="vx-card vx-skeleton" aria-hidden="true" />}><Manage /></Suspense>
+          )}
           {route === "admin" && (
             <Suspense fallback={<div className="vx-card vx-skeleton" aria-hidden="true" />}><Admin /></Suspense>
           )}
