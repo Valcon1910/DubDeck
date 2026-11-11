@@ -6,7 +6,7 @@ import { Browse } from "./Browse";
 import { watchUrl, type VideoItem } from "./ytsearch";
 import { Editable, useEdit } from "./editable";
 import {
-  bestThumb, buildPresets, fetchInfo, formatBytes, formatDuration, parseVideoId, prepareServer, relayUrl, safeFilename,
+  bestThumb, buildPresets, fetchInfo, formatBytes, formatDuration, parseVideoId, isOpaqueRedirect, resolveRedirect, prepareServer, relayUrl, safeFilename,
   StreamError, type Preset, type StreamInfo,
 } from "./youtube";
 
@@ -82,6 +82,52 @@ export function Downloader() {
   const [tutorial, setTutorial] = useState(false);
   const [fallback, setFallback] = useState<Preset | null>(null);
   const [ready, setReady] = useState<{ label: string; url: string } | null>(null);
+  const [selecting, setSelecting] = useState(false);
+  const [chosen, setChosen] = useState<VideoItem[]>([]);
+  const [batchKind, setBatchKind] = useState<"best" | "360" | "audio">("best");
+  const [batch, setBatch] = useState<{ n: number; of: number; title: string; progress: number | null } | null>(null);
+  const select = {
+    on: selecting, ids: new Set(chosen.map((v) => v.id)), setOn: setSelecting,
+    toggle: (v: VideoItem) => setChosen((l) => l.some((x) => x.id === v.id) ? l.filter((x) => x.id !== v.id) : [...l, v]),
+  };
+
+  /** Download every chosen video, one after another (the browser asks to save each). */
+  async function downloadAll() {
+    if (batch || !chosen.length) return;
+    setError(null); setNotice(null);
+    const list = [...chosen];
+    const failed: string[] = [];
+    for (let i = 0; i < list.length; i++) {
+      const v = list[i];
+      setBatch({ n: i + 1, of: list.length, title: v.title, progress: 0 });
+      const prog = (x: number | null) => setBatch({ n: i + 1, of: list.length, title: v.title, progress: x });
+      try {
+        const { info } = await fetchInfo(v.id);
+        const ps = buildPresets(info);
+        const plain = ps.find((x) => x.kind === "video" && !x.audio && !x.server);
+        const best = ps.find((x) => x.kind === "video" && x.audio) ?? plain;
+        const p = batchKind === "audio" ? ps.find((x) => x.kind === "audio") : batchKind === "360" ? plain : best;
+        if (!p) throw new Error("no format");
+        const name = safeFilename(info.title, p.ext);
+        if (p.audio) {
+          preloadMerger();
+          const vid = await fetchFile(p.url, (p.bytes ?? 0) - (p.audio.bytes ?? 0) || null, "video/mp4", (x) => prog(x === null ? null : x * 0.8));
+          const aud = await fetchFile(p.audio.url, p.audio.bytes, "audio/mp4", (x) => prog(x === null ? null : 0.8 + x * 0.15));
+          hand(await combine(vid, aud, (x) => prog(0.95 + x * 0.05)), name);
+        } else {
+          const type = p.kind === "audio" ? (p.ext === "m4a" ? "audio/mp4" : "audio/webm") : "video/mp4";
+          hand(await fetchFile(p.url, p.bytes, type, prog), name);
+        }
+      } catch {
+        failed.push(v.title);
+      }
+    }
+    setBatch(null);
+    const ok = list.length - failed.length;
+    setChosen((l) => l.filter((v) => failed.includes(v.title)));
+    if (failed.length) setError(`${ok} of ${list.length} downloaded. These didn't work (still selected, try again or pick another quality): ${failed.join(" · ")}`);
+    else { setNotice(`All ${list.length} videos were saved. On iPad they're in Files → Downloads.`); setSelecting(false); }
+  }
 
   const [search, setSearch] = useState<{ q: string; n: number } | null>(null);
 
@@ -90,7 +136,7 @@ export function Downloader() {
     e?.preventDefault();
     const text = link.trim();
     if (!text) return;
-    if (parseVideoId(text)) { void lookUp(); return; }
+    if (parseVideoId(text) || isOpaqueRedirect(text)) { void lookUp(); return; }
     setError(null); setNotice(null);
     setSearch({ q: text, n: Date.now() });
   }
@@ -103,7 +149,14 @@ export function Downloader() {
 
   async function lookUp(direct?: string) {
     setError(null); setNotice(null);
-    const id = direct ?? parseVideoId(link);
+    let id = direct ?? parseVideoId(link);
+    if (!id && isOpaqueRedirect(link)) {
+      setBusy(true);
+      id = await resolveRedirect(link).catch(() => null);
+      setBusy(false);
+      if (id) setLink(watchUrl(id));
+      else { setError("Couldn't follow that Google link. Open it, then copy the YouTube address and paste it here."); return; }
+    }
     if (!id) { setError("That doesn't look like a YouTube link. Paste the whole link from the Share button."); return; }
     abort.current?.abort();
     const ctrl = new AbortController();
@@ -256,7 +309,7 @@ export function Downloader() {
         </span>
         <button type="button" className="vx-btn vx-btn-ghost" onClick={paste}>Paste</button>
         <button type="submit" className="vx-btn vx-btn-primary" disabled={busy || !link.trim()}>
-          {busy ? "Loading…" : parseVideoId(link.trim()) || !link.trim() ? "Get formats" : "Search"}
+          {busy ? "Loading…" : parseVideoId(link.trim()) || isOpaqueRedirect(link) || !link.trim() ? "Get formats" : "Search"}
         </button>
       </form>
 
@@ -341,7 +394,30 @@ export function Downloader() {
         </article>
       )}
 
-      <Browse request={search} onPick={pick} />
+      <Browse request={search} onPick={pick} select={select} />
+
+      {(chosen.length > 0 || batch) && (
+        <div className="vx-batch-bar" role="region" aria-label="Selected videos">
+          {batch ? (
+            <span className="vx-batch-status" role="status">
+              <span className="vx-spinner" aria-hidden="true" />
+              Downloading {batch.n} of {batch.of}{batch.progress != null ? ` · ${Math.round(batch.progress * 100)}%` : ""}: {batch.title}
+            </span>
+          ) : (
+            <>
+              <strong>{chosen.length} selected</strong>
+              <label className="sr-only" htmlFor="vx-batch-kind">Quality</label>
+              <select id="vx-batch-kind" value={batchKind} onChange={(e) => setBatchKind(e.target.value as typeof batchKind)}>
+                <option value="best">Best video</option>
+                <option value="360">Video 360p (faster)</option>
+                <option value="audio">Audio only</option>
+              </select>
+              <button type="button" className="vx-btn vx-btn-ghost vx-btn-sm" onClick={() => setChosen([])}>Clear</button>
+              <button type="button" className="vx-btn vx-btn-primary vx-btn-sm" onClick={() => void downloadAll()}>Download all</button>
+            </>
+          )}
+        </div>
+      )}
 
       {(c.footer || edit) && <Editable as="p" className="vx-fine" path="downloader.footer" placeholder="Footer note (optional)" />}
     </section>

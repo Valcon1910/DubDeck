@@ -112,7 +112,41 @@ async function call(path: string, params: Record<string, string>, signal?: Abort
   return obj(data);
 }
 
-const items = (d: Json) => (Array.isArray(d.contents) ? d.contents : Array.isArray(d.videos) ? d.videos : []).map(toItem).filter((x): x is Item => !!x);
+const shallow = (d: Json) => (Array.isArray(d.contents) ? d.contents : Array.isArray(d.videos) ? d.videos : []).map(toItem).filter((x): x is Item => !!x);
+
+/** Any object with a videoId anywhere in the answer (the API's layout differs per tab). */
+function deep(d: unknown, out: Item[] = [], seen = new Set<string>(), depth = 0): Item[] {
+  if (depth > 8 || !d || typeof d !== "object") return out;
+  if (Array.isArray(d)) { d.forEach((x) => deep(x, out, seen, depth + 1)); return out; }
+  const o = d as Json;
+  if (str(o.videoId) && str(o.title ?? obj(o.title).text)) {
+    const it = toItem({ type: "video", video: o });
+    if (it && !seen.has(it.id)) { seen.add(it.id); out.push(it); }
+    return out;
+  }
+  Object.values(o).forEach((x) => deep(x, out, seen, depth + 1));
+  return out;
+}
+
+const items = (d: Json) => { const a = shallow(d); return a.length ? a : deep(d); };
+
+/** YouTube's public feed of a channel's latest uploads (through the site's /yf route). */
+async function feedVideos(id: string, signal?: AbortSignal): Promise<VideoItem[]> {
+  const res = await fetch(`/yf/feeds/videos.xml?channel_id=${encodeURIComponent(id)}`, { signal }).catch(() => null);
+  if (!res?.ok) return [];
+  const xml = new DOMParser().parseFromString(await res.text(), "application/xml");
+  const author = xml.querySelector("feed > title")?.textContent ?? undefined;
+  return [...xml.getElementsByTagName("entry")].map((e) => {
+    const vid = e.getElementsByTagName("yt:videoId")[0]?.textContent ?? "";
+    const views = e.getElementsByTagName("media:statistics")[0]?.getAttribute("views");
+    const when = e.getElementsByTagName("published")[0]?.textContent;
+    return {
+      kind: "video" as const, id: vid, title: e.getElementsByTagName("title")[0]?.textContent ?? "Untitled video",
+      thumb: `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`, channelId: id, channelTitle: author,
+      views: views ? compact(views) : undefined, published: when ? new Date(when).toLocaleDateString() : undefined,
+    };
+  }).filter((v) => v.id);
+}
 
 export async function searchVideos(q: string, signal?: AbortSignal): Promise<{ items: Item[]; cursor?: string }> {
   const d = await call("search", { q }, signal);
@@ -134,8 +168,20 @@ export async function channelInfo(id: string, signal?: AbortSignal): Promise<Cha
 }
 
 export async function channelVideos(id: string, filter: ChannelTab, cursor?: string, signal?: AbortSignal): Promise<{ items: VideoItem[]; cursor?: string }> {
+  const vids = (d: Json) => items(d).filter((x): x is VideoItem => x.kind === "video");
   const d = await call("channel/videos", { id, filter, ...(cursor ? { cursor } : {}) }, signal);
-  return { items: items(d).filter((x): x is VideoItem => x.kind === "video"), cursor: str(d.cursor) };
+  let list = vids(d);
+  if (list.length || cursor) return { items: list, cursor: str(d.cursor) };
+  // Some channels come back empty for a filter: ask again without it, then use the public feed.
+  if (filter === "videos_latest") {
+    const plain = await call("channel/videos", { id }, signal).catch(() => null);
+    list = plain ? vids(plain) : [];
+    if (list.length) return { items: list, cursor: str(plain!.cursor) };
+    return { items: await feedVideos(id, signal) };
+  }
+  if (filter !== "streams_latest") return { items: [] };
+  const live = await call("channel/videos", { id, filter: "live_now" }, signal).catch(() => null);
+  return { items: live ? vids(live) : [] };
 }
 
 export const watchUrl = (id: string) => `https://www.youtube.com/watch?v=${id}`;

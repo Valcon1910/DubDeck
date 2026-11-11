@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import {
   channelInfo, channelVideos, SearchError, searchVideos,
   type ChannelInfo, type ChannelTab, type Item, type VideoItem,
@@ -8,18 +8,33 @@ type View =
   | { kind: "search"; q: string }
   | { kind: "channel"; id: string; title?: string };
 
+export interface Selection { on: boolean; ids: Set<string>; toggle: (v: VideoItem) => void; setOn: (on: boolean) => void }
+
 /** Search results and channel pages. Picking a video hands its id to the downloader. */
-export function Browse({ request, onPick }: { request: { q: string; n: number } | null; onPick: (v: VideoItem) => void }) {
+export function Browse({ request, onPick: pickOne, select }: { request: { q: string; n: number } | null; onPick: (v: VideoItem) => void; select: Selection }) {
+  const onPick = select.on ? select.toggle : pickOne;
   const [stack, setStack] = useState<View[]>([]);
   useEffect(() => { setStack(request ? [{ kind: "search", q: request.q }] : []); }, [request]);
   const view = stack[stack.length - 1];
   if (!view) return null;
   const back = stack.length > 1 ? () => setStack((s) => s.slice(0, -1)) : undefined;
   const openChannel = (id: string, title?: string) => setStack((s) => [...s, { kind: "channel", id, title }]);
-  return view.kind === "search"
-    ? <SearchResults key={view.q} q={view.q} onPick={onPick} onChannel={openChannel} />
-    : <ChannelPage key={view.id} id={view.id} onBack={back} onPick={onPick} />;
+  return (
+    <Sel.Provider value={select}>
+      <div className="vx-select-row">
+        <button type="button" className={`vx-btn vx-btn-sm ${select.on ? "vx-btn-primary" : "vx-btn-ghost"}`} aria-pressed={select.on} onClick={() => select.setOn(!select.on)}>
+          {select.on ? "Done selecting" : "Select videos"}
+        </button>
+        {select.on && <span className="vx-muted vx-small">Tap videos to add them, then press Download all.</span>}
+      </div>
+      {view.kind === "search"
+        ? <SearchResults key={view.q} q={view.q} onPick={onPick} onChannel={openChannel} />
+        : <ChannelPage key={view.id} id={view.id} onBack={back} onPick={onPick} />}
+    </Sel.Provider>
+  );
 }
+
+const Sel = createContext<Selection | null>(null);
 
 function useLoad<T>(load: (signal: AbortSignal) => Promise<T>, deps: unknown[]) {
   const [data, setData] = useState<T | null>(null);
@@ -133,11 +148,15 @@ function ChannelPage({ id, onBack, onPick }: { id: string; onBack?: () => void; 
 }
 
 function VideoCard({ v, onPick, onChannel }: { v: VideoItem; onPick: (v: VideoItem) => void; onChannel?: (id: string, title?: string) => void }) {
+  const sel = useContext(Sel);
+  const picked = !!sel?.ids.has(v.id);
   return (
-    <article className="vx-vcard">
-      <button type="button" className="vx-vthumb" onClick={() => onPick(v)} aria-label={`Download ${v.title}`}>
+    <article className={`vx-vcard ${picked ? "vx-picked" : ""}`}>
+      <button type="button" className="vx-vthumb" onClick={() => onPick(v)}
+        aria-label={sel?.on ? `Select ${v.title}` : `Download ${v.title}`} aria-pressed={sel?.on ? picked : undefined}>
         <img src={v.thumb} alt="" loading="lazy" referrerPolicy="no-referrer" />
         {v.duration && <span className="vx-vdur">{v.duration}</span>}
+        {sel?.on && <span className="vx-vcheck" aria-hidden="true">{picked ? "✓" : ""}</span>}
       </button>
       <div className="vx-vmeta">
         <button type="button" className="vx-vtitle" onClick={() => onPick(v)}>{v.title}</button>

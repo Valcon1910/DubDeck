@@ -23,6 +23,16 @@
       },
       "rateLimit": "60/hour/ip"
     },
+    "/yf/*": {
+      "upstream": "https://www.youtube.com",
+      "method": "GET",
+      "rateLimit": "300/hour/ip"
+    },
+    "/gg/*": {
+      "upstream": "https://www.google.com",
+      "method": "GET",
+      "rateLimit": "120/hour/ip"
+    },
     "/gh/*": {
       "upstream": "https://api.github.com",
       "headers": {
