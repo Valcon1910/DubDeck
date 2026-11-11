@@ -4,8 +4,8 @@ import { nameFromEmail, squareAvatar, type Prefs, type TextSize, type ThemePref 
 const ACCENTS = ["#6c4ce0", "#2563eb", "#0891b2", "#059669", "#d97706", "#e4572e", "#db2777", "#111827"];
 
 /** Profile and appearance, for this person only (saved on this device). */
-export function Settings({ prefs, update, email, siteAccent, onClose }: {
-  prefs: Prefs; update: (p: Partial<Prefs>) => void; email: string | null; siteAccent: string; onClose: () => void;
+export function Settings({ prefs, update, email, gravatar, siteAccent, onClose }: {
+  prefs: Prefs; update: (p: Partial<Prefs>) => void; email: string | null; gravatar: string | null; siteAccent: string; onClose: () => void;
 }) {
   const file = useRef<HTMLInputElement>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -34,16 +34,17 @@ export function Settings({ prefs, update, email, siteAccent, onClose }: {
         <section className="vx-set-group">
           <h3>Profile</h3>
           <div className="vx-set-profile">
-            <Avatar src={prefs.avatar} name={name} size={72} />
+            <Avatar src={prefs.avatar || gravatar || ""} name={name} size={72} />
             <div className="vx-action-row">
               <button type="button" className="vx-btn vx-btn-ghost vx-btn-sm" onClick={() => file.current?.click()}>Change picture</button>
-              {prefs.avatar && <button type="button" className="vx-btn vx-btn-ghost vx-btn-sm" onClick={() => update({ avatar: "" })}>Remove</button>}
+              {prefs.avatar && <button type="button" className="vx-btn vx-btn-ghost vx-btn-sm" onClick={() => update({ avatar: "" })}>{gravatar ? "Use my account picture" : "Remove"}</button>}
               <input ref={file} type="file" accept="image/*" hidden onChange={(e) => { void pick(e.target.files?.[0]); e.target.value = ""; }} />
             </div>
           </div>
+          {!prefs.avatar && <p className="vx-muted vx-small">{gravatar ? "Showing the picture linked to your email (Gravatar)." : "No picture is linked to your email yet; your initials are shown."}</p>}
           {err && <p className="vx-alert vx-alert-error" role="alert">{err}</p>}
           <label className="vx-field">
-            <span>Name</span>
+            <span>Full name</span>
             <input type="text" maxLength={40} value={prefs.name} placeholder={nameFromEmail(email)} onChange={(e) => update({ name: e.target.value })} />
           </label>
           <p className="vx-muted vx-small">Signed in as {email ?? "—"}</p>
@@ -104,8 +105,10 @@ export function Avatar({ src, name, size = 34 }: { src: string; name: string; si
   );
 }
 
-export type IconName = "home" | "games" | "download" | "flask" | "shield" | "pen" | "menu" | "gear" | "logout";
+export type IconName = "chevron-left" | "chevron-right" | "home" | "games" | "download" | "flask" | "shield" | "pen" | "menu" | "gear" | "logout";
 const PATHS: Record<IconName, string> = {
+  "chevron-left": "M15 5l-7 7 7 7",
+  "chevron-right": "M9 5l7 7-7 7",
   home: "M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",
   games: "M7 9v4M5 11h4M15.5 10.5h.01M17.5 12.5h.01M6.5 6h11A4.5 4.5 0 0 1 22 10.5v3a3.5 3.5 0 0 1-6.3 2.1L15 15H9l-.7.6A3.5 3.5 0 0 1 2 13.5v-3A4.5 4.5 0 0 1 6.5 6z",
   download: "M12 3v12m0 0-4.5-4.5M12 15l4.5-4.5M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2",

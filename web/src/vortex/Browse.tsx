@@ -11,7 +11,7 @@ type View =
 /** Search results and channel pages. Picking a video hands its id to the downloader. */
 export function Browse({ request, onPick }: { request: { q: string; n: number } | null; onPick: (v: VideoItem) => void }) {
   const [stack, setStack] = useState<View[]>([]);
-  useEffect(() => { if (request) setStack([{ kind: "search", q: request.q }]); }, [request]);
+  useEffect(() => { setStack(request ? [{ kind: "search", q: request.q }] : []); }, [request]);
   const view = stack[stack.length - 1];
   if (!view) return null;
   const back = stack.length > 1 ? () => setStack((s) => s.slice(0, -1)) : undefined;

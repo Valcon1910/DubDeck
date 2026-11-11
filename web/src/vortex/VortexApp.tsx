@@ -1,22 +1,24 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { isEditor, useVisitorEmail } from "./admins";
-import { logout, nameFromEmail, useApplyAppearance, usePrefs } from "./account";
+import { isSignedOut, logout, nameFromEmail, signBackIn, useApplyAppearance, useGravatar, usePrefs } from "./account";
 import { Avatar, Icon, type IconName, Settings } from "./Settings";
 import { ContentContext, normalize, PUBLISHED } from "./content";
 import { Downloader } from "./Downloader";
-import { GamesPage, HomePage } from "./pages";
+import { GamesPage, HomePage, NotFound, SignedOut } from "./pages";
 import "@fontsource-variable/space-grotesk";
 import "./vortex.css";
 
 const Manage = lazy(() => import("./Manage").then((m) => ({ default: m.Manage })));
 const Admin = lazy(() => import("./Admin").then((m) => ({ default: m.Admin })));
 
-type Route = "home" | "games" | "downloader" | "admin" | "manage";
+type Route = "home" | "games" | "downloader" | "admin" | "manage" | "notfound";
 const ROUTES: Route[] = ["games", "downloader", "admin", "manage"];
 
 function readRoute(): Route {
   const r = location.hash.replace(/^#\/?/, "").split(/[/?]/)[0] as Route;
-  return ROUTES.includes(r) ? r : "home";
+  if (!/^\/(index\.html)?$/.test(location.pathname)) return "notfound"; // e.g. /something-wrong
+  if (!r || r === "home") return "home";
+  return ROUTES.includes(r) ? r : "notfound";
 }
 
 const content = normalize(PUBLISHED);
@@ -36,6 +38,12 @@ export function VortexApp() {
   const [menu, setMenu] = useState(false);
   const [settings, setSettings] = useState(false);
   const [drawer, setDrawer] = useState(false);
+  const gravatar = useGravatar(email);
+  const [sideHidden, setSideHidden] = useState(() => { try { return localStorage.getItem("vortex.sideHidden") === "1"; } catch { return false; } });
+  const toggleSide = (hide: boolean) => {
+    setSideHidden(hide);
+    try { localStorage.setItem("vortex.sideHidden", hide ? "1" : "0"); } catch { /* ignore */ }
+  };
 
   useEffect(() => {
     const on = () => { setRoute(readRoute()); setDrawer(false); window.scrollTo(0, 0); };
@@ -44,7 +52,7 @@ export function VortexApp() {
   }, []);
 
   useEffect(() => {
-    const page = { home: "", games: content.games.title, downloader: content.downloader.title, admin: "Editor", manage: "Admin" }[route];
+    const page = { home: "", games: content.games.title, downloader: content.downloader.title, admin: "Editor", manage: "Admin", notfound: "Page not found" }[route];
     document.title = page ? `${page} · ${content.site.name}` : content.site.name;
   }, [route]);
 
@@ -56,15 +64,28 @@ export function VortexApp() {
   ];
   const name = prefs.name.trim() || nameFromEmail(email);
   const accent = prefs.accent || content.site.accent;
+  const avatar = prefs.avatar || gravatar || "";
+
+  if (isSignedOut()) {
+    return (
+      <ContentContext.Provider value={content}>
+        <div className="vx" style={{ ["--vx-accent" as string]: accent }}><SignedOut onSignIn={signBackIn} /></div>
+      </ContentContext.Provider>
+    );
+  }
 
   return (
     <ContentContext.Provider value={content}>
-      <div className={`vx vx-shell ${route === "admin" ? "vx-shell-wide" : ""}`} style={{ ["--vx-accent" as string]: accent }}>
+      <div className={`vx vx-shell ${sideHidden ? "vx-side-hidden" : ""}`} style={{ ["--vx-accent" as string]: accent }}>
         <aside className={`vx-side ${drawer ? "open" : ""}`} aria-label="Main">
-          <a className="vx-brand" href="#/" aria-label={`${content.site.name} home`}>
-            <VortexMark />
-            <BrandName name={content.site.name} />
-          </a>
+          <div className="vx-side-head">
+            <a className="vx-brand" href="#/" aria-label={`${content.site.name} home`}>
+              <VortexMark />
+              <BrandName name={content.site.name} />
+            </a>
+            <button type="button" className="vx-side-hide" aria-label="Hide menu" title="Hide menu"
+              onClick={() => { if (window.matchMedia("(max-width: 860px)").matches) setDrawer(false); else toggleSide(true); }}><Icon name="chevron-left" /></button>
+          </div>
           <nav className="vx-side-nav">
             <p className="vx-side-label">Browse</p>
             {nav.filter((n) => n.show).map((n) => (
@@ -92,17 +113,22 @@ export function VortexApp() {
               <Icon name="menu" />
             </button>
             <a className="vx-brand vx-brand-mobile" href="#/" aria-label={`${content.site.name} home`}><VortexMark /></a>
+            {sideHidden && (
+              <button type="button" className="vx-side-show" aria-label="Show menu" title="Show menu" onClick={() => toggleSide(false)}>
+                <Icon name="chevron-right" /><span>Menu</span>
+              </button>
+            )}
             <div className="vx-account">
               <button type="button" className="vx-user" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu((m) => !m)}>
                 <span className="vx-user-name">{name}</span>
-                <Avatar src={prefs.avatar} name={name} />
+                <Avatar src={avatar} name={name} />
               </button>
               {menu && (
                 <>
                   <div className="vx-menu-catch" onClick={() => setMenu(false)} aria-hidden="true" />
                   <div className="vx-menu" role="menu">
                     <div className="vx-menu-head">
-                      <Avatar src={prefs.avatar} name={name} size={40} />
+                      <Avatar src={avatar} name={name} size={40} />
                       <span><strong>{name}</strong><em>{email ?? "Not signed in"}</em></span>
                     </div>
                     <button role="menuitem" onClick={() => { setMenu(false); setSettings(true); }}><Icon name="gear" />Settings</button>
@@ -114,7 +140,8 @@ export function VortexApp() {
           </header>
 
           <main className={`vx-main ${route === "admin" ? "vx-main-wide" : ""}`}>
-            {route === "home" && <HomePage />}
+            {route === "home" && <HomePage welcome={{ name, avatar, needsName: !prefs.name.trim(), setName: (n) => setPrefs({ name: n }) }} />}
+            {route === "notfound" && <NotFound />}
             {route === "games" && <GamesPage />}
             {route === "downloader" && <Downloader />}
             {route === "manage" && (
@@ -125,7 +152,7 @@ export function VortexApp() {
             )}
           </main>
         </div>
-        {settings && <Settings prefs={prefs} update={setPrefs} email={email} siteAccent={content.site.accent} onClose={() => setSettings(false)} />}
+        {settings && <Settings prefs={prefs} update={setPrefs} email={email} gravatar={gravatar} siteAccent={content.site.accent} onClose={() => setSettings(false)} />}
       </div>
     </ContentContext.Provider>
   );

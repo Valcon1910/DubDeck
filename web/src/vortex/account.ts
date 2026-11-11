@@ -9,7 +9,7 @@ export type ThemePref = "system" | "light" | "dark";
 export type TextSize = "small" | "normal" | "large";
 
 export interface Prefs {
-  name: string;
+  name: string; // full name shown on the profile and the welcome message
   avatar: string; // data: URL of a small square picture, or ""
   theme: ThemePref;
   accent: string; // "" = the site's color
@@ -86,9 +86,44 @@ export async function squareAvatar(file: File): Promise<string> {
 }
 
 /**
- * Sign out of here.now's gate. here.now ends the session at /.herenow/logout;
- * the page then reloads, and the gate asks for the email again.
+ * The person's real profile picture: their Gravatar (the picture linked to
+ * their email across many sites), when they have one. Only a SHA-256 hash of
+ * the email is sent, never the email itself. null when there isn't one.
  */
+export function useGravatar(email: string | null): string | null {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    setUrl(null);
+    if (!email || !crypto?.subtle) return;
+    let alive = true;
+    crypto.subtle.digest("SHA-256", new TextEncoder().encode(email.trim().toLowerCase())).then((buf) => {
+      const hash = [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+      const src = `https://gravatar.com/avatar/${hash}?s=160&d=404`;
+      const img = new Image();
+      img.onload = () => { if (alive) setUrl(src); };
+      img.src = src; // d=404: no picture → onerror, keep the initials
+    }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [email]);
+  return url;
+}
+
+/**
+ * Log out on this device. here.now's gate keeps its own sign-in cookie (only
+ * here.now can end that), so the app remembers the logout itself and shows
+ * the signed-out page until the person signs back in.
+ */
+const OUT_KEY = "vortex.signedOut";
+export function isSignedOut(): boolean {
+  try { return localStorage.getItem(OUT_KEY) === "1"; } catch { return false; }
+}
 export function logout() {
-  location.href = "/.herenow/logout";
+  try { localStorage.setItem(OUT_KEY, "1"); } catch { /* ignore */ }
+  location.hash = "#/signed-out";
+  location.reload();
+}
+export function signBackIn() {
+  try { localStorage.removeItem(OUT_KEY); } catch { /* ignore */ }
+  location.hash = "#/";
+  location.reload();
 }

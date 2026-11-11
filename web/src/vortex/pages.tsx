@@ -2,7 +2,9 @@ import { useState } from "react";
 import { logoFor, safeUrl, useContent, type Content, type Game } from "./content";
 import { Editable, useEdit } from "./editable";
 
-export function HomePage() {
+export interface Welcome { name: string; avatar: string; needsName: boolean; setName: (n: string) => void }
+
+export function HomePage({ welcome }: { welcome?: Welcome }) {
   const c = useContent();
   const edit = useEdit();
   const s = c.sections;
@@ -14,6 +16,7 @@ export function HomePage() {
   ];
   return (
     <section className="vx-page">
+      {welcome && !edit && <WelcomeCard w={welcome} />}
       <header className="vx-page-head">
         <Editable as="h1" path="home.title" placeholder="Page title" />
         <Editable as="p" className="vx-muted" path="home.subtitle" placeholder="Subtitle" multiline />
@@ -153,5 +156,77 @@ export function GameLogo({ game, size = 64 }: { game: Game; size?: number }) {
         ? <img src={src} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setBroken(src)} />
         : <span aria-hidden="true">{initial}</span>}
     </span>
+  );
+}
+
+function greeting(): string {
+  const h = new Date().getHours();
+  return h < 5 ? "Good night" : h < 12 ? "Good morning" : h < 19 ? "Good afternoon" : "Good evening";
+}
+
+/** "Good morning, Valentino!" with the person's picture; asks for the full name once. */
+function WelcomeCard({ w }: { w: Welcome }) {
+  const [draft, setDraft] = useState("");
+  const first = w.name.split(/\s+/)[0];
+  return (
+    <section className="vx-welcome" aria-label="Welcome">
+      <span className="vx-avatar vx-welcome-pic" aria-hidden="true">
+        {w.avatar ? <img src={w.avatar} alt="" referrerPolicy="no-referrer" /> : first[0]?.toUpperCase()}
+      </span>
+      <div className="vx-welcome-text">
+        <p className="vx-welcome-hi">{greeting()},</p>
+        <h2>{w.needsName ? first : w.name}! 👋</h2>
+        <p className="vx-muted">Welcome back to Vortex Engine. What are we doing today?</p>
+        {w.needsName && (
+          <form className="vx-welcome-name" onSubmit={(e) => { e.preventDefault(); if (draft.trim()) w.setName(draft.trim()); }}>
+            <label className="sr-only" htmlFor="vx-fullname">Your full name</label>
+            <input id="vx-fullname" type="text" maxLength={40} placeholder="What's your full name?" value={draft} onChange={(e) => setDraft(e.target.value)} />
+            <button className="vx-btn vx-btn-primary vx-btn-sm" disabled={!draft.trim()}>Save</button>
+          </form>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function Lost({ code, title, text, action }: { code: string; title: string; text: string; action: React.ReactNode }) {
+  return (
+    <section className="vx-lost">
+      <div className="vx-lost-art" aria-hidden="true">
+        <svg viewBox="0 0 200 200" width="200" height="200">
+          <defs>
+            <linearGradient id="lost-g" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stopColor="var(--vx-accent)" /><stop offset="1" stopColor="#06b6d4" />
+            </linearGradient>
+          </defs>
+          <circle cx="100" cy="100" r="88" fill="url(#lost-g)" opacity="0.12" />
+          <g className="vx-lost-spin" fill="none" stroke="url(#lost-g)" strokeWidth="8" strokeLinecap="round">
+            <path d="M100 30a70 70 0 0 1 61 36" /><path d="M161 134a70 70 0 0 1-61 36" /><path d="M39 134a70 70 0 0 1 0-68" />
+          </g>
+          <text x="100" y="114" textAnchor="middle" fontSize="40" fontWeight="700" fill="url(#lost-g)" fontFamily="Space Grotesk Variable, system-ui">{code}</text>
+        </svg>
+      </div>
+      <h1>{title}</h1>
+      <p className="vx-muted">{text}</p>
+      {action}
+    </section>
+  );
+}
+
+export function NotFound() {
+  return (
+    <Lost code="404" title="This page got lost in the vortex"
+      text="The page you're looking for doesn't exist or was moved."
+      action={<a className="vx-btn vx-btn-primary" href="/#/" onClick={() => { if (location.pathname !== "/") { location.href = "/#/"; } }}>Back to home</a>} />
+  );
+}
+
+export function SignedOut({ onSignIn }: { onSignIn: () => void }) {
+  return (
+    <main className="vx-main">
+      <Lost code="Bye" title="You're signed out"
+        text="See you next time! Your settings are saved on this device for when you come back."
+        action={<button type="button" className="vx-btn vx-btn-primary" onClick={onSignIn}>Sign in again</button>} />
+    </main>
   );
 }
