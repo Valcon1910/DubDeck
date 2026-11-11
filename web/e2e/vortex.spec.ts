@@ -89,7 +89,7 @@ test("admin: opens without a token, add a game and an email, publish one commit"
   let sentAuth = false;
   const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64");
   const blobs: string[] = [];
-  let committed: { message: string; tree: string } | null = null;
+  let committed: { message: string; tree: string } | null = null; void committed;
   let treeBody: { tree: { path: string }[] } | null = null;
   await page.route("**/gh/**", async (route) => {
     if (route.request().headers()["authorization"]) sentAuth = true;
@@ -163,6 +163,7 @@ test("admin page: start a publish action and add someone to the access list", as
     return route.fulfill({ status: 404, json: {} });
   });
   await page.goto("/");
+  await openMenu(page);
   await page.getByRole("link", { name: "Admin" }).click();
   await page.getByRole("button", { name: "Publish code to test site" }).click();
   await expect(page.getByRole("status")).toContainText("Started");
@@ -203,6 +204,7 @@ test("the Editor button shows only for the editors' emails", async ({ page }) =>
   await page.unroute("**/.herenow/me");
   await page.route("**/.herenow/me", (route) => route.fulfill({ json: { email: "Vale.Conde.Arango@gmail.com" } }));
   await page.reload();
+  await openMenu(page);
   await page.getByRole("link", { name: "Editor" }).click();
   await expect(page.getByRole("heading", { name: "Editor" })).toBeVisible();
 });
@@ -254,4 +256,28 @@ test("720p with sound is prepared on the server, then saved", async ({ page }) =
   expect(file.suggestedFilename()).toBe("Test video - title.mp4");
   await expect(page.getByRole("status")).toContainText("downloading");
   await expect(page.getByRole("link", { name: "Save video (720p)" })).toBeVisible();
+});
+
+/** On phones the categories are in the side menu. */
+async function openMenu(page: import("@playwright/test").Page) {
+  const btn = page.getByRole("button", { name: "Open menu" });
+  if (await btn.isVisible()) await btn.click();
+}
+
+test("account: name and picture at the top right, settings change the look for this person", async ({ page }) => {
+  await page.route("**/.herenow/me", (route) => route.fulfill({ json: { email: "maria.lopez@school.edu.co" } }));
+  await page.goto("/");
+  const user = page.locator(".vx-user");
+  await expect(user).toContainText("Maria Lopez");
+  await user.click();
+  await expect(page.getByRole("menuitem", { name: "Log out" })).toBeVisible();
+  await page.getByRole("menuitem", { name: "Settings" }).click();
+  await page.getByLabel("Name").fill("Majo");
+  await page.getByRole("radio", { name: "Dark" }).click();
+  await page.getByRole("button", { name: "Done" }).click();
+  await expect(user).toContainText("Majo");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.reload(); // remembered next time
+  await expect(page.locator(".vx-user")).toContainText("Majo");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 });

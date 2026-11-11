@@ -9,7 +9,7 @@ import "./styles.css";
 const media = window.matchMedia?.("(prefers-color-scheme: dark)");
 const applyTheme = () => { document.documentElement.dataset.theme = media?.matches ? "dark" : "light"; };
 applyTheme();
-media?.addEventListener?.("change", applyTheme);
+// Afterwards the person's own choice (Settings → Theme) takes over; see account.ts.
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
