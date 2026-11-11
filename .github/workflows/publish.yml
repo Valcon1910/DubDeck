@@ -44,7 +44,7 @@ jobs:
         if: env.RAPIDAPI_KEY != ''
         env:
           VALUE: ${{ secrets.RAPIDAPI_KEY }}
-        run: node scripts/herenow-variable.mjs RAPIDAPI_KEY ytstream-download-youtube-videos.p.rapidapi.com youtube-info-download-api.p.rapidapi.com
+        run: node scripts/herenow-variable.mjs RAPIDAPI_KEY ytstream-download-youtube-videos.p.rapidapi.com youtube-info-download-api.p.rapidapi.com youtube138.p.rapidapi.com
 
       # Stores the editor's GitHub token in here.now (pinned to api.github.com) for the /gh route.
       - name: Save editor GitHub token in here.now
