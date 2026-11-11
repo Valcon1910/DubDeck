@@ -114,9 +114,21 @@ export function VortexApp() {
             </button>
             <a className="vx-brand vx-brand-mobile" href="#/" aria-label={`${content.site.name} home`}><VortexMark /></a>
             {sideHidden && (
-              <button type="button" className="vx-side-show" aria-label="Show menu" title="Show menu" onClick={() => toggleSide(false)}>
-                <Icon name="chevron-right" /><span>Menu</span>
-              </button>
+              <nav className="vx-topnav" aria-label="Main">
+                <button type="button" className="vx-side-show" aria-label="Show side menu" title="Show side menu" onClick={() => toggleSide(false)}>
+                  <Icon name="chevron-right" />
+                </button>
+                {nav.filter((n) => n.show).map((n) => (
+                  <a key={n.r} href={n.r === "home" ? "#/" : `#/${n.r}`} aria-current={route === n.r ? "page" : undefined}>{n.label}</a>
+                ))}
+                {OTHER_SITE.url && <a href={OTHER_SITE.url} className="vx-site-switch">{OTHER_SITE.label}</a>}
+                {(editor || route === "manage" || route === "admin") && (
+                  <>
+                    <a className="vx-editor-btn vx-admin-btn" href="#/manage" aria-current={route === "manage" ? "page" : undefined}>Admin</a>
+                    <a className="vx-editor-btn" href="#/admin" aria-current={route === "admin" ? "page" : undefined}>Editor</a>
+                  </>
+                )}
+              </nav>
             )}
             <div className="vx-account">
               <button type="button" className="vx-user" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu((m) => !m)}>
@@ -140,7 +152,7 @@ export function VortexApp() {
           </header>
 
           <main className={`vx-main ${route === "admin" ? "vx-main-wide" : ""}`}>
-            {route === "home" && <HomePage welcome={{ name, avatar, needsName: !prefs.name.trim(), setName: (n) => setPrefs({ name: n }) }} />}
+            {route === "home" && <HomePage welcome={{ name, avatar }} />}
             {route === "notfound" && <NotFound />}
             {route === "games" && <GamesPage />}
             {route === "downloader" && <Downloader />}

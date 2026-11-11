@@ -518,3 +518,12 @@ button.vx-vchan:hover { color: var(--vx-accent); }
   .vx-side-show { display: none; }
 }
 a.vx-btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+
+/* Side menu hidden: the categories sit in the top bar, left of the profile (desktop). */
+.vx-topnav { display: flex; align-items: center; gap: 4px; margin-right: 10px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.vx-topnav a { padding: 8px 12px; border-radius: 999px; color: var(--muted); text-decoration: none; font-weight: 500; font-size: 15px; white-space: nowrap; }
+.vx-topnav a[aria-current="page"] { background: var(--vx-accent-soft); color: var(--ink); }
+.vx-topnav a.vx-editor-btn { background: var(--vx-accent); color: #fff; font-weight: 600; margin-left: 4px; }
+.vx-topnav a.vx-admin-btn { background: var(--ink); color: var(--bg); }
+.vx-topnav .vx-side-show { margin-right: 6px; padding: 6px; }
+@media (max-width: 860px) { .vx-topnav { display: none; } }
