@@ -79,6 +79,7 @@ export function Downloader() {
   const abort = useRef<AbortController | null>(null);
   const [tutorial, setTutorial] = useState(false);
   const [fallback, setFallback] = useState<Preset | null>(null);
+  const [ready, setReady] = useState<{ label: string; url: string } | null>(null);
 
   async function lookUp(e?: React.FormEvent) {
     e?.preventDefault();
@@ -146,13 +147,20 @@ export function Downloader() {
 
   async function save(p: Preset) {
     if (!info || saving) return;
-    setNotice(null); setError(null); setFallback(null);
+    setNotice(null); setError(null); setFallback(null); setReady(null);
     const name = safeFilename(info.title, p.ext);
     if (p.server) {
       setSaving({ key: p.key, progress: 0, stage: "Preparing" });
       try {
-        const url = await prepareServer(info.id, p.server, (x) => setSaving({ key: p.key, progress: x * 0.5, stage: "Preparing" }));
-        hand(await download(url, null, "video/mp4", (x) => setSaving({ key: p.key, progress: x === null ? null : 0.5 + x * 0.5, stage: "Downloading" })), name);
+        const url = await prepareServer(info.id, p.server, (x) => setSaving({ key: p.key, progress: x, stage: "Preparing" }));
+        // The download server sends the finished file as a normal download
+        // (with the video's name) but doesn't let the page read it, so the
+        // browser saves it straight from there.
+        const a = document.createElement("a");
+        a.href = url; a.rel = "noopener";
+        document.body.append(a); a.click(); a.remove();
+        setReady({ label: p.label, url });
+        setNotice("The video is downloading. On iPad it goes to Files → Downloads. If nothing happened, tap “Save video” below.");
       } catch (e) {
         setFallback(presets.find((x) => x.kind === "video" && !x.audio && !x.server) ?? null);
         setError(e instanceof StreamError ? e.message : "The HD download stopped. Check the connection and try again.");
@@ -240,6 +248,11 @@ export function Downloader() {
         </div>
       )}
       {notice && <p className="vx-alert" role="status">{notice}</p>}
+      {ready && (
+        <a className="vx-btn vx-btn-primary" href={ready.url} rel="noopener" style={{ marginBottom: 12 }}>
+          Save video ({ready.label.replace(/^Video /, "")})
+        </a>
+      )}
 
       {busy && <div className="vx-card vx-skeleton" aria-hidden="true" />}
 
