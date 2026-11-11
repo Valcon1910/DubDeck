@@ -338,3 +338,13 @@ strong.vx-editable, span.vx-editable { display: inline-block; }
   .vx-top nav { width: 100%; overflow-x: auto; scrollbar-width: none; }
   .vx-top nav a { padding: 7px 10px; font-size: 14px; white-space: nowrap; }
 }
+
+/* Rotating circle while a file is being prepared or downloaded. */
+.vx-spinner {
+  display: inline-block; width: 16px; height: 16px; margin-right: 8px; vertical-align: -3px;
+  border: 2.5px solid color-mix(in srgb, var(--vx-accent) 25%, transparent);
+  border-top-color: var(--vx-accent); border-radius: 50%;
+  animation: vx-spin 0.8s linear infinite;
+}
+@keyframes vx-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .vx-spinner { animation-duration: 2.4s; } }

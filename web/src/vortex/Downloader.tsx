@@ -293,6 +293,7 @@ export function Downloader() {
                             <span className="vx-muted vx-small">{p.detail}</span>
                           </span>
                           <span className="vx-preset-side">
+                            {active && <span className="vx-spinner" role="progressbar" aria-label={saving!.stage} />}
                             {active
                               ? `${saving!.stage}${saving!.progress != null ? ` ${Math.round(saving!.progress * 100)}%` : "…"}`
                               : formatBytes(p.bytes) || "Save"}
