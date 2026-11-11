@@ -36,6 +36,7 @@ jobs:
         run: |
           test -n "$HERENOW_API_KEY" || { echo "::error::Add the HERENOW_API_KEY repository secret."; exit 1; }
           node scripts/sync-access.mjs --check
+          test -n "$GH_EDIT_TOKEN" || echo "::warning::The GH_EDIT_TOKEN repository secret is missing, so the Editor can't save. Add it under Settings → Secrets and variables → Actions → Repository secrets."
 
       # Stores the RapidAPI key in here.now (pinned to the YTStream host) for the /yt proxy route.
       - name: Save RapidAPI key in here.now
