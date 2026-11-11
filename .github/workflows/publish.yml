@@ -1,0 +1,90 @@
+name: Publish (shared steps)
+
+# Builds one branch and publishes it to one here.now Site. Not run directly:
+# "Publish code to test site" and "Publish test site to real site" use it.
+#   site: real → branch main → flint-rivulet-2tep (config/site.json)
+#   site: test → branch test → the test Site     (config/site-test.json)
+on:
+  workflow_call:
+    inputs:
+      site:
+        type: string
+        required: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HERENOW_API_KEY: ${{ secrets.HERENOW_API_KEY }}
+      HERENOW_SLUG: ${{ inputs.site == 'real' && vars.HERENOW_SLUG || '' }}
+      HERENOW_SITE_NAME: ${{ inputs.site == 'test' && 'Vortex Engine (test)' || 'Vortex Engine' }}
+      HERENOW_SITE_FILE: ${{ inputs.site == 'test' && 'config/site-test.json' || 'config/site.json' }}
+      RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
+      GH_EDIT_TOKEN: ${{ secrets.GH_EDIT_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.site == 'test' && 'test' || 'main' }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Check configuration
+        run: |
+          test -n "$HERENOW_API_KEY" || { echo "::error::Add the HERENOW_API_KEY repository secret."; exit 1; }
+          node scripts/sync-access.mjs --check
+          test -n "$GH_EDIT_TOKEN" || echo "::warning::The GH_EDIT_TOKEN repository secret is missing, so the Editor can't save. Add it under Settings → Secrets and variables → Actions → Repository secrets."
+
+      # Stores the RapidAPI key in here.now (pinned to the YTStream host) for the /yt proxy route.
+      - name: Save RapidAPI key in here.now
+        if: env.RAPIDAPI_KEY != ''
+        env:
+          VALUE: ${{ secrets.RAPIDAPI_KEY }}
+        run: node scripts/herenow-variable.mjs RAPIDAPI_KEY ytstream-download-youtube-videos.p.rapidapi.com youtube-info-download-api.p.rapidapi.com
+
+      # Stores the editor's GitHub token in here.now (pinned to api.github.com) for the /gh route.
+      - name: Save editor GitHub token in here.now
+        if: env.GH_EDIT_TOKEN != ''
+        env:
+          VALUE: ${{ secrets.GH_EDIT_TOKEN }}
+        run: node scripts/herenow-variable.mjs GITHUB_EDIT_TOKEN api.github.com
+
+      - name: Install
+        working-directory: web
+        run: npm ci
+
+      - name: Build
+        working-directory: web
+        env:
+          DUBDECK_API_HOST: ${{ vars.DUBDECK_API_HOST }}
+          VORTEX_BRANCH: ${{ inputs.site == 'test' && 'test' || 'main' }}
+        run: npm run build
+
+      # create → upload → finalize; fails on proxy.json / data.json warnings.
+      - name: Publish to here.now
+        id: publish
+        run: node scripts/herenow-publish.mjs web/dist
+
+      # Remember the Site's address on main, so every later publish updates
+      # the same Site. (Pushes made with this token don't start new runs.)
+      - name: Remember the site address
+        run: |
+          F="$HERENOW_SITE_FILE"
+          if [ -n "$(git status --porcelain "$F")" ]; then
+            cp "$F" /tmp/site.json
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            for b in main test; do
+              git fetch origin $b && git checkout -B save-$b origin/$b && cp /tmp/site.json "$F"
+              git add "$F" && git commit -m "Remember the $HERENOW_SITE_NAME address" && git push origin HEAD:$b || true
+            done
+          fi
+
+      - name: Enforce restricted access
+        env:
+          HERENOW_SLUG: ${{ steps.publish.outputs.slug }}
+        run: node scripts/sync-access.mjs

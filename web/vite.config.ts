@@ -80,7 +80,10 @@ export default defineConfig(({ command, mode }) => {
   return {
     plugins: [react(), herenow(apiHost, isBuild)],
     // The repository the admin editor saves to (set automatically in GitHub Actions).
-    define: { __VORTEX_REPO__: JSON.stringify(env.GITHUB_REPOSITORY || "Valcon1910/DubDeck") },
+    define: {
+      __VORTEX_REPO__: JSON.stringify(env.GITHUB_REPOSITORY || "Valcon1910/DubDeck"),
+      __VORTEX_BRANCH__: JSON.stringify(env.VORTEX_BRANCH || "main"),
+    },
     optimizeDeps: { exclude: ["@ffmpeg/ffmpeg", "@ffmpeg/util"] },
     worker: { format: "es" },
     build: { outDir: "dist", emptyOutDir: true, sourcemap: false, target: "es2022" },

@@ -5,7 +5,8 @@
 // here.now by the "Sync access allowlist" workflow.
 
 export const REPO: string = __VORTEX_REPO__;
-export const BRANCH = "main";
+/** main for the real site, test for the test site (set at build time). */
+export const BRANCH: string = __VORTEX_BRANCH__;
 export const CONTENT_PATH = "web/content.json";
 export const ACCESS_PATH = "config/allowed-emails.json";
 const API = "/gh";
@@ -102,7 +103,7 @@ export async function deployState(token: string, sha: string): Promise<DeploySta
     token, `/repos/${REPO}/actions/runs?head_sha=${sha}&per_page=20`,
   ).catch(() => null);
   if (!r) return "unknown";
-  const runs = r.workflow_runs.filter((w) => /deploy/i.test(w.name));
+  const runs = r.workflow_runs.filter((w) => /publish|deploy/i.test(w.name));
   if (!runs.length) return "waiting";
   if (runs.some((w) => w.status !== "completed")) return "running";
   return runs.every((w) => w.conclusion === "success") ? "live" : "failed";
