@@ -2,6 +2,8 @@ import { useRef, useState } from "react";
 import { useContent } from "./content";
 import { combine, preloadMerger } from "./merge";
 import { Tutorial } from "./Tutorial";
+import { Browse } from "./Browse";
+import { watchUrl, type VideoItem } from "./ytsearch";
 import { Editable, useEdit } from "./editable";
 import {
   bestThumb, buildPresets, fetchInfo, formatBytes, formatDuration, parseVideoId, prepareServer, relayUrl, safeFilename,
@@ -81,10 +83,27 @@ export function Downloader() {
   const [fallback, setFallback] = useState<Preset | null>(null);
   const [ready, setReady] = useState<{ label: string; url: string } | null>(null);
 
-  async function lookUp(e?: React.FormEvent) {
+  const [search, setSearch] = useState<{ q: string; n: number } | null>(null);
+
+  /** A link (or video id) shows its formats; anything else searches YouTube. */
+  function submit(e?: React.FormEvent) {
     e?.preventDefault();
+    const text = link.trim();
+    if (!text) return;
+    if (parseVideoId(text)) { void lookUp(); return; }
     setError(null); setNotice(null);
-    const id = parseVideoId(link);
+    setSearch({ q: text, n: Date.now() });
+  }
+
+  function pick(v: VideoItem) {
+    setLink(watchUrl(v.id));
+    void lookUp(v.id);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function lookUp(direct?: string) {
+    setError(null); setNotice(null);
+    const id = direct ?? parseVideoId(link);
     if (!id) { setError("That doesn't look like a YouTube link. Paste the whole link from the Share button."); return; }
     abort.current?.abort();
     const ctrl = new AbortController();
@@ -224,15 +243,15 @@ export function Downloader() {
       </header>
       {tutorial && <Tutorial onClose={() => setTutorial(false)} />}
 
-      <form className="vx-search" onSubmit={lookUp} inert={!!edit}>
-        <label className="sr-only" htmlFor="vx-link">YouTube link</label>
+      <form className="vx-search" onSubmit={submit} inert={!!edit}>
+        <label className="sr-only" htmlFor="vx-link">Search YouTube or paste a link</label>
         <input
           id="vx-link" type="text" inputMode="url" autoComplete="off" autoCapitalize="off" spellCheck={false}
-          placeholder="https://youtu.be/…" value={link} onChange={(e) => setLink(e.target.value)}
+          placeholder="Search YouTube or paste a link" value={link} onChange={(e) => setLink(e.target.value)}
         />
         <button type="button" className="vx-btn vx-btn-ghost" onClick={paste}>Paste</button>
         <button type="submit" className="vx-btn vx-btn-primary" disabled={busy || !link.trim()}>
-          {busy ? "Loading…" : "Get formats"}
+          {busy ? "Loading…" : parseVideoId(link.trim()) || !link.trim() ? "Get formats" : "Search"}
         </button>
       </form>
 
@@ -316,6 +335,8 @@ export function Downloader() {
           </p>
         </article>
       )}
+
+      <Browse request={search} onPick={pick} />
 
       {(c.footer || edit) && <Editable as="p" className="vx-fine" path="downloader.footer" placeholder="Footer note (optional)" />}
     </section>

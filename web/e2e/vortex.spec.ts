@@ -42,11 +42,7 @@ test("look up a video and save the 360p file", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Vortex Engine" })).toBeVisible();
   await page.getByRole("link", { name: /Save YouTube/ }).click();
 
-  await page.getByLabel("YouTube link").fill("not a link");
-  await page.getByRole("button", { name: "Get formats" }).click();
-  await expect(page.getByRole("alert")).toContainText("doesn't look like a YouTube link");
-
-  await page.getByLabel("YouTube link").fill("https://youtu.be/dQw4w9WgXcQ?si=abc");
+  await page.getByLabel("Search YouTube or paste a link").fill("https://youtu.be/dQw4w9WgXcQ?si=abc");
   await page.getByRole("button", { name: "Get formats" }).click();
   await expect(page.getByRole("heading", { name: info.title })).toBeVisible();
   expect(requested).toContain("id=dQw4w9WgXcQ");
@@ -70,7 +66,7 @@ test("look up a video and save the 360p file", async ({ page }) => {
 test("shows a clear message when the API key is missing", async ({ page }) => {
   await page.route("**/yt/dl?**", (route) => route.fulfill({ status: 403, json: { message: "not subscribed" } }));
   await page.goto("/#/downloader");
-  await page.getByLabel("YouTube link").fill("dQw4w9WgXcQ");
+  await page.getByLabel("Search YouTube or paste a link").fill("dQw4w9WgXcQ");
   await page.getByRole("button", { name: "Get formats" }).click();
   await expect(page.getByRole("alert")).toContainText("RapidAPI key");
 });
@@ -181,7 +177,7 @@ test("accepts Google redirect links and shows the tutorial", async ({ page }) =>
   let requested = "";
   await page.route("**/yt/dl?**", (route) => { requested = route.request().url(); return route.fulfill({ json: info }); });
   await page.goto("/#/downloader?hd");
-  await page.getByLabel("YouTube link").fill("https://www.google.com/url?sa=t&source=web&rct=j&opi=89978449&url=https://www.youtube.com/watch%3Fv%3DofigWubFbr0&ved=2ahUKE&usg=AOvVaw2");
+  await page.getByLabel("Search YouTube or paste a link").fill("https://www.google.com/url?sa=t&source=web&rct=j&opi=89978449&url=https://www.youtube.com/watch%3Fv%3DofigWubFbr0&ved=2ahUKE&usg=AOvVaw2");
   await page.getByRole("button", { name: "Get formats" }).click();
   await expect(page.getByRole("heading", { name: info.title })).toBeVisible();
   expect(requested).toContain("id=ofigWubFbr0");
@@ -218,7 +214,7 @@ test("when the relay is blocked, the error explains why and offers 360p", async 
   await page.route("**/gv/**", (route) => route.fulfill({ status: 403, body: "no" }));
   await page.route("https://redirector.googlevideo.com/**", (route) => route.abort());
   await page.goto("/#/downloader?hd");
-  await page.getByLabel("YouTube link").fill("dQw4w9WgXcQ");
+  await page.getByLabel("Search YouTube or paste a link").fill("dQw4w9WgXcQ");
   await page.getByRole("button", { name: "Get formats" }).click();
   await page.getByRole("link", { name: /Video 720p/ }).click();
   const alert = page.getByRole("alert");
@@ -246,7 +242,7 @@ test("720p with sound is prepared on the server, then saved", async ({ page }) =
       headers: { "content-type": "video/mp4", "content-disposition": 'attachment; filename="Test video - title.mp4"' } }));
 
   await page.goto("/#/downloader");
-  await page.getByLabel("YouTube link").fill("dQw4w9WgXcQ");
+  await page.getByLabel("Search YouTube or paste a link").fill("dQw4w9WgXcQ");
   await page.getByRole("button", { name: "Get formats" }).click();
   const download = page.waitForEvent("download");
   await page.getByRole("link", { name: /Video 720p/ }).click();
@@ -280,4 +276,48 @@ test("account: name and picture at the top right, settings change the look for t
   await page.reload(); // remembered next time
   await expect(page.locator(".vx-user")).toContainText("Majo");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+});
+
+test("search YouTube, open a channel, and pick a video to download", async ({ page }) => {
+  const thumbs = (id: string) => [{ url: `https://i.ytimg.com/vi/${id}/mqdefault.jpg`, width: 320 }, { url: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`, width: 480 }];
+  let searched = "";
+  await page.route("**/ys/search/**", (route) => {
+    searched = route.request().url();
+    return route.fulfill({ json: { contents: [
+      { type: "channel", channel: { channelId: "UC123", title: "Cool Channel", avatar: [{ url: "//yt3.ggpht.com/a.jpg", width: 88 }], stats: { subscribers: 1250000 } } },
+      { type: "video", video: { videoId: "dQw4w9WgXcQ", title: "Found video", thumbnails: thumbs("dQw4w9WgXcQ"), lengthSeconds: 212, stats: { views: 1500 }, publishedTimeText: "2 years ago",
+        author: { channelId: "UC123", title: "Cool Channel", avatar: [{ url: "https://yt3.ggpht.com/a.jpg", width: 68 }] } } },
+    ] } });
+  });
+  let tab = "";
+  await page.route("**/ys/channel/details/**", (route) => route.fulfill({ json: {
+    channelId: "UC123", title: "Cool Channel", avatar: [{ url: "https://yt3.ggpht.com/a.jpg", width: 176 }],
+    banner: { desktop: [{ url: "https://yt3.ggpht.com/banner.jpg", width: 2560 }] }, stats: { subscribers: 1250000, videos: 42 }, description: "Hello",
+  } }));
+  await page.route("**/ys/channel/videos/**", (route) => {
+    tab = new URL(route.request().url()).searchParams.get("filter") ?? "";
+    return route.fulfill({ json: { contents: [{ type: "video", video: { videoId: "abcdefghijk", title: `Latest ${tab}`, thumbnails: thumbs("abcdefghijk") } }] } });
+  });
+  let looked = "";
+  await page.route("**/yt/dl?**", (route) => { looked = route.request().url(); return route.fulfill({ json: info }); });
+
+  await page.goto("/#/downloader");
+  await page.getByLabel("Search YouTube or paste a link").fill("cool videos");
+  await page.getByRole("button", { name: "Search" }).click();
+  await expect(page.getByRole("button", { name: "Found video", exact: true })).toBeVisible();
+  expect(new URL(searched).searchParams.get("q")).toBe("cool videos");
+  await expect(page.locator(".vx-vthumb img").first()).toHaveAttribute("src", /hqdefault/); // biggest thumbnail
+  await expect(page.getByText("1.3M subscribers")).toBeVisible();
+
+  await page.getByRole("button", { name: /Cool Channel.*View channel/ }).click();
+  await expect(page.getByRole("heading", { name: "Cool Channel" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Latest videos_latest", exact: true })).toBeVisible();
+  await page.getByRole("tab", { name: "Shorts" }).click();
+  await expect(page.getByRole("button", { name: "Latest shorts_latest", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Back to results" }).click();
+
+  await page.getByRole("button", { name: "Found video", exact: true }).click();
+  await expect(page.getByRole("heading", { name: info.title })).toBeVisible();
+  expect(looked).toContain("id=dQw4w9WgXcQ");
+  await expect(page.getByLabel("Search YouTube or paste a link")).toHaveValue("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
 });

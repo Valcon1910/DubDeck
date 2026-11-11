@@ -30,6 +30,15 @@
         "User-Agent": "vortex-engine-editor"
       },
       "rateLimit": "600/hour/ip"
+    },
+    "/ys/*": {
+      "upstream": "https://youtube138.p.rapidapi.com",
+      "method": "GET",
+      "headers": {
+        "X-RapidAPI-Key": "${RAPIDAPI_KEY}",
+        "X-RapidAPI-Host": "youtube138.p.rapidapi.com"
+      },
+      "rateLimit": "300/hour/ip"
     }
   }
 }
