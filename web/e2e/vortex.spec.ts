@@ -75,10 +75,13 @@ test("shows a clear message when the API key is missing", async ({ page }) => {
   await expect(page.getByRole("alert")).toContainText("RapidAPI key");
 });
 
-test("games page starts empty with the External games subtitle", async ({ page }) => {
+test("games page shows the published games, and long links stay inside their box", async ({ page }) => {
   await page.goto("/#/games");
   await expect(page.getByRole("heading", { name: "External games" })).toBeVisible();
-  await expect(page.getByText("No games yet.")).toBeVisible();
+  const cards = page.locator("a.vx-game");
+  expect(await cards.count()).toBeGreaterThan(0);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+  expect(overflow).toBe(false);
 });
 
 test("admin: opens without a token, add a game and an email, publish one commit", async ({ page }) => {

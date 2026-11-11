@@ -101,14 +101,15 @@ code { font-family: var(--font-mono); font-size: 0.92em; background: var(--surfa
 .vx-empty { margin: 0; padding: 28px 16px; text-align: center; color: var(--muted); border: 1px dashed var(--border-strong); border-radius: 14px; }
 .vx-games { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
 .vx-game {
-  display: flex; align-items: center; gap: 14px; padding: 14px; height: 100%; box-sizing: border-box;
+  display: flex; align-items: center; gap: 14px; padding: 14px; height: 100%; box-sizing: border-box; min-width: 0; max-width: 100%; overflow: hidden;
   background: var(--surface); border: 1px solid var(--border); border-radius: 14px; color: var(--ink); text-decoration: none;
   transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s var(--ease);
 }
 .vx-game:hover { border-color: var(--vx-accent); box-shadow: 0 6px 20px rgb(0 0 0 / 0.07); transform: translateY(-1px); }
 .vx-game-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .vx-game-text strong { font-size: 16px; overflow-wrap: anywhere; }
-.vx-game-host { font-size: 12px; color: var(--muted); }
+.vx-game-text .vx-small { overflow-wrap: anywhere; }
+.vx-game-host { font-size: 12px; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vx-logo {
   flex: none; display: grid; place-items: center; overflow: hidden; border-radius: 14px;
   background: var(--surface-2); border: 1px solid var(--border); color: var(--vx-accent); font-weight: 700; font-size: 22px;
@@ -348,3 +349,4 @@ strong.vx-editable, span.vx-editable { display: inline-block; }
 }
 @keyframes vx-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .vx-spinner { animation-duration: 2.4s; } }
+.vx-games > li { min-width: 0; }

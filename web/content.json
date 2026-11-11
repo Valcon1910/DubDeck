@@ -11,22 +11,26 @@
     "games": {
       "title": "Games",
       "description": "Unblocked games from around the web.",
-      "visible": true
+      "visible": true,
+      "label": "Games"
     },
     "docs": {
       "title": "Docs",
       "description": "Notes and documents.",
-      "visible": true
+      "visible": true,
+      "label": "Coming soon"
     },
     "slides": {
       "title": "Slides",
       "description": "Presentations and the \"Free Slides\".",
-      "visible": true
+      "visible": true,
+      "label": "Coming soon"
     },
     "downloader": {
       "title": "Downloader",
       "description": "Save YouTube videos and audio.",
-      "visible": true
+      "visible": true,
+      "label": "Utilities"
     }
   },
   "games": {

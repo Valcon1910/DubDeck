@@ -6,11 +6,11 @@ export function HomePage() {
   const c = useContent();
   const edit = useEdit();
   const s = c.sections;
-  const tiles: { key: keyof Content["sections"]; href: string | null; label: string }[] = [
-    { key: "downloader", href: "#/downloader", label: "Utilities" },
-    { key: "games", href: "#/games", label: "Games" },
-    { key: "docs", href: null, label: "Coming soon" },
-    { key: "slides", href: null, label: "Coming soon" },
+  const tiles: { key: keyof Content["sections"]; href: string | null }[] = [
+    { key: "downloader", href: "#/downloader" },
+    { key: "games", href: "#/games" },
+    { key: "docs", href: null },
+    { key: "slides", href: null },
   ];
   return (
     <section className="vx-page">
@@ -22,7 +22,7 @@ export function HomePage() {
         {tiles.filter((t) => edit || s[t.key].visible).map((t) => {
           const body = (
             <>
-              <span className="vx-eyebrow">{t.label}</span>
+              <Editable as="span" className="vx-eyebrow" path={`sections.${t.key}.label`} placeholder="Label" />
               <Editable as="strong" path={`sections.${t.key}.title`} placeholder="Title" />
               <Editable as="span" className="vx-muted" path={`sections.${t.key}.description`} placeholder="Description" multiline />
               {edit && (

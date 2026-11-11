@@ -24,7 +24,11 @@ jobs:
       RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
       GH_EDIT_TOKEN: ${{ secrets.GH_EDIT_TOKEN }}
     steps:
+      # Always deploy main (the editor saves there), even when the workflow
+      # is started by hand from another branch.
       - uses: actions/checkout@v4
+        with:
+          ref: main
 
       - uses: actions/setup-node@v4
         with:
