@@ -84,6 +84,27 @@ export function parseVideoId(input: string, depth = 0): string | null {
   return id && ID_RE.test(id) ? id : null;
 }
 
+/** A Google link whose target is coded (google.com/goto?url=CAES…), so it must be asked. */
+export function isOpaqueRedirect(input: string): boolean {
+  try {
+    const u = new URL(/^https?:\/\//i.test(input.trim()) ? input.trim() : `https://${input.trim()}`);
+    return /^(?:www\.)?google\.[a-z.]+$/.test(u.hostname) && /^\/(?:goto|url)$/.test(u.pathname);
+  } catch { return false; }
+}
+
+/** Ask Google (through the site's /gg route) where the link goes, and read the video from it. */
+export async function resolveRedirect(input: string, signal?: AbortSignal): Promise<string | null> {
+  const u = new URL(/^https?:\/\//i.test(input.trim()) ? input.trim() : `https://${input.trim()}`);
+  const res = await fetch(`/gg${u.pathname}${u.search}`, { signal, redirect: "follow" }).catch(() => null);
+  if (!res) return null;
+  const fromUrl = res.url && !res.url.includes("/gg/") ? parseVideoId(res.url) : null;
+  if (fromUrl) return fromUrl;
+  const body = await res.text().catch(() => "");
+  const link = body.match(/https?:\/\/(?:www\.|m\.)?(?:youtube\.com|youtu\.be)\/[^"'<>\s]+/)?.[0];
+  if (link) return parseVideoId(link.replace(/&amp;/g, "&"));
+  return body.match(/"videoId":"([A-Za-z0-9_-]{11})"/)?.[1] ?? null;
+}
+
 export class StreamError extends Error {}
 
 export async function fetchInfo(id: string, signal?: AbortSignal): Promise<{ info: StreamInfo; remaining: number | null }> {

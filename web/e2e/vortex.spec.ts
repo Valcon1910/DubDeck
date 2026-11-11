@@ -355,3 +355,37 @@ test("welcome with the full name, hide the side menu, clear search, not found pa
   await page.getByRole("button", { name: "Sign in again" }).click();
   await expect(page.getByRole("region", { name: "Welcome" })).toBeVisible();
 });
+
+test("empty channel tab falls back to the feed; Google goto links; select and download several", async ({ page }) => {
+  await page.route("**/ys/channel/details/**", (route) => route.fulfill({ json: { channelId: "UC9", title: "Feed Channel" } }));
+  await page.route("**/ys/channel/videos/**", (route) => route.fulfill({ json: { contents: [] } }));
+  await page.route("**/yf/feeds/videos.xml?**", (route) => route.fulfill({ contentType: "application/xml", body:
+    `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom" xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/"><title>Feed Channel</title>
+    <entry><yt:videoId>aaaaaaaaaaa</yt:videoId><title>From feed one</title><published>2026-01-02T00:00:00Z</published></entry>
+    <entry><yt:videoId>bbbbbbbbbbb</yt:videoId><title>From feed two</title><published>2026-01-03T00:00:00Z</published></entry></feed>` }));
+  await page.route("**/ys/search/**", (route) => route.fulfill({ json: { contents: [
+    { type: "channel", channel: { channelId: "UC9", title: "Feed Channel" } },
+  ] } }));
+  await page.route("**/gg/goto?**", (route) => route.fulfill({ contentType: "text/html", body: '<a href="https://www.youtube.com/watch?v=dQw4w9WgXcQ&amp;vl=en">go</a>' }));
+  await page.route("**/yt/dl?**", (route) => route.fulfill({ json: info }));
+
+  await page.goto("/#/downloader");
+  const box = page.getByLabel("Search YouTube or paste a link");
+  await box.fill("https://www.google.com/goto?url=CAESbgHEIkXX&gsessionid=abc");
+  await page.getByRole("button", { name: "Get formats" }).click();
+  await expect(page.getByRole("heading", { name: info.title })).toBeVisible();
+  await expect(box).toHaveValue("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+
+  await box.fill("feed channel");
+  await page.getByRole("button", { name: "Search" }).click();
+  await page.getByRole("button", { name: /Feed Channel.*View channel/ }).click();
+  await expect(page.getByRole("button", { name: "From feed one", exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Select videos" }).click();
+  await page.getByRole("button", { name: "Select From feed one" }).click();
+  await page.getByRole("button", { name: "Select From feed two" }).click();
+  const bar = page.getByRole("region", { name: "Selected videos" });
+  await expect(bar).toContainText("2 selected");
+  await bar.getByRole("button", { name: "Clear" }).click();
+  await expect(bar).toBeHidden();
+});
