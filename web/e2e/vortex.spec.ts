@@ -207,8 +207,10 @@ test("720p with sound is prepared on the server, then saved", async ({ page }) =
       ? { progress: 400, success: 0, text: "Downloading", download_url: null }
       : { progress: 1000, success: 1, text: "Finished", download_url: "https://leo3.savenow.to/api/v2/download/abc" } });
   });
+  // Like the real server: an attachment with the video's name, no CORS header.
   await page.route((u) => u.hostname === "leo3.savenow.to", (route) =>
-    route.fulfill({ status: 200, body: Buffer.alloc(4096, 1), headers: { "content-type": "video/mp4", "access-control-allow-origin": "*" } }));
+    route.fulfill({ status: 200, body: Buffer.alloc(4096, 1),
+      headers: { "content-type": "video/mp4", "content-disposition": 'attachment; filename="Test video - title.mp4"' } }));
 
   await page.goto("/#/downloader");
   await page.getByLabel("YouTube link").fill("dQw4w9WgXcQ");
@@ -218,6 +220,7 @@ test("720p with sound is prepared on the server, then saved", async ({ page }) =
   const file = await download;
   expect(start).toContain("format=720");
   expect(start).toContain(encodeURIComponent("https://www.youtube.com/watch?v=dQw4w9WgXcQ"));
-  expect(file.suggestedFilename()).toBe("Test_ video - title.mp4");
-  await expect(page.getByRole("status")).toContainText("Saved");
+  expect(file.suggestedFilename()).toBe("Test video - title.mp4");
+  await expect(page.getByRole("status")).toContainText("downloading");
+  await expect(page.getByRole("link", { name: "Save video (720p)" })).toBeVisible();
 });
