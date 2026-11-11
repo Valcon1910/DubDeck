@@ -81,13 +81,15 @@ test("games page starts empty with the External games subtitle", async ({ page }
   await expect(page.getByText("No games yet.")).toBeVisible();
 });
 
-test("admin: sign in, add a game and an email, publish one commit", async ({ page }) => {
-  const repo = "https://api.github.com/repos/Valcon1910/DubDeck";
+test("admin: opens without a token, add a game and an email, publish one commit", async ({ page }) => {
+  const repo = "http://127.0.0.1:5173/gh/repos/Valcon1910/DubDeck";
+  let sentAuth = false;
   const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64");
   const blobs: string[] = [];
   let committed: { message: string; tree: string } | null = null;
   let treeBody: { tree: { path: string }[] } | null = null;
-  await page.route("https://api.github.com/**", async (route) => {
+  await page.route("**/gh/**", async (route) => {
+    if (route.request().headers()["authorization"]) sentAuth = true;
     const url = route.request().url();
     const method = route.request().method();
     if (url === repo) return route.fulfill({ json: { permissions: { push: true } } });
@@ -105,9 +107,9 @@ test("admin: sign in, add a game and an email, publish one commit", async ({ pag
   });
 
   await page.goto("/#/admin");
-  await page.getByLabel("GitHub token").fill("github_pat_test");
-  await page.getByRole("button", { name: "Open editor" }).click();
   await expect(page.getByText("All changes saved")).toBeVisible();
+  await expect(page.getByLabel("GitHub token")).toHaveCount(0);
+  expect(sentAuth).toBe(false); // the site's /gh route adds the token, not the browser
 
   // Edit the home title in place, like Google Sites.
   const title = page.getByRole("textbox", { name: "Page title" });
@@ -173,7 +175,7 @@ test("the Editor button shows only for the editors' emails", async ({ page }) =>
   await page.route("**/.herenow/me", (route) => route.fulfill({ json: { email: "Vale.Conde.Arango@gmail.com" } }));
   await page.reload();
   await page.getByRole("link", { name: "Editor" }).click();
-  await expect(page.getByRole("heading", { name: "Sign in to edit" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Editor" })).toBeVisible();
 });
 
 test("when the relay is blocked, the error explains why and offers 360p", async ({ page }) => {

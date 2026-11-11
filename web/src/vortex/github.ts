@@ -1,5 +1,6 @@
-// The admin editor saves by committing to the site's GitHub repository with a
-// fine-grained token that only the admin has (kept in this browser's storage).
+// The admin editor saves by committing to the site's GitHub repository through
+// the site's /gh proxy route: here.now adds the GITHUB_EDIT_TOKEN secret on the
+// way to api.github.com, so no token is ever typed in or kept in the browser.
 // The push to main redeploys the site, and access-list changes are applied to
 // here.now by the "Sync access allowlist" workflow.
 
@@ -7,27 +8,19 @@ export const REPO: string = __VORTEX_REPO__;
 export const BRANCH = "main";
 export const CONTENT_PATH = "web/content.json";
 export const ACCESS_PATH = "config/allowed-emails.json";
-const API = "https://api.github.com";
-const TOKEN_KEY = "vortex.admin.token";
+const API = "/gh";
 
 export class GitHubError extends Error {
   constructor(message: string, readonly status = 0) { super(message); }
 }
 
-export const tokenStore = {
-  get(): string { try { return localStorage.getItem(TOKEN_KEY) ?? ""; } catch { return ""; } },
-  set(t: string) { try { localStorage.setItem(TOKEN_KEY, t); } catch { /* private mode */ } },
-  clear() { try { localStorage.removeItem(TOKEN_KEY); } catch { /* ignore */ } },
-};
-
-async function gh<T>(token: string, path: string, init: RequestInit = {}): Promise<T> {
+async function gh<T>(_token: string, path: string, init: RequestInit = {}): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${API}${path}`, {
       ...init,
       headers: {
         Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${token}`,
         "X-GitHub-Api-Version": "2022-11-28",
         ...(init.body ? { "Content-Type": "application/json" } : {}),
       },
@@ -36,9 +29,12 @@ async function gh<T>(token: string, path: string, init: RequestInit = {}): Promi
   } catch {
     throw new GitHubError("Can't reach GitHub. Check the internet connection.");
   }
-  if (res.status === 401) throw new GitHubError("GitHub didn't accept the token. It may be wrong or expired.", 401);
+  if (res.status === 401 && /access_restricted/.test(await res.clone().text())) {
+    throw new GitHubError("Sign in to the site with an editor email first.", 401);
+  }
+  if (res.status === 401) throw new GitHubError("GitHub didn't accept the saved token (GH_EDIT_TOKEN). It may be wrong or expired; replace it and redeploy.", 401);
   if (res.status === 403 || res.status === 404) {
-    throw new GitHubError(`The token can't access ${REPO}. Give it "Contents: Read and write" and "Actions: Read" on that repository.`, res.status);
+    throw new GitHubError(`The saved token can't access ${REPO}. Give GH_EDIT_TOKEN "Contents: Read and write" and "Actions: Read" on that repository, then redeploy.`, res.status);
   }
   if (!res.ok) throw new GitHubError(`GitHub error ${res.status}: ${(await res.text()).slice(0, 200)}`, res.status);
   return (await res.json()) as T;
@@ -56,7 +52,7 @@ const fromBase64 = (b64: string) => Uint8Array.from(atob(b64.replace(/\n/g, ""))
 /** Check the token can write to the repository; returns the GitHub username. */
 export async function verify(token: string): Promise<string> {
   const repo = await gh<{ permissions?: { push?: boolean } }>(token, `/repos/${REPO}`);
-  if (!repo.permissions?.push) throw new GitHubError(`This token can read ${REPO} but not save to it. Give it "Contents: Read and write".`);
+  if (!repo.permissions?.push) throw new GitHubError(`The saved token can read ${REPO} but not save to it. Give GH_EDIT_TOKEN "Contents: Read and write".`);
   const me = await gh<{ login?: string }>(token, "/user").catch(() => ({ login: undefined }));
   return me.login ?? "admin";
 }

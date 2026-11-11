@@ -22,6 +22,7 @@ jobs:
       HERENOW_API_KEY: ${{ secrets.HERENOW_API_KEY }}
       HERENOW_SLUG: ${{ vars.HERENOW_SLUG }}
       RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
+      GH_EDIT_TOKEN: ${{ secrets.GH_EDIT_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -42,6 +43,13 @@ jobs:
         env:
           VALUE: ${{ secrets.RAPIDAPI_KEY }}
         run: node scripts/herenow-variable.mjs RAPIDAPI_KEY ytstream-download-youtube-videos.p.rapidapi.com youtube-info-download-api.p.rapidapi.com
+
+      # Stores the editor's GitHub token in here.now (pinned to api.github.com) for the /gh route.
+      - name: Save editor GitHub token in here.now
+        if: env.GH_EDIT_TOKEN != ''
+        env:
+          VALUE: ${{ secrets.GH_EDIT_TOKEN }}
+        run: node scripts/herenow-variable.mjs GITHUB_EDIT_TOKEN api.github.com
 
       - name: Install
         working-directory: web
