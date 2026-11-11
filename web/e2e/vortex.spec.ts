@@ -326,17 +326,15 @@ test("welcome with the full name, hide the side menu, clear search, not found pa
   await page.route("**/.herenow/me", (route) => route.fulfill({ json: { email: "maria.lopez@school.edu.co" } }));
   await page.route("https://gravatar.com/**", (route) => route.fulfill({ status: 404, body: "" }));
   await page.goto("/");
-  await expect(page.getByRole("region", { name: "Welcome" })).toContainText("Maria!");
-  await page.getByLabel("Your full name").fill("María José López");
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.getByRole("region", { name: "Welcome" })).toContainText("María José López!");
-  await expect(page.locator(".vx-user")).toContainText("María José López");
+  await expect(page.getByRole("region", { name: "Welcome" })).toContainText("Maria Lopez!");
+  await expect(page.getByLabel("Your full name")).toHaveCount(0);
 
   const hide = page.getByRole("button", { name: "Hide menu" });
   if ((page.viewportSize()?.width ?? 0) > 860) {
     await hide.click();
     await expect(page.locator(".vx-side")).toBeHidden();
-    await page.getByRole("button", { name: "Show menu" }).click();
+    await expect(page.locator(".vx-topnav").getByRole("link", { name: "Games" })).toBeVisible();
+    await page.getByRole("button", { name: "Show side menu" }).click();
     await expect(page.locator(".vx-side")).toBeVisible();
   }
 

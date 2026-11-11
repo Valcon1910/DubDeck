@@ -2,7 +2,7 @@ import { useState } from "react";
 import { logoFor, safeUrl, useContent, type Content, type Game } from "./content";
 import { Editable, useEdit } from "./editable";
 
-export interface Welcome { name: string; avatar: string; needsName: boolean; setName: (n: string) => void }
+export interface Welcome { name: string; avatar: string }
 
 export function HomePage({ welcome }: { welcome?: Welcome }) {
   const c = useContent();
@@ -164,9 +164,8 @@ function greeting(): string {
   return h < 5 ? "Good night" : h < 12 ? "Good morning" : h < 19 ? "Good afternoon" : "Good evening";
 }
 
-/** "Good morning, Valentino!" with the person's picture; asks for the full name once. */
+/** "Good morning, Valentino!" with the person's picture. */
 function WelcomeCard({ w }: { w: Welcome }) {
-  const [draft, setDraft] = useState("");
   const first = w.name.split(/\s+/)[0];
   return (
     <section className="vx-welcome" aria-label="Welcome">
@@ -175,15 +174,8 @@ function WelcomeCard({ w }: { w: Welcome }) {
       </span>
       <div className="vx-welcome-text">
         <p className="vx-welcome-hi">{greeting()},</p>
-        <h2>{w.needsName ? first : w.name}! 👋</h2>
+        <h2>{w.name}! 👋</h2>
         <p className="vx-muted">Welcome back to Vortex Engine. What are we doing today?</p>
-        {w.needsName && (
-          <form className="vx-welcome-name" onSubmit={(e) => { e.preventDefault(); if (draft.trim()) w.setName(draft.trim()); }}>
-            <label className="sr-only" htmlFor="vx-fullname">Your full name</label>
-            <input id="vx-fullname" type="text" maxLength={40} placeholder="What's your full name?" value={draft} onChange={(e) => setDraft(e.target.value)} />
-            <button className="vx-btn vx-btn-primary vx-btn-sm" disabled={!draft.trim()}>Save</button>
-          </form>
-        )}
       </div>
     </section>
   );
