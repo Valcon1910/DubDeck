@@ -1,0 +1,2 @@
+web/content.json merge=vortexjson
+config/allowed-emails.json merge=vortexjson

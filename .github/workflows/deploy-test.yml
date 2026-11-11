@@ -39,9 +39,10 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config merge.vortexjson.driver "node scripts/merge-json.mjs %O %A %B"
           git fetch origin "$CODE" main
-          git merge --no-edit origin/main || { echo "::error::main and test changed the same lines. Ask Claude to resolve the conflict."; exit 1; }
-          git merge --no-edit "origin/$CODE" || { echo "::error::$CODE and test changed the same lines. Ask Claude to resolve the conflict."; exit 1; }
+          VORTEX_MAIN=theirs git merge --no-edit origin/main || { echo "::error::main and test changed the same lines. Ask Claude to resolve the conflict."; exit 1; }
+          VORTEX_MAIN=ours git merge --no-edit "origin/$CODE" || { echo "::error::$CODE and test changed the same lines. Ask Claude to resolve the conflict."; exit 1; }
           git push origin HEAD:test
 
   publish:
