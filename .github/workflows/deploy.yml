@@ -1,4 +1,4 @@
-name: Deploy Vortex Engine to here.now
+name: Publish real site
 
 on:
   push:

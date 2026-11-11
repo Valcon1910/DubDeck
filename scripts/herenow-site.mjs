@@ -7,8 +7,10 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
-export const SITE_NAME = "Vortex Engine";
-export const SITE_FILE = "config/site.json";
+// The test site sets HERENOW_SITE_NAME="Vortex Engine (test)" and
+// HERENOW_SITE_FILE=config/site-test.json, so it keeps its own fixed address.
+export const SITE_NAME = process.env.HERENOW_SITE_NAME || "Vortex Engine";
+export const SITE_FILE = process.env.HERENOW_SITE_FILE || "config/site.json";
 
 export function savedSlug() {
   if (!existsSync(SITE_FILE)) return "";

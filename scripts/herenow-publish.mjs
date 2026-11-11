@@ -11,7 +11,7 @@
 import { createHash } from "node:crypto";
 import { appendFileSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import { findSlug, saveSlug } from "./herenow-site.mjs";
+import { findSlug, saveSlug, SITE_FILE, SITE_NAME } from "./herenow-site.mjs";
 
 const API = (process.env.HERENOW_API ?? "https://here.now").replace(/\/$/, "");
 const CLIENT = process.env.HERENOW_CLIENT ?? "github-actions/dubdeck-deploy";
@@ -110,7 +110,7 @@ console.log(`Publishing ${files.length} files from ${dir} to ${SLUG || "a new Si
 const body = {
   files: files.map(({ path, size, contentType, hash }) => ({ path, size, contentType, hash })),
   spaMode: true,
-  displayName: "Vortex Engine",
+  displayName: SITE_NAME,
   displayDescription: "Games, docs, slides and utilities.",
 };
 const created = SLUG
@@ -138,10 +138,10 @@ if (manifestWarnings.length) {
 
 console.log(`Live: ${fin.siteUrl}${fin.unchanged ? " (unchanged)" : ""}`);
 if (process.env.GITHUB_STEP_SUMMARY) {
-  appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### DubDeck deployed\n\n${fin.siteUrl}\n\nslug: \`${slug}\`\n`);
+  appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### ${SITE_NAME} deployed\n\n${fin.siteUrl}\n\nslug: \`${slug}\`\n`);
 }
 if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `slug=${slug}\nsite_url=${fin.siteUrl}\n`);
 if (!SLUG) {
   saveSlug(slug);
-  console.log(`::notice::New Site created: ${slug}. Saved to config/site.json so every later deploy keeps this address.`);
+  console.log(`::notice::New Site created: ${slug}. Saved to ${SITE_FILE} so every later deploy keeps this address.`);
 }

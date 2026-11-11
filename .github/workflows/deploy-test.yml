@@ -1,0 +1,97 @@
+name: Publish test site
+
+# Run by hand: Actions → Publish test site → Run workflow, then pick the
+# branch to try out. The test site has its own fixed address
+# (config/site-test.json) and never touches the real one.
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Branch to publish to the test site
+        default: main
+
+permissions:
+  contents: write # only to save config/site.json the first time a Site is created
+
+concurrency:
+  group: herenow-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HERENOW_API_KEY: ${{ secrets.HERENOW_API_KEY }}
+      HERENOW_SLUG: ${{ vars.HERENOW_TEST_SLUG }}
+      HERENOW_SITE_NAME: Vortex Engine (test)
+      HERENOW_SITE_FILE: config/site-test.json
+      RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
+      GH_EDIT_TOKEN: ${{ secrets.GH_EDIT_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Check configuration
+        run: |
+          test -n "$HERENOW_API_KEY" || { echo "::error::Add the HERENOW_API_KEY repository secret."; exit 1; }
+          node scripts/sync-access.mjs --check
+          test -n "$GH_EDIT_TOKEN" || echo "::warning::The GH_EDIT_TOKEN repository secret is missing, so the Editor can't save. Add it under Settings → Secrets and variables → Actions → Repository secrets."
+
+      # Stores the RapidAPI key in here.now (pinned to the YTStream host) for the /yt proxy route.
+      - name: Save RapidAPI key in here.now
+        if: env.RAPIDAPI_KEY != ''
+        env:
+          VALUE: ${{ secrets.RAPIDAPI_KEY }}
+        run: node scripts/herenow-variable.mjs RAPIDAPI_KEY ytstream-download-youtube-videos.p.rapidapi.com youtube-info-download-api.p.rapidapi.com
+
+      # Stores the editor's GitHub token in here.now (pinned to api.github.com) for the /gh route.
+      - name: Save editor GitHub token in here.now
+        if: env.GH_EDIT_TOKEN != ''
+        env:
+          VALUE: ${{ secrets.GH_EDIT_TOKEN }}
+        run: node scripts/herenow-variable.mjs GITHUB_EDIT_TOKEN api.github.com
+
+      - name: Install
+        working-directory: web
+        run: npm ci
+
+      - name: Build
+        working-directory: web
+        env:
+          DUBDECK_API_HOST: ${{ vars.DUBDECK_API_HOST }}
+        run: npm run build
+
+      # create → upload → finalize; fails on proxy.json / data.json warnings.
+      - name: Publish to here.now
+        id: publish
+        run: node scripts/herenow-publish.mjs web/dist
+
+      # Keep the Site restricted to the allowlist (also covers a freshly created Site).
+      # Remember the Site's address in the repo, so every later deploy updates
+      # the same Site. (Pushes made with this token don't start new runs.)
+      - name: Remember the site address
+        run: |
+          if [ -n "$(git status --porcelain config/site-test.json)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            # Saved on main, so the test site keeps this address whatever branch is tested.
+            cp config/site-test.json /tmp/site-test.json
+            git fetch origin main && git checkout -B save-test-address origin/main
+            cp /tmp/site-test.json config/site-test.json
+            git add config/site-test.json
+            git commit -m "Remember the Vortex Engine test site address"
+            git push origin HEAD:main
+          fi
+
+      - name: Enforce restricted access
+        env:
+          HERENOW_SLUG: ${{ vars.HERENOW_TEST_SLUG || steps.publish.outputs.slug }}
+        run: node scripts/sync-access.mjs

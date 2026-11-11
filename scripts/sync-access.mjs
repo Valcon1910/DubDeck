@@ -8,7 +8,7 @@
 // It never sends invite emails (notify: false).
 
 import { appendFileSync, readFileSync } from "node:fs";
-import { findSlug } from "./herenow-site.mjs";
+import { findSlug, SITE_NAME } from "./herenow-site.mjs";
 
 const API = (process.env.HERENOW_API ?? "https://here.now").replace(/\/$/, "");
 const CLIENT = process.env.HERENOW_CLIENT ?? "github-actions/dubdeck-access";
@@ -66,7 +66,7 @@ if (!KEY) fail("HERENOW_API_KEY is not set.");
 SLUG = (await findSlug({ api: API, key: KEY, client: CLIENT })) ?? "";
 if (!SLUG) {
   // Nothing to update yet; the deploy workflow applies the list when it creates the Site.
-  console.log("::notice::No Vortex Engine Site yet; the next deploy applies the access list.");
+  console.log(`::notice::No ${SITE_NAME} Site yet; the next deploy applies the access list.`);
   process.exit(0);
 }
 

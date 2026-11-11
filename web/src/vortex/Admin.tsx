@@ -85,7 +85,7 @@ function SignIn({ busy, error, onRetry }: { busy: boolean; error: string | null;
             <li>On GitHub, open <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">Settings → Developer settings → Fine-grained tokens → Generate new token</a>.</li>
             <li>Repository access: <b>Only select repositories</b> → <code>{REPO}</code>. Permissions: <b>Contents: Read and write</b>, <b>Actions: Read-only</b>.</li>
             <li>In the repository, add it under <b>Settings → Secrets and variables → Actions</b> as <code>GH_EDIT_TOKEN</code>.</li>
-            <li>Run <b>Actions → Deploy Vortex Engine to here.now → Run workflow</b>.</li>
+            <li>Run <b>Actions → Publish real site → Run workflow</b>.</li>
           </ol>
         </details>
       )}
