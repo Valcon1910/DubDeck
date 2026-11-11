@@ -160,7 +160,7 @@ export function Downloader() {
         a.href = url; a.rel = "noopener";
         document.body.append(a); a.click(); a.remove();
         setReady({ label: p.label, url });
-        setNotice("The video is downloading. On iPad it goes to Files → Downloads. If nothing happened, tap “Save video” below.");
+        setNotice(`The video is downloading${p.bytes ? ` (about ${formatBytes(p.bytes)})` : ""}. Safari may show “of ?” because the size isn't known until it finishes; that's normal. On iPad it goes to Files → Downloads. If nothing happened, tap “Save video” below.`);
       } catch (e) {
         setFallback(presets.find((x) => x.kind === "video" && !x.audio && !x.server) ?? null);
         setError(e instanceof StreamError ? e.message : "The HD download stopped. Check the connection and try again.");
@@ -296,7 +296,7 @@ export function Downloader() {
                             {active && <span className="vx-spinner" role="progressbar" aria-label={saving!.stage} />}
                             {active
                               ? `${saving!.stage}${saving!.progress != null ? ` ${Math.round(saving!.progress * 100)}%` : "…"}`
-                              : formatBytes(p.bytes) || "Save"}
+                              : (p.server && p.bytes ? `~${formatBytes(p.bytes)}` : formatBytes(p.bytes)) || "Save"}
                           </span>
                           {active && saving?.progress != null && (
                             <span className="vx-progress" style={{ width: `${saving.progress * 100}%` }} />

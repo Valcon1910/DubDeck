@@ -149,9 +149,15 @@ export function buildPresets(info: StreamInfo): Preset[] {
   if (!hdEnabled()) {
     const vids = out.filter((p) => p.kind === "video");
     const rest = out.filter((p) => p.kind !== "video");
+    // Expected size: YouTube's own picture file at that height (H.264 when listed) plus the M4A sound.
+    const est = (h: number) => {
+      const v = (info.adaptiveFormats ?? []).filter((f) => !isAudio(f) && f.height === h && f.contentLength)
+        .sort((a, b) => Number(isH264(b)) - Number(isH264(a)))[0];
+      return v ? size(v)! + (m4a ? size(m4a) ?? 0 : 0) : null;
+    };
     const server: Preset[] = ["1080", "720"].map((f) => ({
       key: `s${f}`, kind: "video", label: `Video ${f}p`, detail: "MP4 with sound · prepared online, may take a minute",
-      ext: "mp4", url: `https://www.youtube.com/watch?v=${info.id}`, bytes: null, server: f,
+      ext: "mp4", url: `https://www.youtube.com/watch?v=${info.id}`, bytes: est(Number(f)), server: f,
     }));
     return [...server, ...vids, ...rest];
   }
