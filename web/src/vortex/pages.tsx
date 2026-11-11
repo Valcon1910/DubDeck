@@ -6,9 +6,10 @@ export function HomePage() {
   const c = useContent();
   const edit = useEdit();
   const s = c.sections;
-  const tiles: { key: keyof Content["sections"]; href: string | null }[] = [
+  const tiles: { key: keyof Content["sections"]; href: string | null; logo?: string; external?: boolean }[] = [
     { key: "downloader", href: "#/downloader" },
     { key: "games", href: "#/games" },
+    { key: "roblox", href: safeUrl(s.roblox.url ?? "") ?? null, logo: "/roblox-group.png", external: true },
     { key: "docs", href: null },
     { key: "slides", href: null },
   ];
@@ -22,6 +23,7 @@ export function HomePage() {
         {tiles.filter((t) => edit || s[t.key].visible).map((t) => {
           const body = (
             <>
+              {t.logo && <img className="vx-tile-logo" src={t.logo} alt="" width={56} height={56} />}
               <Editable as="span" className="vx-eyebrow" path={`sections.${t.key}.label`} placeholder="Label" />
               <Editable as="strong" path={`sections.${t.key}.title`} placeholder="Title" />
               <Editable as="span" className="vx-muted" path={`sections.${t.key}.description`} placeholder="Description" multiline />
@@ -35,7 +37,7 @@ export function HomePage() {
           );
           const cls = `vx-tile ${t.href ? "vx-tile-live" : ""} ${edit && !s[t.key].visible ? "vx-hidden-tile" : ""}`;
           return t.href && !edit
-            ? <a key={t.key} className={cls} href={t.href}>{body}</a>
+            ? <a key={t.key} className={cls} href={t.href} {...(t.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}>{body}</a>
             : <div key={t.key} className={cls} aria-disabled={t.href ? undefined : "true"}>{body}</div>;
         })}
       </div>

@@ -360,3 +360,4 @@ strong.vx-editable, span.vx-editable { display: inline-block; }
 @keyframes vx-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .vx-spinner { animation-duration: 2.4s; } }
 .vx-games > li { min-width: 0; }
+.vx-tile-logo { width: 56px; height: 56px; border-radius: 14px; object-fit: cover; margin-bottom: 4px; box-shadow: 0 2px 8px rgb(0 0 0 / 0.12); }

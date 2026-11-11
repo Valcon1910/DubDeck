@@ -5,7 +5,7 @@ import published from "../../content.json";
 // web/content.json; the editor commits a new version to GitHub, which
 // redeploys the site, so edits are permanent.
 
-export interface SectionText { label: string; title: string; description: string; visible: boolean }
+export interface SectionText { label: string; title: string; description: string; visible: boolean; url?: string }
 
 export interface Game {
   id: string;
@@ -19,7 +19,7 @@ export interface Game {
 export interface Content {
   site: { name: string; accent: string };
   home: { title: string; subtitle: string };
-  sections: { games: SectionText; docs: SectionText; slides: SectionText; downloader: SectionText };
+  sections: { games: SectionText; docs: SectionText; slides: SectionText; downloader: SectionText; roblox: SectionText };
   games: { title: string; subtitle: string; intro: string; empty: string; items: Game[] };
   downloader: { title: string; intro: string; footer: string };
 }
@@ -34,7 +34,7 @@ export function normalize(raw: unknown): Content {
   return {
     site: { ...d.site, ...(r.site ?? {}) },
     home: { ...d.home, ...(r.home ?? {}) },
-    sections: { games: sec("games"), docs: sec("docs"), slides: sec("slides"), downloader: sec("downloader") },
+    sections: { games: sec("games"), docs: sec("docs"), slides: sec("slides"), downloader: sec("downloader"), roblox: sec("roblox") },
     games: {
       ...d.games, ...(r.games ?? {}),
       items: (r.games?.items ?? d.games.items).map((g) => ({

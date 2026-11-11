@@ -357,6 +357,7 @@ function PagesPanel({ draft, page, setPage, toggle, addGame }: {
   const rows: { key: keyof Content["sections"]; page: Page | null; note: string }[] = [
     { key: "downloader", page: "downloader", note: "Utility" },
     { key: "games", page: "games", note: `${draft.games.items.length} game${draft.games.items.length === 1 ? "" : "s"}` },
+    { key: "roblox", page: null, note: "Roblox group link" },
     { key: "docs", page: null, note: "Coming soon" },
     { key: "slides", page: null, note: "Coming soon" },
   ];

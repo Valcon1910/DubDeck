@@ -31,6 +31,13 @@
       "description": "Save YouTube videos and audio.",
       "visible": true,
       "label": "Utilities"
+    },
+    "roblox": {
+      "label": "Roblox",
+      "title": "Randomized Gaming Studios",
+      "description": "Our Roblox community: news, leaks and feedback for The Expanse.",
+      "visible": true,
+      "url": "https://www.roblox.com/communities/35223720/Randomized-Gaming-Studios#!/about"
     }
   },
   "games": {
