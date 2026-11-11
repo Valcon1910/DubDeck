@@ -18,7 +18,17 @@
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
 }
-.vx-brand { display: flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; font-weight: 700; font-size: 18px; letter-spacing: -0.3px; }
+.vx-brand { display: flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; }
+.vx-mark { flex: none; filter: drop-shadow(0 3px 8px color-mix(in srgb, var(--vx-accent) 35%, transparent)); transition: transform 0.4s var(--ease); }
+.vx-brand:hover .vx-mark { transform: rotate(60deg); }
+.vx-brand-name { font-family: "Space Grotesk Variable", system-ui, sans-serif; font-size: 20px; letter-spacing: -0.4px; line-height: 1; white-space: nowrap; }
+.vx-brand-name b {
+  font-weight: 700;
+  background: linear-gradient(120deg, var(--vx-accent), #06b6d4); -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.vx-brand-name span { font-weight: 400; color: var(--ink); opacity: 0.85; }
+.vx h1, .vx-page-head h1 { font-family: "Space Grotesk Variable", system-ui, sans-serif; letter-spacing: -0.8px; }
+@media (prefers-reduced-motion: reduce) { .vx-brand:hover .vx-mark { transform: none; } }
 .vx-brand em { font-style: normal; color: var(--vx-accent); }
 .vx-top nav { display: flex; gap: 4px; }
 .vx-top nav a { padding: 8px 12px; border-radius: 999px; color: var(--muted); text-decoration: none; font-weight: 500; font-size: 15px; }

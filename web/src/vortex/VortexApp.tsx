@@ -3,6 +3,7 @@ import { isEditor, useVisitorEmail } from "./admins";
 import { ContentContext, normalize, PUBLISHED } from "./content";
 import { Downloader } from "./Downloader";
 import { GamesPage, HomePage } from "./pages";
+import "@fontsource-variable/space-grotesk";
 import "./vortex.css";
 
 const Admin = lazy(() => import("./Admin").then((m) => ({ default: m.Admin })));
@@ -45,7 +46,7 @@ export function VortexApp() {
         <header className="vx-top">
           <a className="vx-brand" href="#/" aria-label={`${content.site.name} home`}>
             <VortexMark />
-            <span>{content.site.name}</span>
+            <BrandName name={content.site.name} />
           </a>
           <nav aria-label="Main">
             {nav.filter(([, , show]) => show).map(([r, label]) => (
@@ -72,11 +73,40 @@ export function VortexApp() {
 }
 
 function VortexMark() {
+  // A hexagon (tech) with three blades swirling around a core: one engine,
+  // many uses (games, docs, utilities).
   return (
-    <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true">
-      <rect width="32" height="32" rx="9" fill="var(--vx-accent)" />
-      <path d="M16 7a9 9 0 1 0 9 9 6 6 0 0 0-6-6 3.5 3.5 0 0 0-3.5 3.5A2 2 0 0 0 17.5 15.5"
-        fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" />
+    <svg viewBox="0 0 48 48" width="34" height="34" aria-hidden="true" className="vx-mark">
+      <defs>
+        <linearGradient id="vx-g" x1="4" y1="2" x2="44" y2="46" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="var(--vx-accent)" />
+          <stop offset="1" stopColor="#06b6d4" />
+        </linearGradient>
+      </defs>
+      <path d="M24 2.5 42.6 13.25v21.5L24 45.5 5.4 34.75v-21.5Z" fill="url(#vx-g)" stroke="url(#vx-g)" strokeWidth="3" strokeLinejoin="round" />
+      <g fill="none" stroke="#fff" strokeWidth="3.2" strokeLinecap="round">
+        <path d="M24 12.5a11.5 11.5 0 0 1 10 5.8" />
+        <path d="M34 29.7a11.5 11.5 0 0 1-10 5.8" transform="rotate(0 24 24)" />
+        <path d="M14 29.7A11.5 11.5 0 0 1 14 18.3" />
+      </g>
+      <g fill="none" stroke="#fff" strokeOpacity="0.55" strokeWidth="2.4" strokeLinecap="round">
+        <path d="M24 17.5a6.5 6.5 0 0 1 6.5 6.5" />
+        <path d="M24 30.5a6.5 6.5 0 0 1-6.5-6.5" />
+      </g>
+      <circle cx="24" cy="24" r="2.8" fill="#fff" />
+      <circle cx="34" cy="18.3" r="1.8" fill="#fff" />
+      <circle cx="24" cy="35.5" r="1.8" fill="#fff" />
+      <circle cx="14" cy="18.3" r="1.8" fill="#fff" />
     </svg>
+  );
+}
+
+/** "Vortex Engine" → bold gradient first word, lighter second word. */
+function BrandName({ name }: { name: string }) {
+  const [first, ...rest] = name.trim().split(/\s+/);
+  return (
+    <span className="vx-brand-name">
+      <b>{first}</b>{rest.length > 0 && <> <span>{rest.join(" ")}</span></>}
+    </span>
   );
 }
