@@ -67,6 +67,13 @@
         "url": "https://calcsolver.net",
         "logo": "",
         "description": "A discreet gaming platform for a variety of games accessed with Code Mode on with 0000. Does not affect search history."
+      },
+      {
+        "id": "bc1c68e9-6017-4ac3-96ca-4385cacc0b48",
+        "name": "GitLab Games",
+        "url": "https://polytrackonline.gitlab.io/category/popular.html",
+        "logo": "",
+        "description": "Mainly polytrack, this website offers a variety of games."
       }
     ]
   },
