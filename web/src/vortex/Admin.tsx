@@ -8,7 +8,7 @@ import {
 import { Downloader } from "./Downloader";
 import { GameLogo, GamesPage, HomePage } from "./pages";
 
-interface Access { emails: string[]; domains: string[] }
+export interface Access { emails: string[]; domains: string[] }
 type Panel = "pages" | "theme" | "access";
 type Page = "home" | "games" | "downloader";
 
@@ -136,7 +136,6 @@ function Editor({ token, user, saved, onSaved, onSignOut }: EditorProps) {
     bump((n) => n + 1);
   }, []);
   const set = useCallback((fn: (c: Content) => void, key = "") => change((s) => fn(s.content), key), [change]);
-  const setAccess = useCallback((a: Access) => change((s) => { s.access = clone(a); }), [change]);
 
   function undo() {
     const h = history.current;
@@ -300,7 +299,7 @@ function Editor({ token, user, saved, onSaved, onSignOut }: EditorProps) {
         {panelOpen && !previewing && (
           <aside className="vx-ed-panel" aria-label="Editor panel">
             <nav className="vx-tabs" role="tablist">
-              {([["pages", "Pages"], ["theme", "Theme"], ["access", "Access"]] as const).map(([k, label]) => (
+              {([["pages", "Pages"], ["theme", "Theme"]] as const).map(([k, label]) => (
                 <button key={k} role="tab" aria-selected={panel === k} onClick={() => setPanel(k)}>{label}</button>
               ))}
             </nav>
@@ -309,7 +308,6 @@ function Editor({ token, user, saved, onSaved, onSignOut }: EditorProps) {
                 toggle={(k) => api.toggleSection(k)} addGame={() => { setPage("games"); setDialog(null); }} />
             )}
             {panel === "theme" && <LookTab draft={draft} set={(fn) => set(fn)} />}
-            {panel === "access" && <AccessTab access={access} setAccess={setAccess} />}
             <footer className="vx-admin-foot">
               <span className="vx-muted vx-small">Saving to <code>{REPO}</code></span>
               <button className="vx-link" onClick={() => { if (!dirty || confirm("Close the editor? Unsaved changes stay on this device.")) onSignOut(); }}>Close editor</button>
@@ -503,7 +501,7 @@ function Field({ label, value, onChange, multiline, hint, maxLength = 300 }: {
 
 type SetFn = (fn: (c: Content) => void) => void;
 
-function AccessTab({ access, setAccess }: { access: Access; setAccess: (a: Access) => void }) {
+export function AccessTab({ access, setAccess }: { access: Access; setAccess: (a: Access) => void }) {
   const [email, setEmail] = useState("");
   const [domain, setDomain] = useState("");
   const [err, setErr] = useState<string | null>(null);
@@ -531,7 +529,7 @@ function AccessTab({ access, setAccess }: { access: Access; setAccess: (a: Acces
     <div className="vx-stack">
       <p className="vx-muted vx-small">
         Only these people can open the site. They sign in at here.now's gate with a code sent to their email.
-        Changes apply about a minute after you publish.
+        They work on both the published site and the test site. Changes apply about a minute after you save.
       </p>
       {err && <p className="vx-alert vx-alert-error" role="alert">{err}</p>}
       <fieldset className="vx-card vx-fieldset">

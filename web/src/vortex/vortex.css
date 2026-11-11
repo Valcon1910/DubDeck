@@ -368,3 +368,86 @@ a.vx-roblox:hover { border-color: var(--vx-accent); transform: translateY(-1px);
 .vx-roblox-logo { flex: none; width: 96px; height: 96px; border-radius: 20px; object-fit: cover; background: var(--border); box-shadow: 0 3px 10px rgb(0 0 0 / 0.12); }
 .vx-roblox-edit { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end; }
 @media (max-width: 560px) { .vx-roblox-logo { width: 72px; height: 72px; } .vx-roblox-edit { grid-template-columns: 1fr; } }
+.vx-site-switch { border: 1px dashed var(--border); }
+.vx-site-switch:hover { border-color: var(--vx-accent); }
+.vx-top nav a.vx-admin-btn { background: var(--ink); }
+.vx-card-title { margin: 0; font-size: 18px; }
+.vx-action-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.vx-runs { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.vx-runs li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.vx-runs a { color: var(--ink); font-weight: 600; }
+.vx-run-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+.vx-run-dot.ok { background: #16a34a; } .vx-run-dot.bad { background: #dc2626; }
+.vx-run-dot.running { background: #f59e0b; animation: vx-spin 1s linear infinite; border-radius: 2px; }
+
+/* ---------- App shell: sidebar on the left, account at the top right ---------- */
+.vx-shell { display: grid; grid-template-columns: 240px minmax(0, 1fr); }
+.vx-side {
+  position: sticky; top: 0; height: 100dvh; box-sizing: border-box; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 18px;
+  padding: calc(16px + env(safe-area-inset-top)) 14px 20px max(14px, env(safe-area-inset-left));
+  border-right: 1px solid var(--border); background: var(--surface);
+}
+.vx-side .vx-brand { padding: 4px 6px; }
+.vx-side-nav { display: flex; flex-direction: column; gap: 2px; }
+.vx-side-label { margin: 14px 10px 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.vx-side-label:first-child { margin-top: 0; }
+.vx-side-nav a {
+  display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px;
+  color: var(--ink); text-decoration: none; font-weight: 500; font-size: 15px; opacity: 0.85;
+}
+.vx-side-nav a:hover { background: var(--vx-accent-soft); opacity: 1; }
+.vx-side-nav a[aria-current="page"] { background: var(--vx-accent); color: #fff; opacity: 1; }
+.vx-side-switch { border: 1px dashed var(--border); margin-top: 6px; }
+.vx-ico { flex: none; }
+.vx-body { min-width: 0; }
+.vx-shell .vx-top { justify-content: flex-end; }
+.vx-menu-btn, .vx-brand-mobile { display: none; }
+.vx-menu-btn { background: none; border: 0; color: var(--ink); padding: 8px; border-radius: 10px; cursor: pointer; }
+
+.vx-account { position: relative; }
+.vx-user { display: flex; align-items: center; gap: 10px; padding: 4px 4px 4px 14px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--ink); font: inherit; font-weight: 600; cursor: pointer; }
+.vx-user:hover { border-color: var(--vx-accent); }
+.vx-user-name { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vx-avatar { display: inline-grid; place-items: center; flex: none; border-radius: 50%; overflow: hidden; background: linear-gradient(135deg, var(--vx-accent), #06b6d4); color: #fff; font-weight: 700; }
+.vx-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.vx-menu-catch { position: fixed; inset: 0; z-index: 9; }
+.vx-menu {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 10; min-width: 240px; padding: 6px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 12px 32px rgb(0 0 0 / 0.16);
+}
+.vx-menu-head { display: flex; align-items: center; gap: 12px; padding: 10px 10px 12px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.vx-menu-head span { display: flex; flex-direction: column; min-width: 0; }
+.vx-menu-head em { font-style: normal; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.vx-menu button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px; border: 0; border-radius: 10px; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.vx-menu button:hover { background: var(--vx-accent-soft); }
+
+.vx-modal { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 16px; background: rgb(0 0 0 / 0.4); }
+.vx-modal-card { width: min(480px, 100%); max-height: calc(100dvh - 32px); overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+.vx-modal-head { display: flex; align-items: center; justify-content: space-between; }
+.vx-modal-head h2 { margin: 0; font-size: 20px; }
+.vx-set-group { display: flex; flex-direction: column; gap: 12px; padding-top: 14px; border-top: 1px solid var(--border); }
+.vx-set-group h3 { margin: 0; font-size: 15px; }
+.vx-set-profile { display: flex; align-items: center; gap: 16px; }
+.vx-seg { display: inline-flex; padding: 3px; border-radius: 10px; background: var(--bg); border: 1px solid var(--border); }
+.vx-seg button { padding: 7px 14px; border: 0; border-radius: 8px; background: none; color: var(--muted); font: inherit; font-weight: 500; cursor: pointer; }
+.vx-seg button[aria-checked="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgb(0 0 0 / 0.12); }
+.vx-swatch-site { color: #fff; font-weight: 700; font-size: 12px; }
+.vx-check { display: flex; align-items: center; gap: 10px; }
+
+/* Text size and motion, per person */
+:root[data-text-size="small"] { font-size: 14px; }
+:root[data-text-size="small"] .vx { zoom: 0.92; }
+:root[data-text-size="large"] .vx { zoom: 1.12; }
+:root[data-reduce-motion="true"] *, :root[data-reduce-motion="true"] *::before { animation-duration: 0.001s !important; transition-duration: 0.001s !important; }
+
+@media (max-width: 860px) {
+  .vx-shell { grid-template-columns: minmax(0, 1fr); }
+  .vx-side { position: fixed; inset: 0 auto 0 0; z-index: 30; width: 260px; transform: translateX(-100%); transition: transform 0.25s var(--ease); }
+  .vx-side.open { transform: none; box-shadow: 0 0 40px rgb(0 0 0 / 0.2); }
+  .vx-scrim { position: fixed; inset: 0; z-index: 25; background: rgb(0 0 0 / 0.35); }
+  .vx-shell .vx-top { justify-content: space-between; flex-wrap: nowrap; }
+  .vx-menu-btn { display: inline-grid; }
+  .vx-brand-mobile { display: flex; margin-right: auto; }
+  .vx-user-name { max-width: 110px; }
+}

@@ -59,15 +59,16 @@ export async function verify(token: string): Promise<string> {
 }
 
 /** Read a JSON file from the tip of main (so edits always start from the newest saved copy). */
-export async function readJson<T>(token: string, path: string): Promise<T> {
-  const f = await gh<{ content: string }>(token, `/repos/${REPO}/contents/${path}?ref=${BRANCH}`);
+export async function readJson<T>(token: string, path: string, branch = BRANCH): Promise<T> {
+  const f = await gh<{ content: string }>(token, `/repos/${REPO}/contents/${path}?ref=${branch}`);
   return JSON.parse(dec.decode(fromBase64(f.content))) as T;
 }
 
 export interface FileChange { path: string; text?: string; bytes?: Uint8Array }
 
 /** Commit several files to main in one commit. Returns the commit SHA. */
-export async function commit(token: string, message: string, files: FileChange[]): Promise<string> {
+export async function commit(token: string, message: string, files: FileChange[], branch = BRANCH): Promise<string> {
+  const BRANCH = branch;
   const base = `/repos/${REPO}/git`;
   const ref = await gh<{ object: { sha: string } }>(token, `${base}/ref/heads/${BRANCH}`);
   const parent = await gh<{ tree: { sha: string } }>(token, `${base}/commits/${ref.object.sha}`);
@@ -107,4 +108,36 @@ export async function deployState(token: string, sha: string): Promise<DeploySta
   if (!runs.length) return "waiting";
   if (runs.some((w) => w.status !== "completed")) return "running";
   return runs.every((w) => w.conclusion === "success") ? "live" : "failed";
+}
+
+/** The two publish actions the Admin page can start. */
+export const ACTIONS = {
+  test: { file: "deploy-test.yml", name: "Publish code to test site", inputs: { code_branch: "claude/dubdeck-architecture-nxzvcz" } },
+  real: { file: "deploy.yml", name: "Publish test site to real site", inputs: {} },
+} as const;
+
+export async function runAction(key: keyof typeof ACTIONS): Promise<void> {
+  const a = ACTIONS[key];
+  let res: Response;
+  try {
+    res = await fetch(`${API}/repos/${REPO}/actions/workflows/${a.file}/dispatches`, {
+      method: "POST", cache: "no-store",
+      headers: { Accept: "application/vnd.github+json", "Content-Type": "application/json", "X-GitHub-Api-Version": "2022-11-28" },
+      body: JSON.stringify({ ref: "main", inputs: a.inputs }),
+    });
+  } catch {
+    throw new GitHubError("Can't reach GitHub. Check the internet connection.");
+  }
+  if (res.status === 403 || res.status === 404) {
+    throw new GitHubError('The saved token can\'t start actions. Give GH_EDIT_TOKEN "Actions: Read and write", then publish again.', res.status);
+  }
+  if (!res.ok) throw new GitHubError(`GitHub error ${res.status}: ${(await res.text()).slice(0, 200)}`, res.status);
+}
+
+export interface Run { id: number; name: string; status: string; conclusion: string | null; created_at: string; html_url: string; event: string }
+
+/** The latest publish runs, newest first. */
+export async function recentRuns(token: string): Promise<Run[]> {
+  const r = await gh<{ workflow_runs: Run[] }>(token, `/repos/${REPO}/actions/runs?per_page=30`);
+  return r.workflow_runs.filter((w) => /publish/i.test(w.name)).slice(0, 6);
 }

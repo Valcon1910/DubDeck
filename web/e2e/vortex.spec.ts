@@ -89,7 +89,7 @@ test("admin: opens without a token, add a game and an email, publish one commit"
   let sentAuth = false;
   const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64");
   const blobs: string[] = [];
-  let committed: { message: string; tree: string } | null = null;
+  let committed: { message: string; tree: string } | null = null; void committed;
   let treeBody: { tree: { path: string }[] } | null = null;
   await page.route("**/gh/**", async (route) => {
     if (route.request().headers()["authorization"]) sentAuth = true;
@@ -130,24 +130,51 @@ test("admin: opens without a token, add a game and an email, publish one commit"
   await expect(page.getByText("krunker.io")).toBeVisible();
   await expect(page.getByText("Unsaved changes")).toBeVisible();
 
-  if (!(await page.getByRole("tab", { name: "Access" }).isVisible())) await page.getByRole("button", { name: "Panel" }).click();
-  await page.getByRole("tab", { name: "Access" }).click();
-  await page.getByLabel("Email to add").fill("Friend@Example.com");
-  await page.getByRole("button", { name: "Add", exact: true }).first().click();
-  await expect(page.getByText("friend@example.com")).toBeVisible();
-
   await page.getByRole("button", { name: "Publish" }).click();
   await expect(page.getByText("Saved permanently")).toBeVisible();
   await expect(page.getByText("Live now")).toBeVisible({ timeout: 20_000 });
 
-  expect(committed!.message).toContain("content and access list");
-  expect(treeBody!.tree.map((f) => f.path).sort()).toEqual(["config/allowed-emails.json", "web/content.json"]);
+  expect(treeBody!.tree.map((f) => f.path)).toEqual(["web/content.json"]);
   const files = blobs.map((b) => JSON.parse(Buffer.from(b, "base64").toString()));
   const content = files.find((f) => f.games);
   expect(content.games.items).toHaveLength(1);
   expect(content.games.items[0]).toMatchObject({ name: "Krunker", url: "https://krunker.io" });
   expect(content.home.title).toBe("Vortex Engine Hub");
-  expect(files.find((f) => f.emails).emails).toEqual(["friend@example.com", "me@school.edu.co"]);
+});
+
+test("admin page: start a publish action and add someone to the access list", async ({ page }) => {
+  await page.route("**/.herenow/me", (route) => route.fulfill({ json: { email: "valentino1910@icloud.com" } }));
+  const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64");
+  let dispatched = "";
+  let refUpdated = "";
+  const blobs: string[] = [];
+  await page.route("**/gh/**", (route) => {
+    const req = route.request();
+    const url = req.url();
+    if (url.includes("/dispatches")) { dispatched = url + " " + req.postData(); return route.fulfill({ status: 204, body: "" }); }
+    if (url.includes("/actions/runs")) return route.fulfill({ json: { workflow_runs: [] } });
+    if (url.includes("/contents/config/allowed-emails.json")) return route.fulfill({ json: { content: b64({ emails: ["me@school.edu.co"], domains: [] }) } });
+    if (url.endsWith("/git/ref/heads/main")) return route.fulfill({ json: { object: { sha: "base" } } });
+    if (url.endsWith("/git/commits/base")) return route.fulfill({ json: { tree: { sha: "t" } } });
+    if (url.endsWith("/git/blobs")) { blobs.push(req.postDataJSON().content); return route.fulfill({ json: { sha: "b" } }); }
+    if (url.endsWith("/git/trees")) return route.fulfill({ json: { sha: "nt" } });
+    if (url.endsWith("/git/commits")) return route.fulfill({ json: { sha: "nc" } });
+    if (url.includes("/git/refs/heads/")) { refUpdated = url; return route.fulfill({ json: {} }); }
+    return route.fulfill({ status: 404, json: {} });
+  });
+  await page.goto("/");
+  await openMenu(page);
+  await page.getByRole("link", { name: "Admin" }).click();
+  await page.getByRole("button", { name: "Publish code to test site" }).click();
+  await expect(page.getByRole("status")).toContainText("Started");
+  expect(dispatched).toContain("deploy-test.yml/dispatches");
+
+  await page.getByLabel("Email to add").fill("Friend@Example.com");
+  await page.getByRole("button", { name: "Add", exact: true }).first().click();
+  await page.getByRole("button", { name: "Save access list" }).click();
+  await expect(page.getByText("Applies to both sites")).toBeVisible();
+  expect(refUpdated).toContain("/git/refs/heads/main");
+  expect(JSON.parse(Buffer.from(blobs[0], "base64").toString()).emails).toEqual(["friend@example.com", "me@school.edu.co"]);
 });
 
 test("accepts Google redirect links and shows the tutorial", async ({ page }) => {
@@ -177,6 +204,7 @@ test("the Editor button shows only for the editors' emails", async ({ page }) =>
   await page.unroute("**/.herenow/me");
   await page.route("**/.herenow/me", (route) => route.fulfill({ json: { email: "Vale.Conde.Arango@gmail.com" } }));
   await page.reload();
+  await openMenu(page);
   await page.getByRole("link", { name: "Editor" }).click();
   await expect(page.getByRole("heading", { name: "Editor" })).toBeVisible();
 });
@@ -228,4 +256,28 @@ test("720p with sound is prepared on the server, then saved", async ({ page }) =
   expect(file.suggestedFilename()).toBe("Test video - title.mp4");
   await expect(page.getByRole("status")).toContainText("downloading");
   await expect(page.getByRole("link", { name: "Save video (720p)" })).toBeVisible();
+});
+
+/** On phones the categories are in the side menu. */
+async function openMenu(page: import("@playwright/test").Page) {
+  const btn = page.getByRole("button", { name: "Open menu" });
+  if (await btn.isVisible()) await btn.click();
+}
+
+test("account: name and picture at the top right, settings change the look for this person", async ({ page }) => {
+  await page.route("**/.herenow/me", (route) => route.fulfill({ json: { email: "maria.lopez@school.edu.co" } }));
+  await page.goto("/");
+  const user = page.locator(".vx-user");
+  await expect(user).toContainText("Maria Lopez");
+  await user.click();
+  await expect(page.getByRole("menuitem", { name: "Log out" })).toBeVisible();
+  await page.getByRole("menuitem", { name: "Settings" }).click();
+  await page.getByLabel("Name").fill("Majo");
+  await page.getByRole("radio", { name: "Dark" }).click();
+  await page.getByRole("button", { name: "Done" }).click();
+  await expect(user).toContainText("Majo");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.reload(); // remembered next time
+  await expect(page.locator(".vx-user")).toContainText("Majo");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 });

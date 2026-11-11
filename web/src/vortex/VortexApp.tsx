@@ -1,15 +1,18 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { isEditor, useVisitorEmail } from "./admins";
+import { logout, nameFromEmail, useApplyAppearance, usePrefs } from "./account";
+import { Avatar, Icon, type IconName, Settings } from "./Settings";
 import { ContentContext, normalize, PUBLISHED } from "./content";
 import { Downloader } from "./Downloader";
 import { GamesPage, HomePage } from "./pages";
 import "@fontsource-variable/space-grotesk";
 import "./vortex.css";
 
+const Manage = lazy(() => import("./Manage").then((m) => ({ default: m.Manage })));
 const Admin = lazy(() => import("./Admin").then((m) => ({ default: m.Admin })));
 
-type Route = "home" | "games" | "downloader" | "admin";
-const ROUTES: Route[] = ["games", "downloader", "admin"];
+type Route = "home" | "games" | "downloader" | "admin" | "manage";
+const ROUTES: Route[] = ["games", "downloader", "admin", "manage"];
 
 function readRoute(): Route {
   const r = location.hash.replace(/^#\/?/, "").split(/[/?]/)[0] as Route;
@@ -18,55 +21,111 @@ function readRoute(): Route {
 
 const content = normalize(PUBLISHED);
 
+/** The test site links to the published site, and the published site to the test site. */
+const IS_TEST = __VORTEX_BRANCH__ === "test";
+const OTHER_SITE = IS_TEST
+  ? { label: "Published site", url: __VORTEX_SITES__.real }
+  : { label: "Test site", url: __VORTEX_SITES__.test };
+
 export function VortexApp() {
   const [route, setRoute] = useState<Route>(readRoute);
-  const editor = isEditor(useVisitorEmail());
+  const email = useVisitorEmail();
+  const editor = isEditor(email);
+  const [prefs, setPrefs] = usePrefs(email);
+  useApplyAppearance(prefs);
+  const [menu, setMenu] = useState(false);
+  const [settings, setSettings] = useState(false);
+  const [drawer, setDrawer] = useState(false);
 
   useEffect(() => {
-    const on = () => { setRoute(readRoute()); window.scrollTo(0, 0); };
+    const on = () => { setRoute(readRoute()); setDrawer(false); window.scrollTo(0, 0); };
     window.addEventListener("hashchange", on);
     return () => window.removeEventListener("hashchange", on);
   }, []);
 
   useEffect(() => {
-    const page = { home: "", games: content.games.title, downloader: content.downloader.title, admin: "Editor" }[route];
+    const page = { home: "", games: content.games.title, downloader: content.downloader.title, admin: "Editor", manage: "Admin" }[route];
     document.title = page ? `${page} · ${content.site.name}` : content.site.name;
   }, [route]);
 
   const s = content.sections;
-  const nav: [Route, string, boolean][] = [
-    ["home", "Home", true],
-    ["games", s.games.title, s.games.visible],
-    ["downloader", s.downloader.title, s.downloader.visible],
+  const nav: { r: Route; label: string; icon: IconName; show: boolean }[] = [
+    { r: "home", label: "Home", icon: "home", show: true },
+    { r: "games", label: s.games.title, icon: "games", show: s.games.visible },
+    { r: "downloader", label: s.downloader.title, icon: "download", show: s.downloader.visible },
   ];
+  const name = prefs.name.trim() || nameFromEmail(email);
+  const accent = prefs.accent || content.site.accent;
 
   return (
     <ContentContext.Provider value={content}>
-      <div className="vx" style={{ ["--vx-accent" as string]: content.site.accent }}>
-        <header className="vx-top">
+      <div className={`vx vx-shell ${route === "admin" ? "vx-shell-wide" : ""}`} style={{ ["--vx-accent" as string]: accent }}>
+        <aside className={`vx-side ${drawer ? "open" : ""}`} aria-label="Main">
           <a className="vx-brand" href="#/" aria-label={`${content.site.name} home`}>
             <VortexMark />
             <BrandName name={content.site.name} />
           </a>
-          <nav aria-label="Main">
-            {nav.filter(([, , show]) => show).map(([r, label]) => (
-              <a key={r} href={r === "home" ? "#/" : `#/${r}`} aria-current={route === r ? "page" : undefined}>{label}</a>
+          <nav className="vx-side-nav">
+            <p className="vx-side-label">Browse</p>
+            {nav.filter((n) => n.show).map((n) => (
+              <a key={n.r} href={n.r === "home" ? "#/" : `#/${n.r}`} aria-current={route === n.r ? "page" : undefined}>
+                <Icon name={n.icon} />{n.label}
+              </a>
             ))}
-            {(editor || route === "admin") && (
-              <a className="vx-editor-btn" href="#/admin" aria-current={route === "admin" ? "page" : undefined}>Editor</a>
+            {OTHER_SITE.url && (
+              <a href={OTHER_SITE.url} className="vx-side-switch"><Icon name="flask" />{OTHER_SITE.label}</a>
+            )}
+            {(editor || route === "manage" || route === "admin") && (
+              <>
+                <p className="vx-side-label">Manage</p>
+                <a href="#/manage" aria-current={route === "manage" ? "page" : undefined}><Icon name="shield" />Admin</a>
+                <a href="#/admin" aria-current={route === "admin" ? "page" : undefined}><Icon name="pen" />Editor</a>
+              </>
             )}
           </nav>
-        </header>
+        </aside>
+        {drawer && <div className="vx-scrim" onClick={() => setDrawer(false)} aria-hidden="true" />}
 
-        <main className={`vx-main ${route === "admin" ? "vx-main-wide" : ""}`}>
-          {route === "home" && <HomePage />}
-          {route === "games" && <GamesPage />}
-          {route === "downloader" && <Downloader />}
-          {route === "admin" && (
-            <Suspense fallback={<div className="vx-card vx-skeleton" aria-hidden="true" />}><Admin /></Suspense>
-          )}
-        </main>
+        <div className="vx-body">
+          <header className="vx-top">
+            <button type="button" className="vx-menu-btn" aria-label="Open menu" aria-expanded={drawer} onClick={() => setDrawer(true)}>
+              <Icon name="menu" />
+            </button>
+            <a className="vx-brand vx-brand-mobile" href="#/" aria-label={`${content.site.name} home`}><VortexMark /></a>
+            <div className="vx-account">
+              <button type="button" className="vx-user" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu((m) => !m)}>
+                <span className="vx-user-name">{name}</span>
+                <Avatar src={prefs.avatar} name={name} />
+              </button>
+              {menu && (
+                <>
+                  <div className="vx-menu-catch" onClick={() => setMenu(false)} aria-hidden="true" />
+                  <div className="vx-menu" role="menu">
+                    <div className="vx-menu-head">
+                      <Avatar src={prefs.avatar} name={name} size={40} />
+                      <span><strong>{name}</strong><em>{email ?? "Not signed in"}</em></span>
+                    </div>
+                    <button role="menuitem" onClick={() => { setMenu(false); setSettings(true); }}><Icon name="gear" />Settings</button>
+                    <button role="menuitem" onClick={logout}><Icon name="logout" />Log out</button>
+                  </div>
+                </>
+              )}
+            </div>
+          </header>
 
+          <main className={`vx-main ${route === "admin" ? "vx-main-wide" : ""}`}>
+            {route === "home" && <HomePage />}
+            {route === "games" && <GamesPage />}
+            {route === "downloader" && <Downloader />}
+            {route === "manage" && (
+              <Suspense fallback={<div className="vx-card vx-skeleton" aria-hidden="true" />}><Manage /></Suspense>
+            )}
+            {route === "admin" && (
+              <Suspense fallback={<div className="vx-card vx-skeleton" aria-hidden="true" />}><Admin /></Suspense>
+            )}
+          </main>
+        </div>
+        {settings && <Settings prefs={prefs} update={setPrefs} email={email} siteAccent={content.site.accent} onClose={() => setSettings(false)} />}
       </div>
     </ContentContext.Provider>
   );

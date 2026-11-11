@@ -83,6 +83,11 @@ export default defineConfig(({ command, mode }) => {
     define: {
       __VORTEX_REPO__: JSON.stringify(env.GITHUB_REPOSITORY || "Valcon1910/DubDeck"),
       __VORTEX_BRANCH__: JSON.stringify(env.VORTEX_BRANCH || "main"),
+      // Addresses of both sites, for the "Test site" / "Published site" buttons.
+      __VORTEX_SITES__: JSON.stringify(Object.fromEntries((["real", "test"] as const).map((k) => {
+        const f = path.resolve(__dirname, `../config/${k === "real" ? "site" : "site-test"}.json`);
+        try { return [k, `https://${JSON.parse(fs.readFileSync(f, "utf8")).slug}.here.now/`]; } catch { return [k, ""]; }
+      }))),
     },
     optimizeDeps: { exclude: ["@ffmpeg/ffmpeg", "@ffmpeg/util"] },
     worker: { format: "es" },
