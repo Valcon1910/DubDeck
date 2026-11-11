@@ -22,6 +22,14 @@
         "X-RapidAPI-Host": "youtube-info-download-api.p.rapidapi.com"
       },
       "rateLimit": "60/hour/ip"
+    },
+    "/gh/*": {
+      "upstream": "https://api.github.com",
+      "headers": {
+        "Authorization": "Bearer ${GITHUB_EDIT_TOKEN}",
+        "User-Agent": "vortex-engine-editor"
+      },
+      "rateLimit": "600/hour/ip"
     }
   }
 }

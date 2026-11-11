@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { ContentContext, normalize, pendingLogos, safeUrl, type Content, type Game } from "./content";
 import { EditContext, setTextIn, type EditApi } from "./editable";
 import {
-  ACCESS_PATH, commit, CONTENT_PATH, deployState, GitHubError, readJson, REPO, tokenStore, verify,
+  ACCESS_PATH, commit, CONTENT_PATH, deployState, GitHubError, readJson, REPO, verify,
   type DeployState, type FileChange,
 } from "./github";
 import { Downloader } from "./Downloader";
@@ -22,7 +22,7 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 export function Admin() {
-  const [token, setToken] = useState(tokenStore.get());
+  const token = ""; // added by the site's /gh route, never kept in the browser
   const [user, setUser] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -36,65 +36,59 @@ export function Admin() {
         readJson<unknown>(t, CONTENT_PATH),
         readJson<Access>(t, ACCESS_PATH),
       ]);
-      tokenStore.set(t);
-      setToken(t); setUser(login);
+      setUser(login);
       setSaved({ content: normalize(rawContent), access: { emails: access.emails ?? [], domains: access.domains ?? [] } });
     } catch (e) {
       setError(e instanceof GitHubError ? e.message : "Couldn't open the editor. Try again.");
-      if (e instanceof GitHubError && e.status === 401) tokenStore.clear();
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    if (token && !user) void connect(token);
+    if (!user) void connect(token);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!user || !saved) {
-    return <SignIn busy={loading} error={error} onConnect={(t) => connect(t.trim())} />;
+    return <SignIn busy={loading} error={error} onRetry={() => connect(token)} />;
   }
   return (
     <Editor
       token={token} user={user} saved={saved}
       onSaved={(s) => setSaved(s)}
-      onSignOut={() => { tokenStore.clear(); setUser(null); setSaved(null); setToken(""); }}
+      onSignOut={() => { location.hash = "#/"; }}
     />
   );
 }
 
-function SignIn({ busy, error, onConnect }: { busy: boolean; error: string | null; onConnect: (t: string) => void }) {
-  const [t, setT] = useState("");
+function SignIn({ busy, error, onRetry }: { busy: boolean; error: string | null; onRetry: () => void }) {
   return (
     <section className="vx-page vx-narrow">
       <header className="vx-page-head">
         <p className="vx-eyebrow">Admin</p>
-        <h1>Sign in to edit</h1>
+        <h1>Editor</h1>
         <p className="vx-muted">
-          The editor saves changes to your GitHub repository <code>{REPO}</code>, and the site updates itself about a minute later.
-          It needs a GitHub access token that only you have.
+          You're signed in with your site email, so there's nothing to type. Changes are saved to <code>{REPO}</code> and the
+          site updates itself about a minute later.
         </p>
       </header>
-      <form className="vx-card vx-form" onSubmit={(e) => { e.preventDefault(); if (t.trim()) onConnect(t); }}>
-        <label className="vx-field">
-          <span>GitHub token</span>
-          <input type="password" autoComplete="off" spellCheck={false} placeholder="github_pat_…" value={t} onChange={(e) => setT(e.target.value)} />
-        </label>
+      <div className="vx-card vx-form">
+        {busy && <p className="vx-muted"><span className="vx-spinner" aria-hidden="true" />Opening the editor…</p>}
         {error && <p className="vx-alert vx-alert-error" role="alert">{error}</p>}
-        <button className="vx-btn vx-btn-primary" disabled={busy || !t.trim()}>{busy ? "Checking…" : "Open editor"}</button>
-        <p className="vx-muted vx-small">The token is stored only in this browser. Use “Sign out” in the editor to remove it.</p>
-      </form>
-      <details className="vx-card vx-help">
-        <summary>How to create the token (once)</summary>
-        <ol>
-          <li>On GitHub, open <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">Settings → Developer settings → Fine-grained tokens → Generate new token</a>.</li>
-          <li>Name it “Vortex Engine editor” and choose an expiration (for example 1 year).</li>
-          <li>Under <b>Repository access</b> choose <b>Only select repositories</b> → <code>{REPO}</code>.</li>
-          <li>Under <b>Permissions → Repository permissions</b> set <b>Contents: Read and write</b> and <b>Actions: Read-only</b>.</li>
-          <li>Generate, copy the token, and paste it above. Don't share it with anyone.</li>
-        </ol>
-      </details>
+        {!busy && <button className="vx-btn vx-btn-primary" onClick={onRetry}>Try again</button>}
+      </div>
+      {error && (
+        <details className="vx-card vx-help">
+          <summary>Set up saving (once, by the site owner)</summary>
+          <ol>
+            <li>On GitHub, open <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">Settings → Developer settings → Fine-grained tokens → Generate new token</a>.</li>
+            <li>Repository access: <b>Only select repositories</b> → <code>{REPO}</code>. Permissions: <b>Contents: Read and write</b>, <b>Actions: Read-only</b>.</li>
+            <li>In the repository, add it under <b>Settings → Secrets and variables → Actions</b> as <code>GH_EDIT_TOKEN</code>.</li>
+            <li>Run <b>Actions → Deploy Vortex Engine to here.now → Run workflow</b>.</li>
+          </ol>
+        </details>
+      )}
     </section>
   );
 }
@@ -318,7 +312,7 @@ function Editor({ token, user, saved, onSaved, onSignOut }: EditorProps) {
             {panel === "access" && <AccessTab access={access} setAccess={setAccess} />}
             <footer className="vx-admin-foot">
               <span className="vx-muted vx-small">Saving to <code>{REPO}</code></span>
-              <button className="vx-link" onClick={() => { if (!dirty || confirm("Sign out? Unsaved changes stay on this device.")) onSignOut(); }}>Sign out</button>
+              <button className="vx-link" onClick={() => { if (!dirty || confirm("Close the editor? Unsaved changes stay on this device.")) onSignOut(); }}>Close editor</button>
             </footer>
           </aside>
         )}
