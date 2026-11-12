@@ -1,3 +1,5 @@
+import { pic } from "./pic";
+
 // Search YouTube and browse channels through the "YouTube" API on RapidAPI
 // (youtube138.p.rapidapi.com). The browser calls /ys/... on this site; the
 // here.now proxy route adds the RapidAPI key, so it never reaches the browser.
@@ -47,7 +49,7 @@ function bestUrl(list: unknown): string {
   const arr = Array.isArray(list) ? list.map(obj) : [];
   const best = arr.sort((a, b) => Number(b.width ?? 0) - Number(a.width ?? 0))[0];
   const url = str(best?.url) ?? "";
-  return url.startsWith("//") ? `https:${url}` : url;
+  return pic(url);
 }
 
 function compact(n: unknown): string | undefined {
@@ -75,7 +77,7 @@ function toItem(raw: unknown): Item | null {
     return {
       kind: "video", id,
       title: str(src.title) ?? "Untitled video",
-      thumb: bestUrl(src.thumbnails) || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+      thumb: bestUrl(src.thumbnails) || pic(`https://i.ytimg.com/vi/${id}/hqdefault.jpg`),
       channelId: str(author.channelId), channelTitle: str(author.title), channelAvatar: bestUrl(author.avatar),
       duration: duration(src.lengthSeconds) ?? str(src.lengthText),
       views: compact(obj(src.stats).views ?? src.viewCount),
@@ -142,7 +144,7 @@ async function feedVideos(id: string, signal?: AbortSignal): Promise<VideoItem[]
     const when = e.getElementsByTagName("published")[0]?.textContent;
     return {
       kind: "video" as const, id: vid, title: e.getElementsByTagName("title")[0]?.textContent ?? "Untitled video",
-      thumb: `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`, channelId: id, channelTitle: author,
+      thumb: pic(`https://i.ytimg.com/vi/${vid}/hqdefault.jpg`), channelId: id, channelTitle: author,
       views: views ? compact(views) : undefined, published: when ? new Date(when).toLocaleDateString() : undefined,
     };
   }).filter((v) => v.id);
