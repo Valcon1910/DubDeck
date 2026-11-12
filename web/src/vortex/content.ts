@@ -68,5 +68,5 @@ export function logoFor(g: Game): string | null {
   if (/^\/logos\/[\w.-]+$/.test(g.logo)) return g.logo;
   if (g.logo) return safeUrl(g.logo);
   const site = safeUrl(g.url);
-  return site ? `https://www.google.com/s2/favicons?sz=128&domain_url=${encodeURIComponent(new URL(site).origin)}` : null;
+  return site ? `/gg/s2/favicons?sz=128&domain_url=${encodeURIComponent(new URL(site).origin)}` : null;
 }

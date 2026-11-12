@@ -24,6 +24,9 @@
       "method": "GET",
       "rateLimit": "120/hour/ip"
     },
+    "/yi/*": { "upstream": "https://i.ytimg.com", "method": "GET", "rateLimit": "5000/hour/ip" },
+    "/yg/*": { "upstream": "https://yt3.ggpht.com", "method": "GET", "rateLimit": "5000/hour/ip" },
+    "/yu/*": { "upstream": "https://yt3.googleusercontent.com", "method": "GET", "rateLimit": "1000/hour/ip" },
     "/gh/*": {
       "upstream": "https://api.github.com",
       "headers": {

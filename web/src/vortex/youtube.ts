@@ -1,3 +1,4 @@
+import { pic } from "./pic";
 // YouTube downloads. The "YouTube" API (youtube138, /ys route) gives the title
 // and picture; the YouTube Info & Download API (/sn route) makes each file.
 // here.now's proxy routes add the RapidAPI key, so it never reaches the browser.
@@ -218,7 +219,7 @@ export function relayUrl(url: string): string | null {
 
 export function bestThumb(info: StreamInfo): string | undefined {
   const t = [...(info.thumbnail ?? [])].sort((a, b) => b.width - a.width);
-  return (t.find((x) => x.width <= 720) ?? t[0])?.url ?? `https://i.ytimg.com/vi/${info.id}/hqdefault.jpg`;
+  return pic((t.find((x) => x.width <= 720) ?? t[0])?.url ?? `https://i.ytimg.com/vi/${info.id}/hqdefault.jpg`);
 }
 
 /** Ask the server to make one MP4 with sound, wait until it's ready, return its link. */

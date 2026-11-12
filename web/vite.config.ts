@@ -67,6 +67,8 @@ export default defineConfig(({ command, mode }) => {
   // In dev, Vite plays the role of the here.now proxy: it adds the key server-side.
   // Set RAPIDAPI_KEY in web/.env.local (never commit it) to try real lookups locally.
   const ytProxy = {
+    ...Object.fromEntries(([["/yi", "i.ytimg.com"], ["/yg", "yt3.ggpht.com"], ["/yu", "yt3.googleusercontent.com"], ["/gg", "www.google.com"]] as const)
+      .map(([r, host]) => [r, { target: `https://${host}`, changeOrigin: true, rewrite: (p: string) => p.replace(new RegExp(`^${r}`), "") }])),
     "/gv": { target: "https://redirector.googlevideo.com", changeOrigin: true, rewrite: (p: string) => p.replace(/^\/gv/, "") },
     ...Object.fromEntries(([["/ys", "youtube138.p.rapidapi.com"], ["/sn", "youtube-info-download-api.p.rapidapi.com"]] as const).map(([r, host]) => [r, {
       target: `https://${host}`, changeOrigin: true,
