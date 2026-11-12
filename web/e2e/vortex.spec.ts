@@ -60,8 +60,10 @@ test("look up a video and save the 360p file", async ({ page }) => {
   await expect(page.getByRole("heading", { name: info.title })).toBeVisible();
   expect(requested).toContain("id=dQw4w9WgXcQ");
 
-  for (const q of ["8K", "4K", "1440p", "1080p", "720p", "480p", "360p"]) await expect(page.getByRole("link", { name: new RegExp(`Video ${q}`) })).toHaveCount(1);
-  await expect(page.getByRole("link", { name: /Audio · MP4/ })).toHaveCount(1);
+  // No list of qualities (streaming-data not mocked): up to 1080p.
+  for (const q of ["1080p", "720p", "480p", "360p"]) await expect(page.getByRole("link", { name: new RegExp(`Video ${q}`) })).toHaveCount(1);
+  for (const q of ["8K", "4K", "1440p"]) await expect(page.getByRole("link", { name: new RegExp(`Video ${q}`) })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /Audio · MP4/ })).toHaveCount(0);
   await expect(page.getByRole("link", { name: /M4A/ })).toHaveCount(0);
   await expect(page.getByRole("link", { name: /Audio · MP3/ })).toHaveCount(1);
   await expect(page.getByText("42 lookups left this month.")).toBeVisible();
@@ -373,4 +375,17 @@ test("empty channel tab falls back to the feed; Google goto links; select and do
     "https://www.youtube.com/watch?v=aaaaaaaaaaa", "https://www.youtube.com/watch?v=bbbbbbbbbbb"]);
   expect(saved).toBe(2);
   await expect(bar).toBeHidden();
+});
+
+test("only the qualities the video has are offered", async ({ page }) => {
+  await page.route("**/ys/video/details/**", (route) => route.fulfill({ json: details }));
+  await page.route("**/ys/video/streaming-data/**", (route) => route.fulfill({ json: { adaptiveFormats: [
+    { itag: 313, mimeType: "video/webm", width: 3840, height: 2160 }, { itag: 137, mimeType: "video/mp4", width: 1920, height: 1080 },
+  ] } }));
+  await page.goto("/#/downloader");
+  await page.getByLabel("Search YouTube or paste a link").fill("dQw4w9WgXcQ");
+  await page.getByRole("button", { name: "Get formats" }).click();
+  await expect(page.getByRole("link", { name: /Video 4K/ })).toHaveCount(1);
+  await expect(page.getByRole("link", { name: /Video 1440p/ })).toHaveCount(1);
+  await expect(page.getByRole("link", { name: /Video 8K/ })).toHaveCount(0);
 });
