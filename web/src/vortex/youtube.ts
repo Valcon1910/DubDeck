@@ -29,8 +29,8 @@ export interface StreamInfo {
   thumbnail?: { url: string; width: number; height: number }[];
   formats?: StreamFormat[];
   adaptiveFormats?: StreamFormat[];
-  /** Came from the "YouTube" API and its links download straight to this browser. */
-  direct?: boolean;
+  /** The best quality the video has (its short side, e.g. 2160 for 4K); unknown when missing. */
+  maxHeight?: number;
 }
 
 export type PresetKind = "video" | "audio";
@@ -116,6 +116,16 @@ type Json = Record<string, unknown>;
  */
 export async function fetchInfo(id: string, signal?: AbortSignal): Promise<{ info: StreamInfo; remaining: number | null }> {
   let res: Response;
+  // The list of qualities the video really has (only its sizes are used).
+  const heights = fetch(`/ys/video/streaming-data/?id=${encodeURIComponent(id)}`, { signal })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((sd: Json | null) => {
+      const data = ((sd?.streamingData as Json | undefined) ?? sd) as Json | null;
+      const all = [...((data?.formats as StreamFormat[]) ?? []), ...((data?.adaptiveFormats as StreamFormat[]) ?? [])];
+      // Portrait videos (shorts) list the short side as width.
+      return all.map((f) => Math.min(f.width ?? f.height ?? 0, f.height ?? 0) || (f.height ?? 0)).filter(Boolean);
+    })
+    .catch(() => [] as number[]);
   try {
     res = await fetch(`/ys/video/details/?id=${encodeURIComponent(id)}&hl=en&gl=${COUNTRY}`, { signal });
   } catch (e) {
@@ -128,9 +138,11 @@ export async function fetchInfo(id: string, signal?: AbortSignal): Promise<{ inf
   const d = (res.ok ? await res.json().catch(() => null) : null) as Json | null;
   // Without details (API not set up or busy) the video can still be downloaded.
   const thumbs = (Array.isArray(d?.thumbnails) ? d!.thumbnails : []) as { url: string; width: number; height: number }[];
+  const hs = await heights;
   return {
     remaining,
     info: {
+      maxHeight: hs.length ? Math.max(...hs) : undefined,
       status: "OK", id,
       title: (typeof d?.title === "string" && d.title) || "YouTube video",
       lengthSeconds: d?.lengthSeconds != null ? String(d.lengthSeconds) : undefined,
@@ -143,17 +155,17 @@ export async function fetchInfo(id: string, signal?: AbortSignal): Promise<{ inf
 /** Every choice is made into one file on the download server, then saved. */
 export function buildPresets(info: StreamInfo): Preset[] {
   const url = `https://www.youtube.com/watch?v=${info.id}`;
-  const video = (["8k", "4k", "1440", "1080", "720", "480", "360"] as const).map((f): Preset => ({
+  const HEIGHT = { "8k": 4320, "4k": 2160, "1440": 1440, "1080": 1080, "720": 720, "480": 480, "360": 360 } as const;
+  // Only the qualities the video has; if that's unknown, up to 1080p.
+  const top = info.maxHeight ?? 1080;
+  const video = (Object.keys(HEIGHT) as (keyof typeof HEIGHT)[]).filter((f) => HEIGHT[f] <= Math.max(top, 360)).map((f): Preset => ({
     key: `s${f}`, kind: "video", label: `Video ${/k$/.test(f) ? f.toUpperCase() : `${f}p`}`,
-    detail: /k$|1440/.test(f) ? "MP4 with sound · only if the video has it · large, takes longer"
+    detail: /k$|1440/.test(f) ? "MP4 with sound · large, takes longer"
       : f === "360" ? "MP4 with sound · smallest, fastest" : "MP4 with sound",
     ext: "mp4", url, bytes: null, server: f,
   }));
   return [
     ...video,
-    // An MP4 the iPad plays with speed control (0.5×–2×). Made from the smallest
-    // video, so it has a small picture; the sound is the same AAC.
-    { key: "amp4", kind: "audio", label: "Audio · MP4 (speed up or slow down)", detail: "MP4 · plays in Photos and Files with speed control", ext: "mp4", url, bytes: null, server: "360" },
     { key: "amp3", kind: "audio", label: "Audio · MP3", detail: "MP3 · plays everywhere", ext: "mp3", url, bytes: null, server: "mp3" },
   ];
 }
