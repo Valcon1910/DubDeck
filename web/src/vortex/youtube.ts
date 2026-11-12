@@ -143,13 +143,17 @@ export async function fetchInfo(id: string, signal?: AbortSignal): Promise<{ inf
 /** Every choice is made into one file on the download server, then saved. */
 export function buildPresets(info: StreamInfo): Preset[] {
   const url = `https://www.youtube.com/watch?v=${info.id}`;
-  const video = ["1080", "720", "480", "360"].map((f): Preset => ({
-    key: `s${f}`, kind: "video", label: `Video ${f}p`, detail: f === "360" ? "MP4 with sound · smallest, fastest" : "MP4 with sound",
+  const video = (["8k", "4k", "1440", "1080", "720", "480", "360"] as const).map((f): Preset => ({
+    key: `s${f}`, kind: "video", label: `Video ${/k$/.test(f) ? f.toUpperCase() : `${f}p`}`,
+    detail: /k$|1440/.test(f) ? "MP4 with sound · only if the video has it · large, takes longer"
+      : f === "360" ? "MP4 with sound · smallest, fastest" : "MP4 with sound",
     ext: "mp4", url, bytes: null, server: f,
   }));
   return [
     ...video,
-    { key: "am4a", kind: "audio", label: "Audio · best for iPad", detail: "M4A (AAC)", ext: "m4a", url, bytes: null, server: "m4a" },
+    // An MP4 the iPad plays with speed control (0.5×–2×). Made from the smallest
+    // video, so it has a small picture; the sound is the same AAC.
+    { key: "amp4", kind: "audio", label: "Audio · MP4 (speed up or slow down)", detail: "MP4 · plays in Photos and Files with speed control", ext: "mp4", url, bytes: null, server: "360" },
     { key: "amp3", kind: "audio", label: "Audio · MP3", detail: "MP3 · plays everywhere", ext: "mp3", url, bytes: null, server: "mp3" },
   ];
 }

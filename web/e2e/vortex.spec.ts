@@ -60,8 +60,9 @@ test("look up a video and save the 360p file", async ({ page }) => {
   await expect(page.getByRole("heading", { name: info.title })).toBeVisible();
   expect(requested).toContain("id=dQw4w9WgXcQ");
 
-  for (const q of ["1080p", "720p", "480p", "360p"]) await expect(page.getByRole("link", { name: new RegExp(`Video ${q}`) })).toHaveCount(1);
-  await expect(page.getByRole("link", { name: /Audio · best for iPad/ })).toHaveCount(1);
+  for (const q of ["8K", "4K", "1440p", "1080p", "720p", "480p", "360p"]) await expect(page.getByRole("link", { name: new RegExp(`Video ${q}`) })).toHaveCount(1);
+  await expect(page.getByRole("link", { name: /Audio · MP4/ })).toHaveCount(1);
+  await expect(page.getByRole("link", { name: /M4A/ })).toHaveCount(0);
   await expect(page.getByRole("link", { name: /Audio · MP3/ })).toHaveCount(1);
   await expect(page.getByText("42 lookups left this month.")).toBeVisible();
 
@@ -227,8 +228,8 @@ test("720p with sound is prepared on the server, then saved", async ({ page }) =
   expect(starts[0]).toContain("format=720");
   expect(starts[0]).toContain(encodeURIComponent("https://www.youtube.com/watch?v=dQw4w9WgXcQ"));
   expect(file.suggestedFilename()).toBe("Test video - title.mp4");
-  await expect(page.getByRole("status")).toContainText("downloading");
-  await expect(page.getByRole("link", { name: "Save video (720p)" })).toBeVisible();
+  await expect(page.getByRole("status")).toContainText("Ready!");
+  await expect(page.getByRole("link", { name: "Save again (720p)" })).toBeVisible();
 });
 
 /** On phones the categories are in the side menu. */

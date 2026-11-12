@@ -104,7 +104,7 @@ export function Downloader() {
       try {
         const { info } = await fetchInfo(v.id);
         const ps = buildPresets(info);
-        const p = ps.find((x) => x.server === (batchKind === "audio" ? "m4a" : batchKind === "360" ? "360" : "1080"))!;
+        const p = ps.find((x) => x.key === (batchKind === "audio" ? "amp3" : batchKind === "360" ? "s360" : "s1080"))!;
         const url = await prepareServer(info.id, p.server!, (x) => prog(x));
         const a = document.createElement("a");
         a.href = url; a.rel = "noopener";
@@ -224,7 +224,11 @@ export function Downloader() {
         a.href = url; a.rel = "noopener";
         document.body.append(a); a.click(); a.remove();
         setReady({ label: p.label, url });
-        setNotice(`The video is downloading${p.bytes ? ` (about ${formatBytes(p.bytes)})` : ""}. Safari may show “of ?” because the size isn't known until it finishes; that's normal. On iPad it goes to Files → Downloads. If nothing happened, tap “Save video” below.`);
+        // The page can't see the browser's download finish, so the message
+        // says it was handed over, then clears itself.
+        const msg = `Ready! “${p.label}” was handed to your browser and is saving now. Safari shows the progress in its ⬇ button (“of ?” is normal). On iPad it goes to Files → Downloads. If nothing happened, tap “Save again”.`;
+        setNotice(msg);
+        setTimeout(() => setNotice((n) => (n === msg ? null : n)), 20_000);
       } catch (e) {
         setFallback(presets.find((x) => x.kind === "video" && !x.audio && !x.server) ?? null);
         setError(e instanceof StreamError ? e.message : "The HD download stopped. Check the connection and try again.");
@@ -319,7 +323,7 @@ export function Downloader() {
       {notice && <p className="vx-alert" role="status">{notice}</p>}
       {ready && (
         <a className="vx-btn vx-btn-primary" href={ready.url} rel="noopener" style={{ marginBottom: 12 }}>
-          Save video ({ready.label.replace(/^Video /, "")})
+          Save again ({ready.label.replace(/^(Video|Audio) · ?|^Video /, "")})
         </a>
       )}
 
@@ -402,7 +406,7 @@ export function Downloader() {
               <select id="vx-batch-kind" value={batchKind} onChange={(e) => setBatchKind(e.target.value as typeof batchKind)}>
                 <option value="best">Video 1080p</option>
                 <option value="360">Video 360p (smaller)</option>
-                <option value="audio">Audio only (M4A)</option>
+                <option value="audio">Audio only (MP3)</option>
               </select>
               <button type="button" className="vx-btn vx-btn-ghost vx-btn-sm" onClick={() => setChosen([])}>Clear</button>
               <button type="button" className="vx-btn vx-btn-primary vx-btn-sm" onClick={() => void downloadAll()}>Download all</button>
