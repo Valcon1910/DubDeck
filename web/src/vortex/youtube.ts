@@ -1,7 +1,7 @@
-// YouTube downloads through the YTStream API (RapidAPI). The browser calls
-// /yt/dl on the Vortex Engine site; the here.now proxy route forwards it to
-// ytstream-download-youtube-videos.p.rapidapi.com and adds the RapidAPI key,
-// so the key never reaches the browser.
+// YouTube downloads. First the "YouTube" API (youtube138, /ys route) for 360p,
+// audio and the higher qualities (combined on this device); if its links can't
+// be downloaded here, the YTStream API (/yt route) is used instead. here.now's
+// proxy routes add the RapidAPI key, so the key never reaches the browser.
 
 export const COUNTRY = "CO"; // links are generated for the end user's country (cgeo)
 
@@ -30,6 +30,8 @@ export interface StreamInfo {
   thumbnail?: { url: string; width: number; height: number }[];
   formats?: StreamFormat[];
   adaptiveFormats?: StreamFormat[];
+  /** Came from the "YouTube" API and its links download straight to this browser. */
+  direct?: boolean;
 }
 
 export type PresetKind = "video" | "audio";
@@ -107,7 +109,62 @@ export async function resolveRedirect(input: string, signal?: AbortSignal): Prom
 
 export class StreamError extends Error {}
 
+type Json = Record<string, unknown>;
+const remainingOf = (res: Response) => {
+  const left = res.headers.get("x-ratelimit-requests-remaining");
+  return left !== null && left !== "" && !Number.isNaN(Number(left)) ? Number(left) : null;
+};
+
+/**
+ * Formats from the "YouTube" API (youtube138, /ys route). Its links are made on
+ * the API's server, so one tiny piece is read first to check this browser may
+ * download them. null = not usable here (the older API is used instead).
+ */
+async function fromYouTubeApi(id: string, signal?: AbortSignal): Promise<{ info: StreamInfo; remaining: number | null } | null> {
+  const get = (path: string) => fetch(`/ys/video/${path}/?id=${encodeURIComponent(id)}&hl=en&gl=${COUNTRY}`, { signal });
+  let sres: Response, dres: Response | null;
+  try {
+    [sres, dres] = await Promise.all([get("streaming-data"), get("details").catch(() => null)]);
+  } catch (e) {
+    if ((e as Error).name === "AbortError") throw e;
+    return null;
+  }
+  if (!sres.ok) return null;
+  const sd = (await sres.json().catch(() => null)) as Json | null;
+  const sdata = (sd?.streamingData as Json | undefined) ?? sd;
+  const formats = ((sdata?.formats as StreamFormat[] | undefined) ?? []).filter((f) => f.url);
+  const adaptiveFormats = ((sdata?.adaptiveFormats as StreamFormat[] | undefined) ?? []).filter((f) => f.url);
+  if (!formats.length && !adaptiveFormats.length) return null;
+  const d = (dres?.ok ? await dres.json().catch(() => null) : null) as Json | null;
+  const thumbs = (d?.thumbnails as StreamInfo["thumbnail"]) ?? [];
+  const info: StreamInfo = {
+    status: "OK", id,
+    title: (d?.title as string) ?? (sd?.title as string) ?? "video",
+    lengthSeconds: d?.lengthSeconds != null ? String(d.lengthSeconds) : undefined,
+    channelTitle: ((d?.author as Json | undefined)?.title as string) ?? undefined,
+    thumbnail: thumbs.map((t) => ({ ...t, url: t.url.startsWith("//") ? `https:${t.url}` : t.url })),
+    formats, adaptiveFormats,
+  };
+  // Can this browser read the links? Ask for the first byte of the smallest file.
+  const probe = [...formats, ...adaptiveFormats].sort((a, b) => Number(a.contentLength ?? 9e15) - Number(b.contentLength ?? 9e15))[0];
+  try {
+    const r = await fetch(probe.url!, { headers: { Range: "bytes=0-0" }, signal });
+    if (!r.ok) return null;
+  } catch (e) {
+    if ((e as Error).name === "AbortError") throw e;
+    return null;
+  }
+  info.direct = true;
+  return { info, remaining: remainingOf(sres) };
+}
+
 export async function fetchInfo(id: string, signal?: AbortSignal): Promise<{ info: StreamInfo; remaining: number | null }> {
+  const yt = await fromYouTubeApi(id, signal);
+  if (yt) return yt;
+  return fromYtStream(id, signal);
+}
+
+async function fromYtStream(id: string, signal?: AbortSignal): Promise<{ info: StreamInfo; remaining: number | null }> {
   let res: Response;
   try {
     res = await fetch(`/yt/dl?id=${encodeURIComponent(id)}&cgeo=${COUNTRY}`, { signal });
@@ -115,8 +172,7 @@ export async function fetchInfo(id: string, signal?: AbortSignal): Promise<{ inf
     if ((e as Error).name === "AbortError") throw e;
     throw new StreamError("You're offline, or Vortex Engine can't be reached.");
   }
-  const left = res.headers.get("x-ratelimit-requests-remaining");
-  const remaining = left !== null && left !== "" && !Number.isNaN(Number(left)) ? Number(left) : null;
+  const remaining = remainingOf(res);
   if (res.status === 429) throw new StreamError("The free monthly quota is used up, or too many requests. Try again later.");
   if (res.status === 401 || res.status === 403) {
     throw new StreamError("The downloader isn't connected: the RapidAPI key is missing or not subscribed.");
@@ -167,7 +223,7 @@ export function buildPresets(info: StreamInfo): Preset[] {
   });
 
   // 720p/1080p with sound: joined on the YouTube Info & Download API's servers.
-  if (!hdEnabled()) {
+  if (!hdEnabled() && !info.direct) {
     const vids = out.filter((p) => p.kind === "video");
     const rest = out.filter((p) => p.kind !== "video");
     // Expected size: YouTube's own picture file at that height (H.264 when listed) plus the M4A sound.
@@ -185,7 +241,7 @@ export function buildPresets(info: StreamInfo): Preset[] {
 
   // Higher qualities: YouTube keeps picture and sound apart, so each is paired
   // with the best M4A audio and combined on this device. H.264 plays everywhere.
-  if (m4a && hdEnabled()) {
+  if (m4a && (hdEnabled() || info.direct)) {
     const seen = new Set<string>(out.filter((p) => p.kind === "video").map((p) => p.label));
     const combos: Preset[] = [];
     for (const f of (info.adaptiveFormats ?? [])
