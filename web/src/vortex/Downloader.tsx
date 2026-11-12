@@ -104,20 +104,12 @@ export function Downloader() {
       try {
         const { info } = await fetchInfo(v.id);
         const ps = buildPresets(info);
-        const plain = ps.find((x) => x.kind === "video" && !x.audio && !x.server);
-        const best = ps.find((x) => x.kind === "video" && x.audio) ?? plain;
-        const p = batchKind === "audio" ? ps.find((x) => x.kind === "audio") : batchKind === "360" ? plain : best;
-        if (!p) throw new Error("no format");
-        const name = safeFilename(info.title, p.ext);
-        if (p.audio) {
-          preloadMerger();
-          const vid = await fetchFile(p.url, (p.bytes ?? 0) - (p.audio.bytes ?? 0) || null, "video/mp4", (x) => prog(x === null ? null : x * 0.8));
-          const aud = await fetchFile(p.audio.url, p.audio.bytes, "audio/mp4", (x) => prog(x === null ? null : 0.8 + x * 0.15));
-          hand(await combine(vid, aud, (x) => prog(0.95 + x * 0.05)), name);
-        } else {
-          const type = p.kind === "audio" ? (p.ext === "m4a" ? "audio/mp4" : "audio/webm") : "video/mp4";
-          hand(await fetchFile(p.url, p.bytes, type, prog), name);
-        }
+        const p = ps.find((x) => x.server === (batchKind === "audio" ? "m4a" : batchKind === "360" ? "360" : "1080"))!;
+        const url = await prepareServer(info.id, p.server!, (x) => prog(x));
+        const a = document.createElement("a");
+        a.href = url; a.rel = "noopener";
+        document.body.append(a); a.click(); a.remove();
+        await new Promise((r) => setTimeout(r, 1500)); // let the browser start this save before the next
       } catch {
         failed.push(v.title);
       }
@@ -408,9 +400,9 @@ export function Downloader() {
               <strong>{chosen.length} selected</strong>
               <label className="sr-only" htmlFor="vx-batch-kind">Quality</label>
               <select id="vx-batch-kind" value={batchKind} onChange={(e) => setBatchKind(e.target.value as typeof batchKind)}>
-                <option value="best">Best video</option>
-                <option value="360">Video 360p (faster)</option>
-                <option value="audio">Audio only</option>
+                <option value="best">Video 1080p</option>
+                <option value="360">Video 360p (smaller)</option>
+                <option value="audio">Audio only (M4A)</option>
               </select>
               <button type="button" className="vx-btn vx-btn-ghost vx-btn-sm" onClick={() => setChosen([])}>Clear</button>
               <button type="button" className="vx-btn vx-btn-primary vx-btn-sm" onClick={() => void downloadAll()}>Download all</button>

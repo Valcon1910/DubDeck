@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-// The Vortex Engine downloader against a mocked YTStream API and video host.
+// The Vortex Engine downloader against mocked RapidAPI services.
 // (The DubDeck backend tests live in e2e-dubdeck/ and need that backend running.)
 
 const VIDEO = "https://redirector.googlevideo.com/videoplayback?itag=18";
@@ -21,22 +21,35 @@ const info = {
   ],
 };
 
+const details = { title: info.title, lengthSeconds: info.lengthSeconds, author: { title: info.channelTitle }, thumbnails: info.thumbnail };
+
+/** The download server: start → progress → a finished file named like the video. */
+async function mockServer(page: import("@playwright/test").Page, name = "Test video - title.mp4") {
+  const starts: string[] = [];
+  await page.route("**/sn/ajax/download.php?**", (route) => {
+    starts.push(route.request().url());
+    return route.fulfill({ json: { success: true, progress_url: "https://p.savenow.to/api/progress?id=x" } });
+  });
+  let polls = 0;
+  await page.route((u) => u.hostname === "p.savenow.to", (route) => {
+    polls++;
+    return route.fulfill({ headers: { "access-control-allow-origin": "*" }, json: polls % 2
+      ? { progress: 400, success: 0, text: "Downloading", download_url: null }
+      : { progress: 1000, success: 1, text: "Finished", download_url: "https://leo3.savenow.to/api/v2/download/abc" } });
+  });
+  await page.route((u) => u.hostname === "leo3.savenow.to", (route) =>
+    route.fulfill({ status: 200, body: Buffer.alloc(4096, 1),
+      headers: { "content-type": "video/mp4", "content-disposition": `attachment; filename="${name}"` } }));
+  return starts;
+}
+
 test("look up a video and save the 360p file", async ({ page }) => {
   let requested = "";
-  await page.route("**/yt/dl?**", (route) => {
+  await page.route("**/ys/video/details/**", (route) => {
     requested = route.request().url();
-    return route.fulfill({ json: info, headers: { "x-ratelimit-requests-remaining": "42" } });
+    return route.fulfill({ json: details, headers: { "x-ratelimit-requests-remaining": "42" } });
   });
-  // The 360p file arrives through the site's /gv relay in two ranged pieces.
-  const ranges: string[] = [];
-  await page.route("**/gv/videoplayback?**", (route) => {
-    const range = route.request().headers()["range"] ?? "";
-    ranges.push(range);
-    const [a, b] = range.replace("bytes=", "").split("-").map(Number);
-    const end = Math.min(b, 2047);
-    return route.fulfill({ status: 206, body: Buffer.alloc(end - a + 1, 7),
-      headers: { "content-type": "video/mp4", "content-range": `bytes ${a}-${end}/2048` } });
-  });
+  const starts = await mockServer(page);
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Vortex Engine" })).toBeVisible();
@@ -46,29 +59,26 @@ test("look up a video and save the 360p file", async ({ page }) => {
   await page.getByRole("button", { name: "Get formats" }).click();
   await expect(page.getByRole("heading", { name: info.title })).toBeVisible();
   expect(requested).toContain("id=dQw4w9WgXcQ");
-  expect(requested).toContain("cgeo=CO");
 
-  await expect(page.getByRole("link", { name: /Video 360p/ })).toBeVisible();
-  await expect(page.getByRole("link", { name: /Audio · best for iPad/ })).toHaveCount(1); // dubbed track skipped
-  await expect(page.getByRole("link", { name: /Video 720p/ })).toHaveCount(1); // made on the server
+  for (const q of ["1080p", "720p", "480p", "360p"]) await expect(page.getByRole("link", { name: new RegExp(`Video ${q}`) })).toHaveCount(1);
+  await expect(page.getByRole("link", { name: /Audio · best for iPad/ })).toHaveCount(1);
+  await expect(page.getByRole("link", { name: /Audio · MP3/ })).toHaveCount(1);
   await expect(page.getByText("42 lookups left this month.")).toBeVisible();
-  await expect(page.getByText("cobalt")).toHaveCount(0);
 
   const download = page.waitForEvent("download");
   await page.getByRole("link", { name: /Video 360p/ }).click();
-  const file = await download;
-  // Chromium turns ":" into "_"; Safari keeps it.
-  expect(file.suggestedFilename()).toBe("Test_ video - title.mp4");
-  expect(ranges[0]).toBe("bytes=0-2047");
-  await expect(page.getByRole("status")).toContainText("Saved");
+  await download;
+  expect(starts[0]).toContain("format=360");
 });
 
 test("shows a clear message when the API key is missing", async ({ page }) => {
-  await page.route("**/yt/dl?**", (route) => route.fulfill({ status: 403, json: { message: "not subscribed" } }));
+  await page.route("**/ys/video/details/**", (route) => route.fulfill({ status: 403, json: { message: "not subscribed" } }));
+  await page.route("**/sn/ajax/download.php?**", (route) => route.fulfill({ status: 403, json: { message: "not subscribed" } }));
   await page.goto("/#/downloader");
   await page.getByLabel("Search YouTube or paste a link").fill("dQw4w9WgXcQ");
   await page.getByRole("button", { name: "Get formats" }).click();
-  await expect(page.getByRole("alert")).toContainText("RapidAPI key");
+  await page.getByRole("link", { name: /Audio · MP3/ }).click();
+  await expect(page.getByRole("alert")).toContainText("RAPIDAPI_KEY");
 });
 
 test("games page shows the published games, and long links stay inside their box", async ({ page }) => {
@@ -175,7 +185,7 @@ test("admin page: start a publish action and add someone to the access list", as
 
 test("accepts Google redirect links and shows the tutorial", async ({ page }) => {
   let requested = "";
-  await page.route("**/yt/dl?**", (route) => { requested = route.request().url(); return route.fulfill({ json: info }); });
+  await page.route("**/ys/video/details/**", (route) => { requested = route.request().url(); return route.fulfill({ json: details }); });
   await page.goto("/#/downloader?hd");
   await page.getByLabel("Search YouTube or paste a link").fill("https://www.google.com/url?sa=t&source=web&rct=j&opi=89978449&url=https://www.youtube.com/watch%3Fv%3DofigWubFbr0&ved=2ahUKE&usg=AOvVaw2");
   await page.getByRole("button", { name: "Get formats" }).click();
@@ -205,50 +215,17 @@ test("the Editor button shows only for the editors' emails", async ({ page }) =>
   await expect(page.getByRole("heading", { name: "Editor" })).toBeVisible();
 });
 
-test("when the relay is blocked, the error explains why and offers 360p", async ({ page }) => {
-  const hd = { ...info, adaptiveFormats: [
-    { itag: 136, url: "https://redirector.googlevideo.com/videoplayback?itag=136", mimeType: 'video/mp4; codecs="avc1.4D401F"', height: 720, qualityLabel: "720p", contentLength: "4096" },
-    ...info.adaptiveFormats.filter((f) => f.itag === 140),
-  ] };
-  await page.route("**/yt/dl?**", (route) => route.fulfill({ json: hd }));
-  await page.route("**/gv/**", (route) => route.fulfill({ status: 403, body: "no" }));
-  await page.route("https://redirector.googlevideo.com/**", (route) => route.abort());
-  await page.goto("/#/downloader?hd");
-  await page.getByLabel("Search YouTube or paste a link").fill("dQw4w9WgXcQ");
-  await page.getByRole("button", { name: "Get formats" }).click();
-  await page.getByRole("link", { name: /Video 720p/ }).click();
-  const alert = page.getByRole("alert");
-  await expect(alert).toContainText("site relay: HTTP 403");
-  await expect(alert.getByRole("button", { name: "Download Video 360p instead" })).toBeVisible();
-});
-
 test("720p with sound is prepared on the server, then saved", async ({ page }) => {
-  await page.route("**/yt/dl?**", (route) => route.fulfill({ json: info }));
-  let start = "";
-  await page.route("**/sn/ajax/download.php?**", (route) => {
-    start = route.request().url();
-    return route.fulfill({ json: { success: true, progress_url: "https://p.savenow.to/api/progress?id=x" } });
-  });
-  let polls = 0;
-  await page.route((u) => u.hostname === "p.savenow.to", (route) => {
-    polls++;
-    return route.fulfill({ headers: { "access-control-allow-origin": "*" }, json: polls < 2
-      ? { progress: 400, success: 0, text: "Downloading", download_url: null }
-      : { progress: 1000, success: 1, text: "Finished", download_url: "https://leo3.savenow.to/api/v2/download/abc" } });
-  });
-  // Like the real server: an attachment with the video's name, no CORS header.
-  await page.route((u) => u.hostname === "leo3.savenow.to", (route) =>
-    route.fulfill({ status: 200, body: Buffer.alloc(4096, 1),
-      headers: { "content-type": "video/mp4", "content-disposition": 'attachment; filename="Test video - title.mp4"' } }));
-
+  await page.route("**/ys/video/details/**", (route) => route.fulfill({ json: details }));
+  const starts = await mockServer(page);
   await page.goto("/#/downloader");
   await page.getByLabel("Search YouTube or paste a link").fill("dQw4w9WgXcQ");
   await page.getByRole("button", { name: "Get formats" }).click();
   const download = page.waitForEvent("download");
   await page.getByRole("link", { name: /Video 720p/ }).click();
   const file = await download;
-  expect(start).toContain("format=720");
-  expect(start).toContain(encodeURIComponent("https://www.youtube.com/watch?v=dQw4w9WgXcQ"));
+  expect(starts[0]).toContain("format=720");
+  expect(starts[0]).toContain(encodeURIComponent("https://www.youtube.com/watch?v=dQw4w9WgXcQ"));
   expect(file.suggestedFilename()).toBe("Test video - title.mp4");
   await expect(page.getByRole("status")).toContainText("downloading");
   await expect(page.getByRole("link", { name: "Save video (720p)" })).toBeVisible();
@@ -299,7 +276,7 @@ test("search YouTube, open a channel, and pick a video to download", async ({ pa
     return route.fulfill({ json: { contents: [{ type: "video", video: { videoId: "abcdefghijk", title: `Latest ${tab}`, thumbnails: thumbs("abcdefghijk") } }] } });
   });
   let looked = "";
-  await page.route("**/yt/dl?**", (route) => { looked = route.request().url(); return route.fulfill({ json: info }); });
+  await page.route("**/ys/video/details/**", (route) => { looked = route.request().url(); return route.fulfill({ json: details }); });
 
   await page.goto("/#/downloader");
   await page.getByLabel("Search YouTube or paste a link").fill("cool videos");
@@ -367,7 +344,7 @@ test("empty channel tab falls back to the feed; Google goto links; select and do
     { type: "channel", channel: { channelId: "UC9", title: "Feed Channel" } },
   ] } }));
   await page.route("**/gg/goto?**", (route) => route.fulfill({ contentType: "text/html", body: '<a href="https://www.youtube.com/watch?v=dQw4w9WgXcQ&amp;vl=en">go</a>' }));
-  await page.route("**/yt/dl?**", (route) => route.fulfill({ json: info }));
+  await page.route("**/ys/video/details/**", (route) => route.fulfill({ json: details }));
 
   await page.goto("/#/downloader");
   const box = page.getByLabel("Search YouTube or paste a link");
@@ -386,43 +363,13 @@ test("empty channel tab falls back to the feed; Google goto links; select and do
   await page.getByRole("button", { name: "Select From feed two" }).click();
   const bar = page.getByRole("region", { name: "Selected videos" });
   await expect(bar).toContainText("2 selected");
-  await bar.getByRole("button", { name: "Clear" }).click();
+  const starts = await mockServer(page);
+  let saved = 0;
+  page.on("download", () => { saved++; });
+  await bar.getByRole("button", { name: "Download all" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "All 2 videos were saved" })).toBeVisible({ timeout: 20000 });
+  expect(starts.map((u) => new URL(u).searchParams.get("url"))).toEqual([
+    "https://www.youtube.com/watch?v=aaaaaaaaaaa", "https://www.youtube.com/watch?v=bbbbbbbbbbb"]);
+  expect(saved).toBe(2);
   await expect(bar).toBeHidden();
-});
-
-test("formats come from the YouTube API when its links download here, with higher qualities", async ({ page }) => {
-  const g = (q: string) => `https://rr1---sn-test.googlevideo.com/videoplayback?${q}`;
-  let old = false;
-  await page.route("**/yt/dl?**", (route) => { old = true; return route.fulfill({ json: info }); });
-  await page.route("**/ys/video/streaming-data/**", (route) => route.fulfill({ json: {
-    formats: [{ itag: 18, url: g("itag=18"), mimeType: 'video/mp4; codecs="avc1.42001E, mp4a.40.2"', height: 360, qualityLabel: "360p", contentLength: "1000" }],
-    adaptiveFormats: [
-      { itag: 137, url: g("itag=137"), mimeType: 'video/mp4; codecs="avc1.640028"', height: 1080, qualityLabel: "1080p", contentLength: "50000" },
-      { itag: 140, url: g("itag=140"), mimeType: 'audio/mp4; codecs="mp4a.40.2"', bitrate: 130000, contentLength: "500" },
-    ],
-  } }));
-  await page.route("**/ys/video/details/**", (route) => route.fulfill({ json: { title: "From the YouTube API", lengthSeconds: "61", author: { title: "Someone" } } }));
-  await page.route("https://rr1---sn-test.googlevideo.com/**", (route) => route.fulfill({ status: 206, headers: { "access-control-allow-origin": "*", "content-range": "bytes 0-0/500" }, body: "x" }));
-
-  await page.goto("/#/downloader");
-  await page.getByLabel("Search YouTube or paste a link").fill("https://youtu.be/dQw4w9WgXcQ");
-  await page.getByRole("button", { name: "Get formats" }).click();
-  await expect(page.getByRole("heading", { name: "From the YouTube API" })).toBeVisible();
-  await expect(page.getByRole("link", { name: /Video 1080p.*combined on this device/ })).toBeVisible();
-  await expect(page.getByRole("link", { name: /Video 360p/ })).toBeVisible();
-  await expect(page.getByRole("link", { name: /Audio · best for iPad/ })).toBeVisible();
-  expect(old).toBe(false);
-});
-
-test("falls back to the older API when the YouTube API's links can't be downloaded here", async ({ page }) => {
-  await page.route("**/ys/video/streaming-data/**", (route) => route.fulfill({ json: {
-    formats: [{ itag: 18, url: "https://rr1---sn-test.googlevideo.com/videoplayback?itag=18", mimeType: "video/mp4", height: 360, qualityLabel: "360p", contentLength: "1000" }],
-  } }));
-  await page.route("**/ys/video/details/**", (route) => route.fulfill({ json: { title: "x" } }));
-  await page.route("https://rr1---sn-test.googlevideo.com/**", (route) => route.fulfill({ status: 403, body: "" }));
-  await page.route("**/yt/dl?**", (route) => route.fulfill({ json: info }));
-  await page.goto("/#/downloader");
-  await page.getByLabel("Search YouTube or paste a link").fill("https://youtu.be/dQw4w9WgXcQ");
-  await page.getByRole("button", { name: "Get formats" }).click();
-  await expect(page.getByRole("heading", { name: info.title })).toBeVisible();
 });

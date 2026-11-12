@@ -5,12 +5,10 @@ import { defineConfig, loadEnv, type Plugin } from "vite";
 
 const HOST_RE = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 
-const YT_HOST = "ytstream-download-youtube-videos.p.rapidapi.com";
-
 /**
  * here.now integration:
- * - writes dist/.herenow/proxy.json from herenow/proxy.template.json. Its /yt/*
- *   route forwards to the YTStream API and adds the RAPIDAPI_KEY account
+ * - writes dist/.herenow/proxy.json from herenow/proxy.template.json. Its /ys/* and /sn/*
+ *   routes forward to the RapidAPI YouTube APIs and adds the RAPIDAPI_KEY account
  *   variable, so the key never reaches the browser. If DUBDECK_API_HOST is set,
  *   the old DubDeck backend routes are added too;
  * - injects a Content-Security-Policy: the Site itself, YouTube thumbnails, and
@@ -70,11 +68,11 @@ export default defineConfig(({ command, mode }) => {
   // Set RAPIDAPI_KEY in web/.env.local (never commit it) to try real lookups locally.
   const ytProxy = {
     "/gv": { target: "https://redirector.googlevideo.com", changeOrigin: true, rewrite: (p: string) => p.replace(/^\/gv/, "") },
-    "/yt": {
-      target: `https://${YT_HOST}`, changeOrigin: true,
-      headers: { "X-RapidAPI-Key": env.RAPIDAPI_KEY || "", "X-RapidAPI-Host": YT_HOST },
-      rewrite: (p: string) => p.replace(/^\/yt/, ""),
-    },
+    ...Object.fromEntries(([["/ys", "youtube138.p.rapidapi.com"], ["/sn", "youtube-info-download-api.p.rapidapi.com"]] as const).map(([r, host]) => [r, {
+      target: `https://${host}`, changeOrigin: true,
+      headers: { "X-RapidAPI-Key": env.RAPIDAPI_KEY || "", "X-RapidAPI-Host": host },
+      rewrite: (p: string) => p.replace(new RegExp(`^${r}`), ""),
+    }])),
   };
 
   return {
