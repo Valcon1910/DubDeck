@@ -389,3 +389,40 @@ test("empty channel tab falls back to the feed; Google goto links; select and do
   await bar.getByRole("button", { name: "Clear" }).click();
   await expect(bar).toBeHidden();
 });
+
+test("formats come from the YouTube API when its links download here, with higher qualities", async ({ page }) => {
+  const g = (q: string) => `https://rr1---sn-test.googlevideo.com/videoplayback?${q}`;
+  let old = false;
+  await page.route("**/yt/dl?**", (route) => { old = true; return route.fulfill({ json: info }); });
+  await page.route("**/ys/video/streaming-data/**", (route) => route.fulfill({ json: {
+    formats: [{ itag: 18, url: g("itag=18"), mimeType: 'video/mp4; codecs="avc1.42001E, mp4a.40.2"', height: 360, qualityLabel: "360p", contentLength: "1000" }],
+    adaptiveFormats: [
+      { itag: 137, url: g("itag=137"), mimeType: 'video/mp4; codecs="avc1.640028"', height: 1080, qualityLabel: "1080p", contentLength: "50000" },
+      { itag: 140, url: g("itag=140"), mimeType: 'audio/mp4; codecs="mp4a.40.2"', bitrate: 130000, contentLength: "500" },
+    ],
+  } }));
+  await page.route("**/ys/video/details/**", (route) => route.fulfill({ json: { title: "From the YouTube API", lengthSeconds: "61", author: { title: "Someone" } } }));
+  await page.route("https://rr1---sn-test.googlevideo.com/**", (route) => route.fulfill({ status: 206, headers: { "access-control-allow-origin": "*", "content-range": "bytes 0-0/500" }, body: "x" }));
+
+  await page.goto("/#/downloader");
+  await page.getByLabel("Search YouTube or paste a link").fill("https://youtu.be/dQw4w9WgXcQ");
+  await page.getByRole("button", { name: "Get formats" }).click();
+  await expect(page.getByRole("heading", { name: "From the YouTube API" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Video 1080p.*combined on this device/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Video 360p/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Audio · best for iPad/ })).toBeVisible();
+  expect(old).toBe(false);
+});
+
+test("falls back to the older API when the YouTube API's links can't be downloaded here", async ({ page }) => {
+  await page.route("**/ys/video/streaming-data/**", (route) => route.fulfill({ json: {
+    formats: [{ itag: 18, url: "https://rr1---sn-test.googlevideo.com/videoplayback?itag=18", mimeType: "video/mp4", height: 360, qualityLabel: "360p", contentLength: "1000" }],
+  } }));
+  await page.route("**/ys/video/details/**", (route) => route.fulfill({ json: { title: "x" } }));
+  await page.route("https://rr1---sn-test.googlevideo.com/**", (route) => route.fulfill({ status: 403, body: "" }));
+  await page.route("**/yt/dl?**", (route) => route.fulfill({ json: info }));
+  await page.goto("/#/downloader");
+  await page.getByLabel("Search YouTube or paste a link").fill("https://youtu.be/dQw4w9WgXcQ");
+  await page.getByRole("button", { name: "Get formats" }).click();
+  await expect(page.getByRole("heading", { name: info.title })).toBeVisible();
+});
