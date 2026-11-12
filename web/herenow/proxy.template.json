@@ -1,14 +1,5 @@
 {
   "proxies": {
-    "/yt/*": {
-      "upstream": "https://ytstream-download-youtube-videos.p.rapidapi.com",
-      "method": "GET",
-      "headers": {
-        "X-RapidAPI-Key": "${RAPIDAPI_KEY}",
-        "X-RapidAPI-Host": "ytstream-download-youtube-videos.p.rapidapi.com"
-      },
-      "rateLimit": "60/hour/ip"
-    },
     "/gv/*": {
       "upstream": "https://redirector.googlevideo.com",
       "method": "GET",

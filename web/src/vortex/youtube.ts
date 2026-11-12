@@ -1,7 +1,6 @@
-// YouTube downloads. First the "YouTube" API (youtube138, /ys route) for 360p,
-// audio and the higher qualities (combined on this device); if its links can't
-// be downloaded here, the YTStream API (/yt route) is used instead. here.now's
-// proxy routes add the RapidAPI key, so the key never reaches the browser.
+// YouTube downloads. The "YouTube" API (youtube138, /ys route) gives the title
+// and picture; the YouTube Info & Download API (/sn route) makes each file.
+// here.now's proxy routes add the RapidAPI key, so it never reaches the browser.
 
 export const COUNTRY = "CO"; // links are generated for the end user's country (cgeo)
 
@@ -110,159 +109,49 @@ export async function resolveRedirect(input: string, signal?: AbortSignal): Prom
 export class StreamError extends Error {}
 
 type Json = Record<string, unknown>;
-const remainingOf = (res: Response) => {
-  const left = res.headers.get("x-ratelimit-requests-remaining");
-  return left !== null && left !== "" && !Number.isNaN(Number(left)) ? Number(left) : null;
-};
 
 /**
- * Formats from the "YouTube" API (youtube138, /ys route). Its links are made on
- * the API's server, so one tiny piece is read first to check this browser may
- * download them. null = not usable here (the older API is used instead).
+ * The video's title, picture and length from the "YouTube" API (youtube138, /ys
+ * route). The files themselves are made by the download server (prepareServer).
  */
-async function fromYouTubeApi(id: string, signal?: AbortSignal): Promise<{ info: StreamInfo; remaining: number | null } | null> {
-  const get = (path: string) => fetch(`/ys/video/${path}/?id=${encodeURIComponent(id)}&hl=en&gl=${COUNTRY}`, { signal });
-  let sres: Response, dres: Response | null;
-  try {
-    [sres, dres] = await Promise.all([get("streaming-data"), get("details").catch(() => null)]);
-  } catch (e) {
-    if ((e as Error).name === "AbortError") throw e;
-    return null;
-  }
-  if (!sres.ok) return null;
-  const sd = (await sres.json().catch(() => null)) as Json | null;
-  const sdata = (sd?.streamingData as Json | undefined) ?? sd;
-  const formats = ((sdata?.formats as StreamFormat[] | undefined) ?? []).filter((f) => f.url);
-  const adaptiveFormats = ((sdata?.adaptiveFormats as StreamFormat[] | undefined) ?? []).filter((f) => f.url);
-  if (!formats.length && !adaptiveFormats.length) return null;
-  const d = (dres?.ok ? await dres.json().catch(() => null) : null) as Json | null;
-  const thumbs = (d?.thumbnails as StreamInfo["thumbnail"]) ?? [];
-  const info: StreamInfo = {
-    status: "OK", id,
-    title: (d?.title as string) ?? (sd?.title as string) ?? "video",
-    lengthSeconds: d?.lengthSeconds != null ? String(d.lengthSeconds) : undefined,
-    channelTitle: ((d?.author as Json | undefined)?.title as string) ?? undefined,
-    thumbnail: thumbs.map((t) => ({ ...t, url: t.url.startsWith("//") ? `https:${t.url}` : t.url })),
-    formats, adaptiveFormats,
-  };
-  // Can this browser read the links? Ask for the first byte of the smallest file.
-  const probe = [...formats, ...adaptiveFormats].sort((a, b) => Number(a.contentLength ?? 9e15) - Number(b.contentLength ?? 9e15))[0];
-  try {
-    const r = await fetch(probe.url!, { headers: { Range: "bytes=0-0" }, signal });
-    if (!r.ok) return null;
-  } catch (e) {
-    if ((e as Error).name === "AbortError") throw e;
-    return null;
-  }
-  info.direct = true;
-  return { info, remaining: remainingOf(sres) };
-}
-
 export async function fetchInfo(id: string, signal?: AbortSignal): Promise<{ info: StreamInfo; remaining: number | null }> {
-  const yt = await fromYouTubeApi(id, signal);
-  if (yt) return yt;
-  return fromYtStream(id, signal);
-}
-
-async function fromYtStream(id: string, signal?: AbortSignal): Promise<{ info: StreamInfo; remaining: number | null }> {
   let res: Response;
   try {
-    res = await fetch(`/yt/dl?id=${encodeURIComponent(id)}&cgeo=${COUNTRY}`, { signal });
+    res = await fetch(`/ys/video/details/?id=${encodeURIComponent(id)}&hl=en&gl=${COUNTRY}`, { signal });
   } catch (e) {
     if ((e as Error).name === "AbortError") throw e;
     throw new StreamError("You're offline, or Vortex Engine can't be reached.");
   }
-  const remaining = remainingOf(res);
-  if (res.status === 429) throw new StreamError("The free monthly quota is used up, or too many requests. Try again later.");
-  if (res.status === 401 || res.status === 403) {
-    throw new StreamError("The downloader isn't connected: the RapidAPI key is missing or not subscribed.");
-  }
-  if (res.status === 404) throw new StreamError("The downloader route isn't set up on this site yet.");
-  let info: StreamInfo;
-  try {
-    info = (await res.json()) as StreamInfo;
-  } catch {
-    throw new StreamError(`The downloader answered with an error (${res.status}). Try again.`);
-  }
-  if (!res.ok || info.status !== "OK") {
-    throw new StreamError(info.msg ? `YouTube: ${info.msg}` : "That video couldn't be loaded. It may be private, age-restricted or removed.");
-  }
-  return { info, remaining };
+  const left = res.headers.get("x-ratelimit-requests-remaining");
+  const remaining = left !== null && left !== "" && !Number.isNaN(Number(left)) ? Number(left) : null;
+  if (res.status === 429) throw new StreamError("The free quota is used up, or too many requests. Try again later.");
+  const d = (res.ok ? await res.json().catch(() => null) : null) as Json | null;
+  // Without details (API not set up or busy) the video can still be downloaded.
+  const thumbs = (Array.isArray(d?.thumbnails) ? d!.thumbnails : []) as { url: string; width: number; height: number }[];
+  return {
+    remaining,
+    info: {
+      status: "OK", id,
+      title: (typeof d?.title === "string" && d.title) || "YouTube video",
+      lengthSeconds: d?.lengthSeconds != null ? String(d.lengthSeconds) : undefined,
+      channelTitle: ((d?.author as Json | undefined)?.title as string | undefined) ?? undefined,
+      thumbnail: thumbs.map((t) => ({ ...t, url: t.url.startsWith("//") ? `https:${t.url}` : t.url })),
+    },
+  };
 }
 
-const size = (f: StreamFormat) => (f.contentLength ? Number(f.contentLength) : null);
-const isAudio = (f: StreamFormat) => f.mimeType.startsWith("audio/");
-const isH264 = (f: StreamFormat) => /avc1/.test(f.mimeType);
-/** Original-language track (or the only one); dubbed tracks and loudness-compressed copies are skipped. */
-const isMainAudio = (f: StreamFormat) => (!f.audioTrack || f.audioTrack.audioIsDefault) && !f.isDrc;
-
-/** Turn the API's formats into the presets the page offers, best first within each group. */
+/** Every choice is made into one file on the download server, then saved. */
 export function buildPresets(info: StreamInfo): Preset[] {
-  const out: Preset[] = [];
-
-  for (const f of [...(info.formats ?? [])].sort((a, b) => (b.height ?? 0) - (a.height ?? 0))) {
-    if (!f.url) continue;
-    out.push({
-      key: `v${f.itag}`, kind: "video", label: `Video ${f.qualityLabel ?? ""}`.trim(),
-      detail: "MP4 with sound · plays everywhere", ext: "mp4", url: f.url, bytes: size(f),
-    });
-  }
-
-  const audio = (info.adaptiveFormats ?? []).filter((f) => f.url && isAudio(f) && isMainAudio(f));
-  const best = (pred: (f: StreamFormat) => boolean) =>
-    audio.filter(pred).sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0))[0];
-  const m4a = best((f) => f.mimeType.startsWith("audio/mp4"));
-  const opus = best((f) => f.mimeType.startsWith("audio/webm"));
-  if (m4a) out.push({
-    key: `a${m4a.itag}`, kind: "audio", label: "Audio · best for iPad",
-    detail: `M4A (AAC) · ~${Math.round((m4a.bitrate ?? 0) / 1000)} kbps`, ext: "m4a", url: m4a.url!, bytes: size(m4a),
-  });
-  if (opus) out.push({
-    key: `a${opus.itag}`, kind: "audio", label: "Audio · highest quality",
-    detail: `WebM (Opus) · ~${Math.round((opus.bitrate ?? 0) / 1000)} kbps · may not play in Apple apps`, ext: "webm", url: opus.url!, bytes: size(opus),
-  });
-
-  // 720p/1080p with sound: joined on the YouTube Info & Download API's servers.
-  if (!hdEnabled() && !info.direct) {
-    const vids = out.filter((p) => p.kind === "video");
-    const rest = out.filter((p) => p.kind !== "video");
-    // Expected size: YouTube's own picture file at that height (H.264 when listed) plus the M4A sound.
-    const est = (h: number) => {
-      const v = (info.adaptiveFormats ?? []).filter((f) => !isAudio(f) && f.height === h && f.contentLength)
-        .sort((a, b) => Number(isH264(b)) - Number(isH264(a)))[0];
-      return v ? size(v)! + (m4a ? size(m4a) ?? 0 : 0) : null;
-    };
-    const server: Preset[] = ["1080", "720"].map((f) => ({
-      key: `s${f}`, kind: "video", label: `Video ${f}p`, detail: "MP4 with sound · prepared online, may take a minute",
-      ext: "mp4", url: `https://www.youtube.com/watch?v=${info.id}`, bytes: est(Number(f)), server: f,
-    }));
-    return [...server, ...vids, ...rest];
-  }
-
-  // Higher qualities: YouTube keeps picture and sound apart, so each is paired
-  // with the best M4A audio and combined on this device. H.264 plays everywhere.
-  if (m4a && (hdEnabled() || info.direct)) {
-    const seen = new Set<string>(out.filter((p) => p.kind === "video").map((p) => p.label));
-    const combos: Preset[] = [];
-    for (const f of (info.adaptiveFormats ?? [])
-      .filter((f) => f.url && !isAudio(f) && isH264(f))
-      .sort((a, b) => (b.height ?? 0) - (a.height ?? 0) || (b.fps ?? 0) - (a.fps ?? 0))) {
-      const label = `Video ${f.qualityLabel ?? `${f.height}p`}`;
-      if (seen.has(label)) continue;
-      seen.add(label);
-      const v = size(f), a = size(m4a);
-      combos.push({
-        key: `c${f.itag}`, kind: "video", label,
-        detail: "MP4 with sound · combined on this device", ext: "mp4", url: f.url!,
-        bytes: v && a ? v + a : null, audio: { url: m4a.url!, bytes: a },
-      });
-    }
-    const progressive = out.filter((p) => p.kind === "video");
-    const rest = out.filter((p) => p.kind !== "video");
-    const height = (p: Preset) => parseInt(p.label.replace(/\D+/, ""), 10) || 0;
-    return [...[...combos, ...progressive].sort((a, b) => height(b) - height(a)), ...rest];
-  }
-  return out;
+  const url = `https://www.youtube.com/watch?v=${info.id}`;
+  const video = ["1080", "720", "480", "360"].map((f): Preset => ({
+    key: `s${f}`, kind: "video", label: `Video ${f}p`, detail: f === "360" ? "MP4 with sound · smallest, fastest" : "MP4 with sound",
+    ext: "mp4", url, bytes: null, server: f,
+  }));
+  return [
+    ...video,
+    { key: "am4a", kind: "audio", label: "Audio · best for iPad", detail: "M4A (AAC)", ext: "m4a", url, bytes: null, server: "m4a" },
+    { key: "amp3", kind: "audio", label: "Audio · MP3", detail: "MP3 · plays everywhere", ext: "mp3", url, bytes: null, server: "mp3" },
+  ];
 }
 
 /**
@@ -320,13 +209,13 @@ export function bestThumb(info: StreamInfo): string | undefined {
 export async function prepareServer(id: string, format: string, onProgress: (p: number) => void, signal?: AbortSignal): Promise<string> {
   const yt = encodeURIComponent(`https://www.youtube.com/watch?v=${id}`);
   const res = await fetch(`/sn/ajax/download.php?format=${format}&url=${yt}`, { signal });
-  if (res.status === 429) throw new StreamError("The free monthly quota for HD is used up. Try again later, or pick 360p.");
+  if (res.status === 429) throw new StreamError("The free monthly download quota is used up. Try again later.");
   if (res.status === 401 || res.status === 403) {
     const why = (await res.text().catch(() => "")).slice(0, 200);
-    throw new StreamError(`The HD downloader isn't connected (HTTP ${res.status}${why ? `: ${why}` : ""}). Check that the RAPIDAPI_KEY secret is the key of the app subscribed to YouTube Info & Download API.`);
+    throw new StreamError(`The downloader isn't connected (HTTP ${res.status}${why ? `: ${why}` : ""}). Check that the RAPIDAPI_KEY secret is the key of the app subscribed to YouTube Info & Download API.`);
   }
   const start = await res.json().catch(() => null) as { success?: boolean; progress_url?: string; message?: string } | null;
-  if (!res.ok || !start?.success || !start.progress_url) throw new StreamError(`The HD downloader refused this video${start?.message ? `: ${start.message}` : ""}.`);
+  if (!res.ok || !start?.success || !start.progress_url) throw new StreamError(`The downloader refused this video${start?.message ? `: ${start.message}` : ""}.`);
   const until = Date.now() + 10 * 60_000;
   while (Date.now() < until) {
     await new Promise((r) => setTimeout(r, 2500));
@@ -334,7 +223,7 @@ export async function prepareServer(id: string, format: string, onProgress: (p: 
       { download_url?: string | null; progress?: number; success?: number; text?: string } | null;
     if (!p) continue;
     if (p.download_url && (p.progress ?? 0) >= 1000) return p.download_url;
-    if (p.text && /error|fail/i.test(p.text)) throw new StreamError(`The HD downloader couldn't make this video: ${p.text}`);
+    if (p.text && /error|fail/i.test(p.text)) throw new StreamError(`The downloader couldn't make this video: ${p.text}`);
     onProgress(Math.min(1, (p.progress ?? 0) / 1000));
   }
   throw new StreamError("Preparing the video took too long. Try again.");
