@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { imageSrc, logoFor, safeUrl, useContent, type Content, type Game } from "./content";
-import { Blocks, ImageField, SizeFields } from "./Blocks";
+import { Blocks, LinkButton, PictureButton, ResizeHandles } from "./Blocks";
 import { Editable, useEdit } from "./editable";
 
 export interface Welcome { name: string; avatar: string }
@@ -55,6 +55,8 @@ function RobloxCard() {
   const edit = useEdit();
   const href = safeUrl(r.url ?? "");
   const logo = imageSrc(r.logo);
+  const ref = useRef<HTMLDivElement>(null);
+  const on = edit?.selected === "roblox";
   const style = { ["--w" as string]: `${r.width ?? 100}%`, ...(r.height ? { height: r.height } : {}) };
   const inner = (
     <>
@@ -64,23 +66,27 @@ function RobloxCard() {
         {logo ? <img className="vx-roblox-logo" src={logo} alt="" width={96} height={96} referrerPolicy="no-referrer" /> : <span className="vx-roblox-logo" />}
         <Editable as="p" className="vx-muted" path="sections.roblox.description" placeholder="Description" multiline />
       </div>
-      {edit && (
-        <div className="vx-roblox-edit">
-          <label className="vx-field"><span>Group link</span>
-            <input type="text" value={r.url ?? ""} onChange={(e) => edit.setText("sections.roblox.url", e.target.value)} placeholder="https://www.roblox.com/communities/…" />
-          </label>
-          <ImageField value={r.logo ?? ""} onChange={(logo) => edit.setSection("roblox", { logo })} edit={edit} />
-          <SizeFields width={r.width ?? 100} height={r.height ?? 0} onChange={(p) => edit.setSection("roblox", p)} />
-          <button type="button" className="vx-chip-btn" aria-pressed={r.visible} onClick={() => edit.toggleSection("roblox")}>
-            {r.visible ? "Shown" : "Hidden"}
-          </button>
-        </div>
-      )}
     </>
   );
   return href && !edit
     ? <a className="vx-card vx-roblox" style={style} href={href} target="_blank" rel="noopener noreferrer">{inner}</a>
-    : <div className={`vx-card vx-roblox ${edit && !r.visible ? "vx-hidden-tile" : ""}`} style={style}>{inner}</div>;
+    : <div ref={ref} className={`vx-card vx-roblox ${edit ? "vx-block-editing" : ""} ${on ? "vx-block-on" : ""} ${edit && !r.visible ? "vx-hidden-tile" : ""}`}
+        style={style} onClick={() => { if (edit && !on) edit.select("roblox"); }}>
+        {inner}
+        {edit && on && (
+          <>
+            <div className="vx-block-tools" onClick={(e) => e.stopPropagation()}>
+              <div className="vx-block-bar" role="toolbar" aria-label="Roblox card tools">
+                <PictureButton edit={edit} has={!!r.logo} onChange={(logo) => edit.setSection("roblox", { logo })} />
+                <LinkButton label="Group link" value={r.url ?? ""} onChange={(url) => edit.setSection("roblox", { url })} />
+                <button type="button" aria-label={r.visible ? "Hide on the site" : "Show on the site"} title={r.visible ? "Hide on the site" : "Show on the site"}
+                  onClick={() => edit.toggleSection("roblox")}>{r.visible ? "👁" : "🚫"}</button>
+              </div>
+            </div>
+            <ResizeHandles target={ref} width={r.width ?? 100} onChange={(p) => edit.setSection("roblox", p)} />
+          </>
+        )}
+      </div>;
 }
 
 export function GamesPage() {

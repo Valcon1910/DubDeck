@@ -578,3 +578,86 @@ a.vx-block-box:hover { border-color: var(--vx-accent); }
 .vx-roblox-edit { display: grid !important; grid-template-columns: 1fr; gap: 12px; align-items: start; }
 .vx-roblox-edit > .vx-chip-btn { justify-self: start; }
 .vx-field .vx-row { flex-wrap: wrap; }
+
+/* ---------- Editor, full screen (Google Sites style) ---------- */
+.vx-ed {
+  position: fixed; inset: 0; z-index: 60; display: grid; grid-template-rows: auto auto 1fr; gap: 0;
+  background: var(--bg); color: var(--ink);
+}
+.vx-ed-bar {
+  position: static; top: auto; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; box-shadow: none;
+  display: flex; align-items: center; gap: 12px; padding: 8px 14px; min-height: 60px; flex-wrap: nowrap; background: var(--surface);
+}
+.vx-ed-exit { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; color: var(--ink); text-decoration: none; font-size: 20px; flex: none; }
+.vx-ed-exit:hover { background: var(--surface-2); }
+.vx-ed-status { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.vx-ed-status .vx-ed-site-name { font-size: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; align-self: flex-start; max-width: 100%; }
+.vx-ed-status .vx-badge { align-self: flex-start; margin-top: 2px; }
+.vx-ed-actions { flex-wrap: nowrap; gap: 6px; }
+.vx-ed-actions .vx-icon-btn { border: 0; background: transparent; border-radius: 50%; }
+.vx-ed-actions .vx-icon-btn:hover:not(:disabled) { background: var(--surface-2); }
+.vx-ed-actions .vx-icon-btn[aria-pressed="true"] { background: var(--vx-accent-soft); }
+.vx-ed-msg { margin: 8px 14px 0; }
+
+.vx-ed-body { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 0; align-items: stretch; }
+.vx-ed-body.vx-ed-nopanel { grid-template-columns: minmax(0, 1fr); }
+.vx-ed-canvas { overflow: auto; background: var(--surface-2); padding: 0 0 60px; display: block; }
+.vx-ed-site-nav {
+  position: sticky; top: 0; z-index: 4; margin: 0; display: flex; justify-content: center; gap: 4px; padding: 10px;
+  background: color-mix(in srgb, var(--surface-2) 88%, transparent); backdrop-filter: blur(8px);
+}
+.vx-ed-site-nav button { border: 0; background: none; padding: 8px 14px; border-radius: 999px; font: inherit; font-size: 14px; color: var(--muted); cursor: pointer; }
+.vx-ed-site-nav button[aria-selected="true"] { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgb(0 0 0 / 0.12); }
+.vx-ed-window { max-width: 1100px; margin: 4px auto 0; border-radius: 8px; border: 0; box-shadow: 0 1px 3px rgb(0 0 0 / 0.12), 0 8px 30px rgb(0 0 0 / 0.08); }
+.vx-ed-site-main { max-width: 900px; padding: 32px clamp(16px, 5vw, 56px) 56px; }
+.vx-ed-previewing .vx-ed-canvas { background: var(--bg); }
+.vx-ed-previewing .vx-ed-window { box-shadow: none; max-width: none; margin: 0; }
+
+.vx-ed-panel {
+  position: static; top: auto; max-height: none; border: 0; border-left: 1px solid var(--border); border-radius: 0;
+  overflow: auto; padding: 0 16px 16px; gap: 16px; background: var(--surface);
+}
+.vx-ed-panel > .vx-tabs { position: sticky; top: 0; z-index: 2; background: var(--surface); margin: 0 -16px; padding: 0 8px; border-bottom: 1px solid var(--border); display: flex; }
+.vx-ed-panel > .vx-tabs button { flex: 1; border: 0; background: none; padding: 16px 4px 13px; font: inherit; font-weight: 600; font-size: 14px; color: var(--muted); border-bottom: 3px solid transparent; cursor: pointer; border-radius: 0; }
+.vx-ed-panel > .vx-tabs button[aria-selected="true"] { color: var(--vx-accent); border-bottom-color: var(--vx-accent); background: none; }
+.vx-insert-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px; }
+.vx-insert { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; aspect-ratio: 1.15; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); font: inherit; font-size: 13px; font-weight: 600; color: var(--ink); cursor: pointer; }
+.vx-insert:hover { border-color: var(--vx-accent); background: var(--vx-accent-soft); }
+.vx-insert-icon { font-size: 26px; line-height: 1; }
+.vx-item-head { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
+
+/* Selected block: a blue frame and a small toolbar above it */
+.vx-block-editing { outline: 1px dashed color-mix(in srgb, var(--vx-accent) 45%, transparent); cursor: pointer; }
+.vx-block-editing:hover { outline: 1px solid var(--vx-accent); }
+.vx-block-on, .vx-block-on:hover { outline: 2px solid var(--vx-accent); outline-offset: 3px; }
+.vx-block-tools { top: -46px; right: 0; }
+.vx-block-bar { display: flex; gap: 2px; padding: 4px; border-radius: 10px; background: var(--surface); box-shadow: 0 2px 10px rgb(0 0 0 / 0.18); }
+.vx-block-bar button { width: 32px; height: 32px; border: 0; border-radius: 8px; background: none; color: var(--ink); font-size: 16px; cursor: pointer; }
+.vx-block-bar button:hover:not(:disabled) { background: var(--surface-2); }
+.vx-block-bar button:disabled { opacity: 0.35; }
+.vx-block-bar button.danger { color: var(--danger); }
+
+.vx-ed-panel-toggle { display: none; }
+@media (max-width: 999px) {
+  .vx-ed-body { grid-template-columns: minmax(0, 1fr); }
+  .vx-ed-panel-toggle { display: inline-grid; place-items: center; }
+  .vx-ed-panel { position: fixed; inset: auto 0 0 0; z-index: 70; max-height: 60dvh; border-left: 0; border-top: 1px solid var(--border); border-radius: 18px 18px 0 0 !important; box-shadow: 0 -12px 40px rgb(0 0 0 / 0.2); }
+  .vx-ed-actions .vx-btn-ghost { display: none; }
+  .vx-ed-status > .vx-muted { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+}
+body:has(.vx-ed) { overflow: hidden; }
+.vx-ed input[type="range"] { accent-color: var(--vx-accent); }
+.vx-ed-panel .vx-size { grid-template-columns: 1fr; }
+
+/* Resize handles on the selected item */
+.vx-rs { position: absolute; z-index: 6; touch-action: none; }
+.vx-rs-x { top: 50%; right: -9px; width: 12px; height: 36px; margin-top: -18px; border-radius: 6px; background: var(--surface); border: 2px solid var(--vx-accent); cursor: ew-resize; }
+.vx-rs-y { left: 50%; bottom: -9px; width: 36px; height: 12px; margin-left: -18px; border-radius: 6px; background: var(--surface); border: 2px solid var(--vx-accent); cursor: ns-resize; }
+.vx-rs-xy { right: -9px; bottom: -9px; width: 16px; height: 16px; border-radius: 50%; background: var(--vx-accent); border: 2px solid var(--surface); cursor: nwse-resize; }
+.vx-rs-size { position: absolute; left: 8px; bottom: 8px; z-index: 6; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--vx-accent); color: #fff; pointer-events: none; }
+body.vx-resizing, body.vx-resizing * { cursor: grabbing !important; user-select: none; }
+.vx-roblox.vx-block-editing { position: relative; overflow: visible; }
+.vx-block-bar button[aria-pressed="true"] { background: var(--vx-accent-soft); }
+@media (pointer: coarse) { .vx-rs-x { width: 18px; right: -12px; } .vx-rs-y { height: 18px; bottom: -12px; } .vx-rs-xy { width: 22px; height: 22px; right: -12px; bottom: -12px; } }
+.vx-ed { grid-template-columns: minmax(0, 1fr); width: 100%; }
+.vx-ed-status .vx-editable { max-width: 100%; }

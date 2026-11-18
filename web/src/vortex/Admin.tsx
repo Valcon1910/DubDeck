@@ -9,7 +9,7 @@ import { Downloader } from "./Downloader";
 import { GameLogo, GamesPage, HomePage } from "./pages";
 
 export interface Access { emails: string[]; domains: string[] }
-type Panel = "pages" | "theme" | "access";
+type Panel = "insert" | "pages" | "theme";
 type Page = "home" | "games" | "downloader";
 
 const DRAFT_KEY = "vortex.admin.draft";
@@ -103,14 +103,15 @@ interface EditorProps {
 
 interface Snapshot { content: Content; access: Access }
 
-function Editor({ token, user, saved, onSaved, onSignOut }: EditorProps) {
+function Editor({ token, user, saved, onSaved }: EditorProps) {
   const initial = useMemo<Snapshot>(() => restoreDraft() ?? { content: clone(saved.content), access: clone(saved.access) }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [snap, setSnap] = useState<Snapshot>(initial);
   const history = useRef<{ past: Snapshot[]; future: Snapshot[]; lastKey: string; lastAt: number }>({ past: [], future: [], lastKey: "", lastAt: 0 });
   const [, bump] = useState(0);
   const [uploads, setUploads] = useState<Map<string, Uint8Array>>(new Map());
   const [page, setPage] = useState<Page>("home");
-  const [panel, setPanel] = useState<Panel>("pages");
+  const [panel, setPanel] = useState<Panel>("insert");
+  const [selected, setSelected] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(() => window.matchMedia?.("(min-width: 1000px)").matches ?? true);
   const [previewing, setPreviewing] = useState(false);
   const [dialog, setDialog] = useState<Game | null | undefined>(undefined); // undefined = closed, null = new
@@ -173,7 +174,12 @@ function Editor({ token, user, saved, onSaved, onSignOut }: EditorProps) {
       [c.games.items[i], c.games.items[j]] = [c.games.items[j], c.games.items[i]];
     }),
     removeGame: (id) => set((c) => { c.games.items = c.games.items.filter((g) => g.id !== id); }),
-    addBlock: (kind) => set((c) => { c.home.blocks.push(newBlock(kind)); }),
+    addBlock: (kind) => {
+      const b = newBlock(kind);
+      set((c) => { c.home.blocks.push(b); });
+      setPage("home"); setSelected(b.id);
+      setTimeout(() => document.getElementById(`block-${b.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
+    },
     updateBlock: (id, patch) => set((c) => {
       const b = c.home.blocks.find((x) => x.id === id);
       if (b) Object.assign(b, patch);
@@ -184,7 +190,9 @@ function Editor({ token, user, saved, onSaved, onSignOut }: EditorProps) {
       if (i < 0 || j < 0 || j >= c.home.blocks.length) return;
       [c.home.blocks[i], c.home.blocks[j]] = [c.home.blocks[j], c.home.blocks[i]];
     }),
-    removeBlock: (id) => set((c) => { c.home.blocks = c.home.blocks.filter((b) => b.id !== id); }),
+    removeBlock: (id) => { set((c) => { c.home.blocks = c.home.blocks.filter((b) => b.id !== id); }); setSelected(null); },
+    selected,
+    select: (id) => setSelected(id),
     setSection: (k, patch) => set((c) => { Object.assign(c.sections[k], patch); }, `section:${k}:${Object.keys(patch).join(",")}`),
     uploadImage: async (file) => {
       const r = await prepareImage(file);
@@ -195,7 +203,7 @@ function Editor({ token, user, saved, onSaved, onSignOut }: EditorProps) {
       setUploads((u) => new Map(u).set(path, bytes));
       return { path };
     },
-  }), [set]);
+  }), [set, selected]);
 
   // Keep unsaved work across reloads, and warn before leaving.
   useEffect(() => {
@@ -262,54 +270,43 @@ function Editor({ token, user, saved, onSaved, onSignOut }: EditorProps) {
 
   const h = history.current;
   const pages: [Page, string][] = [["home", "Home"], ["games", draft.sections.games.title || "Games"], ["downloader", draft.sections.downloader.title || "Downloader"]];
+  const tabs: [Panel, string][] = [["insert", "Insert"], ["pages", "Pages"], ["theme", "Themes"]];
 
   return (
-    <div className={`vx-ed ${previewing ? "vx-ed-previewing" : ""}`}>
-      <div className="vx-ed-bar">
-        <div className="vx-ed-bar-left">
-          <div className="vx-ed-status">
-            <span className="vx-eyebrow">Editing · {user}</span>
-            <strong>{dirty ? "Unsaved changes" : "All changes saved"}</strong>
-            {deploy && <DeployBadge state={deploy.state} />}
-          </div>
-        </div>
-        <div className="vx-seg vx-ed-pages" role="tablist" aria-label="Page">
-          {pages.map(([k, label]) => (
-            <button key={k} role="tab" aria-selected={page === k} onClick={() => setPage(k)}>{label}</button>
-          ))}
+    <div className={`vx-ed ${previewing ? "vx-ed-previewing" : ""}`} style={{ ["--vx-accent" as string]: draft.site.accent }}>
+      <header className="vx-ed-bar">
+        <a className="vx-ed-exit" href="#/" aria-label="Leave the editor" title="Leave the editor"
+          onClick={(e) => { if (dirty && !confirm("Leave the editor? Unsaved changes stay on this device.")) e.preventDefault(); }}>←</a>
+        <div className="vx-ed-status">
+          <SiteName editing={!previewing} value={draft.site.name} onChange={(v) => set((c) => { c.site.name = v; }, "text:site.name")} />
+          <span className="vx-muted vx-small">
+            {publishing ? "Saving…" : dirty ? "Unsaved changes" : "All changes saved"}{user ? ` · ${user}` : ""}
+          </span>
+          {deploy && <DeployBadge state={deploy.state} />}
         </div>
         <div className="vx-ed-actions">
-          <button className="vx-icon-btn" onClick={undo} disabled={!h.past.length} aria-label="Undo" title="Undo">↶</button>
-          <button className="vx-icon-btn" onClick={redo} disabled={!h.future.length} aria-label="Redo" title="Redo">↷</button>
-          <button className="vx-btn vx-btn-ghost vx-btn-sm" aria-pressed={previewing} onClick={() => setPreviewing((v) => !v)}>
-            {previewing ? "Back to editing" : "Preview"}
-          </button>
-          <button className="vx-btn vx-btn-ghost vx-btn-sm" onClick={() => setPanelOpen((v) => !v)} aria-expanded={panelOpen}>
-            {panelOpen ? "Hide panel" : "Panel"}
-          </button>
+          <button className="vx-icon-btn" onClick={undo} disabled={!h.past.length} aria-label="Undo" title="Undo (Ctrl+Z)">↶</button>
+          <button className="vx-icon-btn" onClick={redo} disabled={!h.future.length} aria-label="Redo" title="Redo (Ctrl+Shift+Z)">↷</button>
+          <button className="vx-icon-btn" aria-pressed={previewing} onClick={() => { setPreviewing((v) => !v); setSelected(null); }} aria-label="Preview" title={previewing ? "Back to editing" : "Preview"}>👁</button>
           <button className="vx-btn vx-btn-ghost vx-btn-sm" onClick={discard} disabled={!dirty || publishing}>Discard</button>
           <button className="vx-btn vx-btn-primary vx-btn-sm" onClick={publish} disabled={!dirty || publishing}>
             {publishing ? "Saving…" : "Publish"}
           </button>
+          <button className="vx-icon-btn vx-ed-panel-toggle" onClick={() => setPanelOpen((v) => !v)} aria-expanded={panelOpen} aria-label="Panel" title="Panel">☰</button>
         </div>
-      </div>
-      {message && <p className={`vx-alert ${message.kind === "error" ? "vx-alert-error" : ""}`} role="status">{message.text}</p>}
+      </header>
+      {message && <p className={`vx-alert vx-ed-msg ${message.kind === "error" ? "vx-alert-error" : ""}`} role="status">{message.text}</p>}
 
       <div className={`vx-ed-body ${panelOpen && !previewing ? "" : "vx-ed-nopanel"}`}>
-        <div className="vx-ed-canvas" style={{ ["--vx-accent" as string]: draft.site.accent }}>
-          {!previewing && <p className="vx-ed-hint">Click any text to change it. Changes are saved when you press Publish.</p>}
+        <div className="vx-ed-canvas" onClick={(e) => { if (e.target === e.currentTarget) api.select(null); }}>
+          <nav className="vx-ed-site-nav" aria-label="Page">
+            {pages.filter(([k]) => k === "home" || draft.sections[k as "games" | "downloader"].visible || !previewing).map(([k, label]) => (
+              <button key={k} role="tab" aria-selected={page === k} aria-current={page === k ? "page" : undefined} onClick={() => { setPage(k); setSelected(null); }}>{label}</button>
+            ))}
+          </nav>
           <div className="vx-ed-window">
             <ContentContext.Provider value={draft}>
               <EditContext.Provider value={previewing ? null : api}>
-                <div className="vx-ed-site-top">
-                  <span className="vx-ed-mark" aria-hidden="true" />
-                  <SiteName editing={!previewing} value={draft.site.name} onChange={(v) => set((c) => { c.site.name = v; }, "text:site.name")} />
-                  <nav className="vx-ed-site-nav">
-                    {pages.filter(([k]) => k === "home" || draft.sections[k as "games" | "downloader"].visible).map(([k, label]) => (
-                      <button key={k} aria-current={page === k ? "page" : undefined} onClick={() => setPage(k)}>{label}</button>
-                    ))}
-                  </nav>
-                </div>
                 <div className="vx-ed-site-main">
                   {page === "home" && <HomePage />}
                   {page === "games" && <GamesPage />}
@@ -323,10 +320,11 @@ function Editor({ token, user, saved, onSaved, onSignOut }: EditorProps) {
         {panelOpen && !previewing && (
           <aside className="vx-ed-panel" aria-label="Editor panel">
             <nav className="vx-tabs" role="tablist">
-              {([["pages", "Pages"], ["theme", "Theme"]] as const).map(([k, label]) => (
+              {tabs.map(([k, label]) => (
                 <button key={k} role="tab" aria-selected={panel === k} onClick={() => setPanel(k)}>{label}</button>
               ))}
             </nav>
+            {panel === "insert" && <InsertPanel api={api} page={page} addGame={() => { setPage("games"); setDialog(null); }} />}
             {panel === "pages" && (
               <PagesPanel draft={draft} page={page} setPage={setPage}
                 toggle={(k) => api.toggleSection(k)} addGame={() => { setPage("games"); setDialog(null); }} />
@@ -334,7 +332,6 @@ function Editor({ token, user, saved, onSaved, onSignOut }: EditorProps) {
             {panel === "theme" && <LookTab draft={draft} set={(fn) => set(fn)} />}
             <footer className="vx-admin-foot">
               <span className="vx-muted vx-small">Saving to <code>{REPO}</code></span>
-              <button className="vx-link" onClick={() => { if (!dirty || confirm("Close the editor? Unsaved changes stay on this device.")) onSignOut(); }}>Close editor</button>
             </footer>
           </aside>
         )}
@@ -354,6 +351,31 @@ function Editor({ token, user, saved, onSaved, onSignOut }: EditorProps) {
           }}
         />
       )}
+    </div>
+  );
+}
+
+function InsertPanel({ api, page, addGame }: { api: EditApi; page: Page; addGame: () => void }) {
+  const items: [string, string, string, () => void][] = [
+    ["T", "Text box", "A paragraph of text", () => api.addBlock("text")],
+    ["▢", "Box", "A card with a title, text and picture", () => api.addBlock("box")],
+    ["🖼", "Image", "A picture you upload or link", () => api.addBlock("image")],
+    ["🎮", "Game", "Add a game to the Games page", addGame],
+  ];
+  return (
+    <div className="vx-stack">
+      <div className="vx-insert-grid">
+        {items.map(([icon, label, hint, go]) => (
+          <button key={label} type="button" className="vx-insert" onClick={go} title={hint}>
+            <span className="vx-insert-icon" aria-hidden="true">{icon}</span>
+            <span>{label}</span>
+          </button>
+        ))}
+      </div>
+      <p className="vx-muted vx-small">
+        {page === "home" ? "Text, boxes and images go at the end of the Home page. Click one on the page, then drag its frame's edges to resize it. Its toolbar moves it, adds a picture or link, or deletes it."
+          : "Text, boxes and images are added to the Home page."}
+      </p>
     </div>
   );
 }
