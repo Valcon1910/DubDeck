@@ -5,7 +5,28 @@ import published from "../../content.json";
 // web/content.json; the editor commits a new version to GitHub, which
 // redeploys the site, so edits are permanent.
 
-export interface SectionText { label: string; title: string; description: string; visible: boolean; url?: string; logo?: string }
+export interface SectionText { label: string; title: string; description: string; visible: boolean; url?: string; logo?: string; width?: number; height?: number }
+
+/** Something added on the home page in the editor. */
+export interface Block {
+  id: string;
+  kind: "text" | "box" | "image";
+  title: string;
+  text: string;
+  /** Uploaded (/logos/…) or linked picture; "" = none. */
+  image: string;
+  /** Optional link the block opens. */
+  link: string;
+  /** Width in % of the page (10–100). */
+  width: number;
+  /** Height in px; 0 = as tall as its content. */
+  height: number;
+}
+
+export const newBlock = (kind: Block["kind"]): Block => ({
+  id: crypto.randomUUID(), kind, link: "", image: "", height: kind === "image" ? 240 : 0, width: kind === "text" ? 100 : 50,
+  title: kind === "box" ? "New box" : "", text: kind === "image" ? "" : "Write something here.",
+});
 
 export interface Game {
   id: string;
@@ -18,7 +39,7 @@ export interface Game {
 
 export interface Content {
   site: { name: string; accent: string };
-  home: { title: string; subtitle: string };
+  home: { title: string; subtitle: string; blocks: Block[] };
   sections: { games: SectionText; docs: SectionText; slides: SectionText; downloader: SectionText; roblox: SectionText };
   games: { title: string; subtitle: string; intro: string; empty: string; items: Game[] };
   downloader: { title: string; intro: string; footer: string };
@@ -33,7 +54,14 @@ export function normalize(raw: unknown): Content {
   const sec = (k: keyof Content["sections"]) => ({ ...d.sections[k], ...(r.sections?.[k] ?? {}) });
   return {
     site: { ...d.site, ...(r.site ?? {}) },
-    home: { ...d.home, ...(r.home ?? {}) },
+    home: {
+      ...d.home, ...(r.home ?? {}),
+      blocks: (r.home?.blocks ?? d.home.blocks ?? []).map((b) => ({
+        id: String(b.id || crypto.randomUUID()), kind: (["text", "box", "image"].includes(b.kind) ? b.kind : "box") as Block["kind"],
+        title: String(b.title ?? ""), text: String(b.text ?? ""), image: String(b.image ?? ""), link: String(b.link ?? ""),
+        width: clamp(Number(b.width) || 100, 10, 100), height: clamp(Number(b.height) || 0, 0, 2000),
+      })),
+    },
     sections: { games: sec("games"), docs: sec("docs"), slides: sec("slides"), downloader: sec("downloader"), roblox: sec("roblox") },
     games: {
       ...d.games, ...(r.games ?? {}),
@@ -44,6 +72,16 @@ export function normalize(raw: unknown): Content {
     },
     downloader: { ...d.downloader, ...(r.downloader ?? {}) },
   };
+}
+
+const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Math.round(n)));
+
+/** A picture to show: an upload waiting to be published, an uploaded file, or an https link. */
+export function imageSrc(v: string | undefined): string | null {
+  if (!v) return null;
+  if (pendingLogos.has(v)) return pendingLogos.get(v)!;
+  if (/^\/[\w./-]+$/.test(v) && !v.includes("..")) return v;
+  return safeUrl(v);
 }
 
 export const ContentContext = createContext<Content>(normalize(PUBLISHED));

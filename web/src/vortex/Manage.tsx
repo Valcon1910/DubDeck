@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { AccessTab, type Access } from "./Admin";
-import { ACCESS_PATH, ACTIONS, commit, GitHubError, readJson, recentRuns, runAction, type Run } from "./github";
+import { AccessList, protect, type Access, type Roles } from "./AccessList";
+import { useVisitorEmail } from "./admins";
+import { ACCESS_PATH, ACCESS_TEST_PATH, ACTIONS, commit, GitHubError, readJson, recentRuns, runAction, ROLES_PATH, type FileChange, type Run } from "./github";
 
 const TOKEN = ""; // added by the site's /gh route
 
@@ -79,39 +80,57 @@ function Actions() {
   );
 }
 
+interface Lists { site: Access; test: Access; roles: Roles }
+const json = (v: unknown) => JSON.stringify(v, null, 2) + "\n";
+
 function AccessCard() {
-  const [saved, setSaved] = useState<Access | null>(null);
-  const [access, setAccess] = useState<Access | null>(null);
+  const me = useVisitorEmail();
+  const [saved, setSaved] = useState<Lists | null>(null);
+  const [lists, setLists] = useState<Lists | null>(null);
   const [state, setState] = useState<"idle" | "saving" | "saved">("idle");
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    readJson<Access>(TOKEN, ACCESS_PATH, "main")
-      .then((a) => { const v = { emails: a.emails ?? [], domains: a.domains ?? [] }; setSaved(v); setAccess(v); })
-      .catch((e) => setErr(e instanceof GitHubError ? e.message : "Couldn't load the access list."));
+    const acc = (a: Partial<Access> | null): Access => ({ emails: a?.emails ?? [], domains: a?.domains ?? [] });
+    Promise.all([
+      readJson<Access>(TOKEN, ACCESS_PATH, "main"),
+      readJson<Access>(TOKEN, ACCESS_TEST_PATH, "main").catch(() => null),
+      readJson<Roles>(TOKEN, ROLES_PATH, "main").catch(() => null),
+    ]).then(([site, test, roles]) => {
+      const v = { site: acc(site), test: acc(test), roles: { admins: roles?.admins ?? [] } };
+      setSaved(v); setLists(v);
+    }).catch((e) => setErr(e instanceof GitHubError ? e.message : "Couldn't load the access list."));
   }, []);
 
-  const dirty = !!access && JSON.stringify(access) !== JSON.stringify(saved);
+  const dirty = !!lists && JSON.stringify(lists) !== JSON.stringify(saved);
   async function save() {
-    if (!access) return;
+    if (!lists || !saved) return;
     setState("saving"); setErr(null);
+    const safe = { ...lists, ...protect(lists.site, lists.test, me) };
+    const files: FileChange[] = [];
+    if (JSON.stringify(safe.site) !== JSON.stringify(saved.site)) files.push({ path: ACCESS_PATH, text: json(safe.site) });
+    if (JSON.stringify(safe.test) !== JSON.stringify(saved.test)) files.push({ path: ACCESS_TEST_PATH, text: json(safe.test) });
+    if (JSON.stringify(safe.roles) !== JSON.stringify(saved.roles)) files.push({ path: ROLES_PATH, text: json(safe.roles) });
     try {
-      await commit(TOKEN, "Update who can open the site (from the Admin page)",
-        [{ path: ACCESS_PATH, text: JSON.stringify(access, null, 2) + "\n" }], "main");
-      setSaved(access); setState("saved");
+      if (files.length) await commit(TOKEN, "Update who can open the sites (from the Admin page)", files, "main");
+      setSaved(safe); setLists(safe); setState("saved");
     } catch (e) {
       setErr(e instanceof GitHubError ? e.message : "Couldn't save. Try again."); setState("idle");
     }
   }
+  const upd = (patch: Partial<Lists>) => { setLists((l) => (l ? { ...l, ...patch } : l)); setState("idle"); };
 
   return (
     <div className="vx-card vx-stack">
-      <h2 className="vx-card-title">Who can open the site</h2>
+      <h2 className="vx-card-title">Who can open the sites</h2>
       {err && <p className="vx-alert vx-alert-error" role="alert">{err}</p>}
-      {!access && !err && <p className="vx-muted vx-small"><span className="vx-spinner" aria-hidden="true" />Loading…</p>}
-      {access && (
+      {!lists && !err && <p className="vx-muted vx-small"><span className="vx-spinner" aria-hidden="true" />Loading…</p>}
+      {lists && (
         <>
-          <AccessTab access={access} setAccess={(a) => { setAccess(a); setState("idle"); }} />
+          <AccessList me={me}
+            site={lists.site} setSite={(site) => upd({ site })}
+            test={lists.test} setTest={(test) => upd({ test })}
+            roles={lists.roles} setRoles={(roles) => upd({ roles })} />
           <div className="vx-action-row">
             <button className="vx-btn vx-btn-primary" disabled={!dirty || state === "saving"} onClick={save}>
               {state === "saving" && <span className="vx-spinner" aria-hidden="true" />}{state === "saving" ? "Saving…" : "Save access list"}

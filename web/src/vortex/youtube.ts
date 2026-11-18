@@ -131,7 +131,7 @@ export async function fetchInfo(id: string, signal?: AbortSignal): Promise<{ inf
     res = await fetch(`/ys/video/details/?id=${encodeURIComponent(id)}&hl=en&gl=${COUNTRY}`, { signal });
   } catch (e) {
     if ((e as Error).name === "AbortError") throw e;
-    throw new StreamError("You're offline, or Vortex Engine can't be reached.");
+    throw new StreamError("You're offline, or Vortex can't be reached.");
   }
   const left = res.headers.get("x-ratelimit-requests-remaining");
   const remaining = left !== null && left !== "" && !Number.isNaN(Number(left)) ? Number(left) : null;

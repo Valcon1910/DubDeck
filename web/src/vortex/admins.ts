@@ -1,12 +1,16 @@
 import { useEffect, useState } from "react";
 
-// People who see the "Editor" button. Saving still needs the GitHub token,
-// so this list only decides who sees the button, not who can change the site.
-export const EDITOR_EMAILS = [
+// The site's owner: always Admin, always on both access lists, can't be removed.
+export const OWNER_EMAILS = [
   "valentino.104688@anglo.edu.co",
   "vale.conde.arango@gmail.com",
   "valentino1910@icloud.com",
 ];
+export const isOwner = (email: string) => OWNER_EMAILS.includes(email.trim().toLowerCase());
+
+// People who see the Admin and Editor buttons: the owner plus config/roles.json
+// (set from the Admin page; takes effect when the site is published).
+export const EDITOR_EMAILS = [...new Set([...OWNER_EMAILS, ...__VORTEX_ADMINS__])];
 
 /** The visitor's verified email from here.now's sign-in gate (null when unknown). */
 export function useVisitorEmail(): string | null {

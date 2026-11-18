@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-// The Vortex Engine downloader against mocked RapidAPI services.
+// The Vortex downloader against mocked RapidAPI services.
 // (The DubDeck backend tests live in e2e-dubdeck/ and need that backend running.)
 
 const VIDEO = "https://redirector.googlevideo.com/videoplayback?itag=18";
@@ -52,7 +52,7 @@ test("look up a video and save the 360p file", async ({ page }) => {
   const starts = await mockServer(page);
 
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Vortex Engine" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Vortex", exact: true })).toBeVisible();
   await page.getByRole("link", { name: /Save YouTube/ }).click();
 
   await page.getByLabel("Search YouTube or paste a link").fill("https://youtu.be/dQw4w9WgXcQ?si=abc");
@@ -128,7 +128,7 @@ test("admin: opens without a token, add a game and an email, publish one commit"
   await title.click();
   await page.keyboard.press("End");
   await page.keyboard.type(" Hub");
-  await expect(title).toHaveText("Vortex Engine Hub");
+  await expect(title).toHaveText("Vortex Hub");
 
   await page.getByRole("tab", { name: "Games" }).first().click();
   await page.locator(".vx-game-add").click();
@@ -148,7 +148,7 @@ test("admin: opens without a token, add a game and an email, publish one commit"
   const content = files.find((f) => f.games);
   expect(content.games.items).toHaveLength(1);
   expect(content.games.items[0]).toMatchObject({ name: "Krunker", url: "https://krunker.io" });
-  expect(content.home.title).toBe("Vortex Engine Hub");
+  expect(content.home.title).toBe("Vortex Hub");
 });
 
 test("admin page: start a publish action and add someone to the access list", async ({ page }) => {
@@ -183,7 +183,103 @@ test("admin page: start a publish action and add someone to the access list", as
   await page.getByRole("button", { name: "Save access list" }).click();
   await expect(page.getByText("Applies to both sites")).toBeVisible();
   expect(refUpdated).toContain("/git/refs/heads/main");
-  expect(JSON.parse(Buffer.from(blobs[0], "base64").toString()).emails).toEqual(["friend@example.com", "me@school.edu.co"]);
+  // The owner and the signed-in person are always kept on the list.
+  expect(JSON.parse(Buffer.from(blobs[0], "base64").toString()).emails).toEqual(
+    ["friend@example.com", "me@school.edu.co", "valentino.104688@anglo.edu.co", "valentino1910@icloud.com"]);
+});
+
+test("admin page: tap a person to give test-site access and Admin; the owner can't be removed", async ({ page }) => {
+  await page.route("**/.herenow/me", (route) => route.fulfill({ json: { email: "valentino.104688@anglo.edu.co" } }));
+  const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64");
+  const files: Record<string, unknown> = {};
+  let pending: unknown[] = [];
+  await page.route("**/gh/**", (route) => {
+    const req = route.request();
+    const url = req.url();
+    if (url.includes("/actions/runs")) return route.fulfill({ json: { workflow_runs: [] } });
+    if (url.includes("/contents/config/allowed-emails.json")) return route.fulfill({ json: { content: b64({ emails: ["friend@x.co", "valentino.104688@anglo.edu.co"], domains: [] }) } });
+    if (url.includes("/contents/config/allowed-emails-test.json")) return route.fulfill({ json: { content: b64({ emails: ["valentino.104688@anglo.edu.co"], domains: [] }) } });
+    if (url.includes("/contents/config/roles.json")) return route.fulfill({ json: { content: b64({ admins: [] }) } });
+    if (url.endsWith("/git/ref/heads/main")) return route.fulfill({ json: { object: { sha: "base" } } });
+    if (url.endsWith("/git/commits/base")) return route.fulfill({ json: { tree: { sha: "t" } } });
+    if (url.endsWith("/git/blobs")) { pending.push(JSON.parse(Buffer.from(req.postDataJSON().content, "base64").toString())); return route.fulfill({ json: { sha: `b${pending.length - 1}` } }); }
+    if (url.endsWith("/git/trees")) {
+      for (const f of req.postDataJSON().tree as { path: string; sha: string }[]) files[f.path] = pending[Number(f.sha.slice(1))];
+      return route.fulfill({ json: { sha: "nt" } });
+    }
+    if (url.endsWith("/git/commits")) return route.fulfill({ json: { sha: "nc" } });
+    if (url.includes("/git/refs/heads/")) return route.fulfill({ json: {} });
+    return route.fulfill({ status: 404, json: {} });
+  });
+  await page.goto("/#/manage");
+  const me = page.getByRole("button", { name: /valentino\.104688@anglo\.edu\.co/ });
+  await me.click();
+  await expect(page.getByText("You can't be removed.")).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "Can open the site" })).toBeDisabled();
+  await me.click();
+
+  const friend = page.locator(".vx-person", { hasText: "friend@x.co" });
+  await friend.click();
+  await page.getByRole("checkbox", { name: "Can open the test site" }).check();
+  await page.getByRole("checkbox", { name: /^Admin/ }).check();
+  await expect(friend).toContainText("Admin");
+  await expect(friend).toContainText("Test site");
+  await page.getByRole("button", { name: "Save access list" }).click();
+  await expect(page.getByText("Applies to both sites")).toBeVisible();
+  expect(files["config/allowed-emails-test.json"]).toEqual({ emails: ["friend@x.co", "valentino.104688@anglo.edu.co"], domains: [] });
+  expect(files["config/roles.json"]).toEqual({ admins: ["friend@x.co"] });
+  expect(files["config/allowed-emails.json"]).toBeUndefined(); // unchanged
+});
+
+test("editor: add a box and a picture, set their size, and publish them", async ({ page }) => {
+  const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64");
+  const blobs: { content: string; encoding: string }[] = [];
+  let tree: { path: string; sha: string }[] = [];
+  await page.route("**/gh/**", (route) => {
+    const req = route.request();
+    const url = req.url();
+    if (url.endsWith("/repos/Valcon1910/DubDeck")) return route.fulfill({ json: { permissions: { push: true } } });
+    if (url.endsWith("/user")) return route.fulfill({ json: { login: "owner" } });
+    if (url.includes("/contents/web/content.json")) return route.fulfill({ json: { content: b64({}) } });
+    if (url.includes("/contents/config/allowed-emails.json")) return route.fulfill({ json: { content: b64({ emails: [], domains: [] }) } });
+    if (url.endsWith("/git/ref/heads/main")) return route.fulfill({ json: { object: { sha: "base" } } });
+    if (url.endsWith("/git/commits/base")) return route.fulfill({ json: { tree: { sha: "t" } } });
+    if (url.endsWith("/git/blobs")) { blobs.push(req.postDataJSON()); return route.fulfill({ json: { sha: `b${blobs.length - 1}` } }); }
+    if (url.endsWith("/git/trees")) { tree = req.postDataJSON().tree; return route.fulfill({ json: { sha: "nt" } }); }
+    if (url.endsWith("/git/commits")) return route.fulfill({ json: { sha: "nc" } });
+    if (url.includes("/git/refs/heads/")) return route.fulfill({ json: {} });
+    if (url.includes("/actions/runs")) return route.fulfill({ json: { workflow_runs: [] } });
+    return route.fulfill({ status: 404, json: {} });
+  });
+  await page.goto("/#/admin");
+  await expect(page.getByText("All changes saved")).toBeVisible();
+
+  await page.getByRole("button", { name: "+ Box" }).click();
+  const box = page.locator(".vx-block-box");
+  await expect(box.getByRole("textbox", { name: "Title" })).toHaveText("New box");
+  await box.getByRole("button", { name: "Block settings" }).click();
+  await box.getByLabel(/Width/).fill("50");
+  await box.getByLabel("Height (px, 0 = automatic)").fill("220");
+  await expect(box).toHaveCSS("height", "220px");
+  await box.getByRole("button", { name: "Block settings" }).click(); // close
+
+  await page.getByRole("button", { name: "+ Image" }).click();
+  const img = page.locator(".vx-block-image");
+  await img.getByRole("button", { name: "Block settings" }).click();
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==", "base64");
+  await img.locator('input[type="file"]').setInputFiles({ name: "pic.png", mimeType: "image/png", buffer: png });
+  await expect(img.locator("img.vx-block-img")).toBeVisible();
+
+  await page.getByRole("button", { name: "Publish" }).click();
+  await expect(page.getByText("Saved permanently")).toBeVisible();
+  const paths = tree.map((f) => f.path);
+  expect(paths).toContain("web/content.json");
+  const imgPath = paths.find((p) => p.startsWith("web/public/logos/img-"));
+  expect(imgPath).toBeTruthy();
+  const content = JSON.parse(Buffer.from(blobs[Number(tree.find((f) => f.path === "web/content.json")!.sha.slice(1))].content, "base64").toString());
+  expect(content.home.blocks).toHaveLength(2);
+  expect(content.home.blocks[0]).toMatchObject({ kind: "box", title: "New box", width: 50, height: 220 });
+  expect(content.home.blocks[1]).toMatchObject({ kind: "image", image: imgPath!.replace("web/public", "") });
 });
 
 test("accepts Google redirect links and shows the tutorial", async ({ page }) => {
@@ -207,7 +303,7 @@ test("accepts Google redirect links and shows the tutorial", async ({ page }) =>
 test("the Editor button shows only for the editors' emails", async ({ page }) => {
   await page.route("**/.herenow/me", (route) => route.fulfill({ json: { email: "someone@else.com" } }));
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Vortex Engine" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Vortex", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Editor" })).toHaveCount(0);
 
   await page.unroute("**/.herenow/me");

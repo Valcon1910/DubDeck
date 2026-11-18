@@ -101,7 +101,7 @@ async function call(path: string, params: Record<string, string>, signal?: Abort
     res = await fetch(`/ys/${path}/?${qs}`, { signal });
   } catch (e) {
     if ((e as Error).name === "AbortError") throw e;
-    throw new SearchError("You're offline, or Vortex Engine can't be reached.");
+    throw new SearchError("You're offline, or Vortex can't be reached.");
   }
   if (res.status === 429) throw new SearchError("The free search quota is used up for now. Try again later, or paste a link.");
   if (res.status === 401 || res.status === 403) {

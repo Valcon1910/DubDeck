@@ -9,6 +9,8 @@ export const REPO: string = __VORTEX_REPO__;
 export const BRANCH: string = __VORTEX_BRANCH__;
 export const CONTENT_PATH = "web/content.json";
 export const ACCESS_PATH = "config/allowed-emails.json";
+export const ACCESS_TEST_PATH = "config/allowed-emails-test.json";
+export const ROLES_PATH = "config/roles.json";
 const API = "/gh";
 
 export class GitHubError extends Error {

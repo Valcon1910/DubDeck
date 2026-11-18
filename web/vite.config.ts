@@ -83,6 +83,10 @@ export default defineConfig(({ command, mode }) => {
     define: {
       __VORTEX_REPO__: JSON.stringify(env.GITHUB_REPOSITORY || "Valcon1910/DubDeck"),
       __VORTEX_BRANCH__: JSON.stringify(env.VORTEX_BRANCH || "main"),
+      // People with Admin (Editor) rights besides the owners (config/roles.json).
+      __VORTEX_ADMINS__: JSON.stringify((() => {
+        try { return (JSON.parse(fs.readFileSync(path.resolve(__dirname, "../config/roles.json"), "utf8")).admins ?? []).map((e: string) => e.toLowerCase()); } catch { return []; }
+      })()),
       // Addresses of both sites, for the "Test site" / "Published site" buttons.
       __VORTEX_SITES__: JSON.stringify(Object.fromEntries((["real", "test"] as const).map((k) => {
         const f = path.resolve(__dirname, `../config/${k === "real" ? "site" : "site-test"}.json`);

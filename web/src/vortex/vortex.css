@@ -1,4 +1,4 @@
-/* Vortex Engine — layout and components. Theme tokens come from styles.css. */
+/* Vortex — layout and components. Theme tokens come from styles.css. */
 
 .vx {
   --vx-accent: #6c4ce0;
@@ -538,3 +538,43 @@ a.vx-btn { display: inline-flex; align-items: center; justify-content: center; t
 .vx-batch-bar strong { margin-right: auto; }
 .vx-batch-bar select { padding: 6px 10px; border-radius: 10px; border: 1px solid var(--line, rgba(0,0,0,.2)); background: transparent; color: inherit; font: inherit; }
 .vx-batch-status { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Blocks added in the editor (home page) */
+.vx-roblox { width: min(100%, var(--w, 100%)); overflow: hidden; }
+.vx-blocks-wrap { margin-top: 18px; }
+.vx-blocks { display: flex; flex-wrap: wrap; gap: 16px; }
+.vx-block { box-sizing: border-box; flex-grow: 0; flex-shrink: 0; max-width: 100%; min-width: min(100%, 160px); overflow: hidden; position: relative; color: inherit; text-decoration: none; }
+.vx-block-box { background: var(--card, var(--bg)); border: 1px solid var(--line, rgba(0,0,0,.12)); border-radius: 18px; padding: 18px; }
+a.vx-block-box:hover { border-color: var(--vx-accent); }
+.vx-block-title { margin: 0 0 10px; font-size: 1.25rem; }
+.vx-block-row { display: flex; gap: 14px; align-items: flex-start; }
+.vx-block-row p { margin: 0; white-space: pre-wrap; }
+.vx-block-thumb { width: 96px; height: 96px; object-fit: cover; border-radius: 14px; flex: none; }
+.vx-block-text { margin: 0; white-space: pre-wrap; line-height: 1.6; }
+.vx-block-image { border-radius: 18px; min-height: 80px; }
+.vx-block-img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: 18px; }
+.vx-block-noimg { display: grid; place-items: center; height: 100%; min-height: 120px; border: 2px dashed var(--line, rgba(0,0,0,.2)); border-radius: 18px; color: var(--muted); }
+.vx-block-editing { outline: 1px dashed var(--vx-accent); outline-offset: 3px; overflow: visible; }
+.vx-block-tools { position: absolute; top: 8px; right: 8px; z-index: 5; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.vx-block-panel { width: min(300px, 80vw); background: var(--bg); border: 1px solid var(--line, rgba(0,0,0,.15)); border-radius: 14px; padding: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.2); display: grid; gap: 10px; }
+.vx-size { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.vx-block-add { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+@media (max-width: 640px) { .vx-block { flex-basis: 100% !important; } }
+
+/* People in the access list */
+.vx-people { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.vx-people li { border: 1px solid var(--line, rgba(0,0,0,.12)); border-radius: 12px; overflow: hidden; }
+.vx-people li.open { border-color: var(--vx-accent); }
+.vx-person { width: 100%; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; padding: 10px 12px; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.vx-person-email { overflow-wrap: anywhere; }
+.vx-person-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+.vx-tag { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--vx-accent-soft); }
+.vx-tag-owner { background: var(--ink); color: var(--bg); }
+.vx-tag-admin { background: var(--vx-accent); color: #fff; }
+.vx-tag-test { background: #d97706; color: #fff; }
+.vx-tag-off { background: transparent; border: 1px solid var(--line, rgba(0,0,0,.2)); color: var(--muted); }
+.vx-person-panel { padding: 4px 12px 12px; display: grid; gap: 8px; }
+.vx-danger { color: #c0392b; }
+.vx-roblox-edit { display: grid !important; grid-template-columns: 1fr; gap: 12px; align-items: start; }
+.vx-roblox-edit > .vx-chip-btn { justify-self: start; }
+.vx-field .vx-row { flex-wrap: wrap; }
