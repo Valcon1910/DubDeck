@@ -1,12 +1,14 @@
 name: Sync access allowlist
 
-# Edit config/allowed-emails.json on GitHub → this makes the here.now Site's
-# restricted-access list match it exactly (PATCH replaces the whole list).
+# Edit config/allowed-emails.json (published site) or config/allowed-emails-test.json
+# (test site) → this makes each here.now Site's restricted-access list match it
+# exactly (PATCH replaces the whole list).
 on:
   push:
     branches: [main]
     paths:
       - config/allowed-emails.json
+      - config/allowed-emails-test.json
       - scripts/sync-access.mjs
   workflow_dispatch:
 
@@ -28,8 +30,10 @@ jobs:
         with:
           node-version: 22
 
-      - name: Validate file
-        run: node scripts/sync-access.mjs --check
+      - name: Validate files
+        run: |
+          node scripts/sync-access.mjs --check
+          node scripts/sync-access.mjs --check config/allowed-emails-test.json
 
       - name: Apply to the published site
         env:
@@ -42,4 +46,5 @@ jobs:
           HERENOW_API_KEY: ${{ secrets.HERENOW_API_KEY }}
           HERENOW_SITE_NAME: Vortex Engine (test)
           HERENOW_SITE_FILE: config/site-test.json
+          HERENOW_ACCESS_FILE: config/allowed-emails-test.json
         run: node scripts/sync-access.mjs
