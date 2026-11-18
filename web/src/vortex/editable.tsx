@@ -16,6 +16,9 @@ export interface EditApi {
   moveBlock: (id: string, by: number) => void;
   removeBlock: (id: string) => void;
   setSection: (key: keyof Content["sections"], patch: Partial<SectionText>) => void;
+  /** The block selected on the page (its settings show in the panel). */
+  selected: string | null;
+  select: (id: string | null) => void;
   /** Keep a picture to publish with the next save; returns its site path, or an error message. */
   uploadImage: (file: File) => Promise<{ path: string } | { error: string }>;
 }
@@ -69,7 +72,7 @@ export function Editable({ path, as: Tag = "span", className, placeholder = "Typ
       aria-label={placeholder}
       data-placeholder={placeholder}
       spellCheck
-      onClick={(e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); }}
+      onClick={(e: React.MouseEvent) => { e.preventDefault(); }}
       onKeyDown={(e: React.KeyboardEvent<HTMLElement>) => {
         if (e.key === "Enter" && !multiline) { e.preventDefault(); e.currentTarget.blur(); }
         if (e.key === "Escape") e.currentTarget.blur();

@@ -254,21 +254,47 @@ test("editor: add a box and a picture, set their size, and publish them", async 
   await page.goto("/#/admin");
   await expect(page.getByText("All changes saved")).toBeVisible();
 
-  await page.getByRole("button", { name: "+ Box" }).click();
+  const panel = page.getByRole("complementary", { name: "Editor panel" });
+  const toggle = page.getByRole("button", { name: "Panel" });
+  if (await toggle.isVisible()) await toggle.click(); // phones: the panel slides up from the bottom
+  await panel.getByRole("button", { name: "Box", exact: true }).click(); // Insert tab, like Google Sites
   const box = page.locator(".vx-block-box");
   await expect(box.getByRole("textbox", { name: "Title" })).toHaveText("New box");
-  await box.getByRole("button", { name: "Block settings" }).click();
-  await box.getByLabel(/Width/).fill("50");
-  await box.getByLabel("Height (px, 0 = automatic)").fill("220");
-  await expect(box).toHaveCSS("height", "220px");
-  await box.getByRole("button", { name: "Block settings" }).click(); // close
+  await expect(box).toHaveClass(/vx-block-on/); // the new box is selected
+  if (await toggle.isVisible()) await toggle.click(); // close the bottom sheet again on phones
 
-  await page.getByRole("button", { name: "+ Image" }).click();
+  // Drag the frame's corner: from half to the full width, 220 px tall.
+  const drag = async (handle: string, dx: number, dy: number) => {
+    await page.waitForTimeout(700); // the page smoothly scrolls to the new block first
+    const h = await box.getByLabel(handle).boundingBox();
+    const x = h!.x + h!.width / 2, y = h!.y + h!.height / 2;
+    await page.mouse.move(x, y); await page.mouse.down();
+    await page.mouse.move(x + dx / 2, y + dy / 2); await page.mouse.move(x + dx, y + dy); await page.mouse.up();
+  };
+  const w0 = (await box.boundingBox())!.width;
+  const h0 = (await box.boundingBox())!.height;
+  const wide = (page.viewportSize()?.width ?? 0) > 640; // phones show every block full width
+  if (wide) {
+    await drag("Drag to change the size", w0, 220 - h0);
+    await expect(box.locator(".vx-rs-size")).toHaveText("100%");
+  } else {
+    await drag("Drag to change the height", 0, 220 - h0);
+  }
+  await expect(box).toHaveCSS("height", "220px");
+
+  if (await toggle.isVisible()) await toggle.click();
+  await panel.getByRole("button", { name: "Image", exact: true }).click();
+  if (await toggle.isVisible()) await toggle.click();
   const img = page.locator(".vx-block-image");
-  await img.getByRole("button", { name: "Block settings" }).click();
+  await expect(img).toHaveClass(/vx-block-on/);
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==", "base64");
-  await img.locator('input[type="file"]').setInputFiles({ name: "pic.png", mimeType: "image/png", buffer: png });
+  await img.getByLabel("Picture file").setInputFiles({ name: "pic.png", mimeType: "image/png", buffer: png });
   await expect(img.locator("img.vx-block-img")).toBeVisible();
+
+  // The Roblox card can be resized and changed the same way.
+  await page.locator(".vx-roblox").click();
+  await expect(page.getByRole("toolbar", { name: "Roblox card tools" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Item" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Publish" }).click();
   await expect(page.getByText("Saved permanently")).toBeVisible();
@@ -278,7 +304,7 @@ test("editor: add a box and a picture, set their size, and publish them", async 
   expect(imgPath).toBeTruthy();
   const content = JSON.parse(Buffer.from(blobs[Number(tree.find((f) => f.path === "web/content.json")!.sha.slice(1))].content, "base64").toString());
   expect(content.home.blocks).toHaveLength(2);
-  expect(content.home.blocks[0]).toMatchObject({ kind: "box", title: "New box", width: 50, height: 220 });
+  expect(content.home.blocks[0]).toMatchObject({ kind: "box", title: "New box", width: wide ? 100 : 50, height: 220 });
   expect(content.home.blocks[1]).toMatchObject({ kind: "image", image: imgPath!.replace("web/public", "") });
 });
 
