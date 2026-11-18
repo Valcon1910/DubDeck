@@ -1,5 +1,5 @@
 import { createContext, useContext, useLayoutEffect, useRef, type ElementType } from "react";
-import { useContent, type Content, type Game } from "./content";
+import { useContent, type Block, type Content, type Game, type SectionText } from "./content";
 
 // Page text that becomes click-to-edit inside the admin editor (like Google
 // Sites). Outside the editor it renders as plain text.
@@ -11,6 +11,13 @@ export interface EditApi {
   editGame: (game: Game | null) => void; // null = add a new game
   moveGame: (id: string, by: number) => void;
   removeGame: (id: string) => void;
+  addBlock: (kind: Block["kind"]) => void;
+  updateBlock: (id: string, patch: Partial<Block>) => void;
+  moveBlock: (id: string, by: number) => void;
+  removeBlock: (id: string) => void;
+  setSection: (key: keyof Content["sections"], patch: Partial<SectionText>) => void;
+  /** Keep a picture to publish with the next save; returns its site path, or an error message. */
+  uploadImage: (file: File) => Promise<{ path: string } | { error: string }>;
 }
 
 export const EditContext = createContext<EditApi | null>(null);

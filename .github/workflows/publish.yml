@@ -20,6 +20,8 @@ jobs:
       HERENOW_SLUG: ${{ inputs.site == 'real' && vars.HERENOW_SLUG || '' }}
       HERENOW_SITE_NAME: ${{ inputs.site == 'test' && 'Vortex Engine (test)' || 'Vortex Engine' }}
       HERENOW_SITE_FILE: ${{ inputs.site == 'test' && 'config/site-test.json' || 'config/site.json' }}
+      # Who can open it: the test site has its own, shorter list.
+      HERENOW_ACCESS_FILE: ${{ inputs.site == 'test' && 'config/allowed-emails-test.json' || 'config/allowed-emails.json' }}
       RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
       GH_EDIT_TOKEN: ${{ secrets.GH_EDIT_TOKEN }}
     steps:

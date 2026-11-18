@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ContentContext, normalize, pendingLogos, safeUrl, type Content, type Game } from "./content";
+import { ContentContext, newBlock, normalize, pendingLogos, safeUrl, type Content, type Game } from "./content";
 import { EditContext, setTextIn, type EditApi } from "./editable";
 import {
   ACCESS_PATH, commit, CONTENT_PATH, deployState, GitHubError, readJson, REPO, verify,
@@ -173,6 +173,28 @@ function Editor({ token, user, saved, onSaved, onSignOut }: EditorProps) {
       [c.games.items[i], c.games.items[j]] = [c.games.items[j], c.games.items[i]];
     }),
     removeGame: (id) => set((c) => { c.games.items = c.games.items.filter((g) => g.id !== id); }),
+    addBlock: (kind) => set((c) => { c.home.blocks.push(newBlock(kind)); }),
+    updateBlock: (id, patch) => set((c) => {
+      const b = c.home.blocks.find((x) => x.id === id);
+      if (b) Object.assign(b, patch);
+    }, `block:${id}:${Object.keys(patch).join(",")}`),
+    moveBlock: (id, by) => set((c) => {
+      const i = c.home.blocks.findIndex((b) => b.id === id);
+      const j = i + by;
+      if (i < 0 || j < 0 || j >= c.home.blocks.length) return;
+      [c.home.blocks[i], c.home.blocks[j]] = [c.home.blocks[j], c.home.blocks[i]];
+    }),
+    removeBlock: (id) => set((c) => { c.home.blocks = c.home.blocks.filter((b) => b.id !== id); }),
+    setSection: (k, patch) => set((c) => { Object.assign(c.sections[k], patch); }, `section:${k}:${Object.keys(patch).join(",")}`),
+    uploadImage: async (file) => {
+      const r = await prepareImage(file);
+      if ("error" in r) return r;
+      const path = `/logos/img-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}.${r.ext}`;
+      pendingLogos.set(path, URL.createObjectURL(r.blob));
+      const bytes = new Uint8Array(await r.blob.arrayBuffer());
+      setUploads((u) => new Map(u).set(path, bytes));
+      return { path };
+    },
   }), [set]);
 
   // Keep unsaved work across reloads, and warn before leaving.
@@ -213,12 +235,14 @@ function Editor({ token, user, saved, onSaved, onSignOut }: EditorProps) {
     const parts: string[] = [];
     if (!same(content, saved.content)) { files.push({ path: CONTENT_PATH, text: JSON.stringify(content, null, 2) + "\n" }); parts.push("content"); }
     if (!same(access, saved.access)) { files.push({ path: ACCESS_PATH, text: JSON.stringify(access, null, 2) + "\n" }); parts.push("access list"); }
+    // Only pictures still used somewhere (games, blocks, the Roblox card) are published.
+    const used = JSON.stringify(content);
     for (const [path, bytes] of uploads) {
-      if (content.games.items.some((g) => g.logo === path)) files.push({ path: `web/public${path}`, bytes });
+      if (used.includes(JSON.stringify(path))) files.push({ path: `web/public${path}`, bytes });
     }
     if (!files.length) { setPublishing(false); setUploads(new Map()); return; }
     try {
-      const sha = await commit(token, `Edit ${parts.join(" and ") || "logos"} from the Vortex Engine editor`, files);
+      const sha = await commit(token, `Edit ${parts.join(" and ") || "logos"} from the Vortex editor`, files);
       onSaved({ content, access: clone(access) });
       setSnap({ content, access: clone(access) }); setUploads(new Map());
       setDeploy({ sha, state: "waiting" });
@@ -462,6 +486,30 @@ function GameDialog({ game, onCancel, onSave, onUpload }: {
       </form>
     </div>
   );
+}
+
+/**
+ * Check a chosen picture; big photos are shrunk to 1600 px (WebP) on this
+ * device so the site stays fast. GIF and SVG are kept as they are.
+ */
+async function prepareImage(file: File): Promise<{ blob: Blob; ext: string } | { error: string }> {
+  const EXT: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif", "image/svg+xml": "svg" };
+  if (!EXT[file.type]) return { error: "Use a PNG, JPG, WebP, GIF or SVG image." };
+  if (file.size <= 600 * 1024 || file.type === "image/gif" || file.type === "image/svg+xml") {
+    return file.size > 3 * 1024 * 1024 ? { error: "That image is over 3 MB. Use a smaller one." } : { blob: file, ext: EXT[file.type] };
+  }
+  try {
+    const bmp = await createImageBitmap(file);
+    const k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+    c.getContext("2d")!.drawImage(bmp, 0, 0, c.width, c.height);
+    const blob = await new Promise<Blob | null>((res) => c.toBlob(res, "image/webp", 0.85));
+    if (!blob) return { error: "This browser couldn't read that picture." };
+    return { blob, ext: "webp" };
+  } catch {
+    return { error: "This browser couldn't read that picture." };
+  }
 }
 
 function restoreDraft(): Snapshot | null {

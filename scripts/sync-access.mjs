@@ -7,14 +7,19 @@
 // current policy first, shows the diff, and writes the file's full contents.
 // It never sends invite emails (notify: false).
 
-import { appendFileSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { findSlug, SITE_NAME } from "./herenow-site.mjs";
 
 const API = (process.env.HERENOW_API ?? "https://here.now").replace(/\/$/, "");
 const CLIENT = process.env.HERENOW_CLIENT ?? "github-actions/dubdeck-access";
 const KEY = process.env.HERENOW_API_KEY;
 let SLUG = "";
-const FILE = process.argv.slice(2).find((a) => !a.startsWith("--")) ?? "config/allowed-emails.json";
+// The test site has its own list (HERENOW_ACCESS_FILE=config/allowed-emails-test.json).
+let FILE = process.argv.slice(2).find((a) => !a.startsWith("--")) ?? process.env.HERENOW_ACCESS_FILE ?? "config/allowed-emails.json";
+if (!existsSync(FILE)) {
+  console.log(`::warning::${FILE} doesn't exist yet; using config/allowed-emails.json.`);
+  FILE = "config/allowed-emails.json";
+}
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const DOMAIN = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 

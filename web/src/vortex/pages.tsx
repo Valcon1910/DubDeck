@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { logoFor, safeUrl, useContent, type Content, type Game } from "./content";
+import { imageSrc, logoFor, safeUrl, useContent, type Content, type Game } from "./content";
+import { Blocks, ImageField, SizeFields } from "./Blocks";
 import { Editable, useEdit } from "./editable";
 
 export interface Welcome { name: string; avatar: string }
@@ -43,6 +44,7 @@ export function HomePage({ welcome }: { welcome?: Welcome }) {
         })}
       </div>
       {(edit || s.roblox.visible) && <RobloxCard />}
+      <Blocks />
     </section>
   );
 }
@@ -52,7 +54,8 @@ function RobloxCard() {
   const r = useContent().sections.roblox;
   const edit = useEdit();
   const href = safeUrl(r.url ?? "");
-  const logo = r.logo?.startsWith("/") ? r.logo : safeUrl(r.logo ?? "");
+  const logo = imageSrc(r.logo);
+  const style = { ["--w" as string]: `${r.width ?? 100}%`, ...(r.height ? { height: r.height } : {}) };
   const inner = (
     <>
       <Editable as="span" className="vx-eyebrow" path="sections.roblox.label" placeholder="Label" />
@@ -66,9 +69,8 @@ function RobloxCard() {
           <label className="vx-field"><span>Group link</span>
             <input type="text" value={r.url ?? ""} onChange={(e) => edit.setText("sections.roblox.url", e.target.value)} placeholder="https://www.roblox.com/communities/…" />
           </label>
-          <label className="vx-field"><span>Logo image link</span>
-            <input type="text" value={r.logo ?? ""} onChange={(e) => edit.setText("sections.roblox.logo", e.target.value)} placeholder="https://…png" />
-          </label>
+          <ImageField value={r.logo ?? ""} onChange={(logo) => edit.setSection("roblox", { logo })} edit={edit} />
+          <SizeFields width={r.width ?? 100} height={r.height ?? 0} onChange={(p) => edit.setSection("roblox", p)} />
           <button type="button" className="vx-chip-btn" aria-pressed={r.visible} onClick={() => edit.toggleSection("roblox")}>
             {r.visible ? "Shown" : "Hidden"}
           </button>
@@ -77,8 +79,8 @@ function RobloxCard() {
     </>
   );
   return href && !edit
-    ? <a className="vx-card vx-roblox" href={href} target="_blank" rel="noopener noreferrer">{inner}</a>
-    : <div className={`vx-card vx-roblox ${edit && !r.visible ? "vx-hidden-tile" : ""}`}>{inner}</div>;
+    ? <a className="vx-card vx-roblox" style={style} href={href} target="_blank" rel="noopener noreferrer">{inner}</a>
+    : <div className={`vx-card vx-roblox ${edit && !r.visible ? "vx-hidden-tile" : ""}`} style={style}>{inner}</div>;
 }
 
 export function GamesPage() {
@@ -175,7 +177,7 @@ function WelcomeCard({ w }: { w: Welcome }) {
       <div className="vx-welcome-text">
         <p className="vx-welcome-hi">{greeting()},</p>
         <h2>{w.name}! 👋</h2>
-        <p className="vx-muted">Welcome back to Vortex Engine. What are we doing today?</p>
+        <p className="vx-muted">Welcome back to Vortex. What are we doing today?</p>
       </div>
     </section>
   );

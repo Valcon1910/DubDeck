@@ -1,11 +1,12 @@
 {
   "site": {
-    "name": "Vortex Engine",
+    "name": "Vortex",
     "accent": "#6c4ce0"
   },
   "home": {
-    "title": "Vortex Engine",
-    "subtitle": "Games, docs, slides and utilities in one place."
+    "title": "Vortex",
+    "subtitle": "Games, docs, slides and utilities in one place.",
+    "blocks": []
   },
   "sections": {
     "games": {
