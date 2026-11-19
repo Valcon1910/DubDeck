@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AccessList, protect, type Access, type Roles } from "./AccessList";
 import { useVisitorEmail } from "./admins";
-import { ACCESS_PATH, ACCESS_TEST_PATH, ACTIONS, commit, GitHubError, readJson, recentRuns, runAction, ROLES_PATH, type FileChange, type Run } from "./github";
+import { ACCESS_PATH, ACCESS_TEST_PATH, ACTIONS, commit, GitHubError, readJson, recentRuns, runLabel, runAction, ROLES_PATH, type FileChange, type Run } from "./github";
 
 const TOKEN = ""; // added by the site's /gh route
 
@@ -68,7 +68,7 @@ function Actions() {
             {runs.map((r) => (
               <li key={r.id}>
                 <span className={`vx-run-dot ${r.status !== "completed" ? "running" : r.conclusion === "success" ? "ok" : "bad"}`} aria-hidden="true" />
-                <a href={r.html_url} target="_blank" rel="noopener noreferrer">{r.name}</a>
+                <a href={r.html_url} target="_blank" rel="noopener noreferrer">{runLabel(r)}</a>
                 <span className="vx-muted vx-small">
                   {r.status !== "completed" ? "running…" : r.conclusion === "success" ? "done" : "failed"} · {new Date(r.created_at).toLocaleString()}
                 </span>

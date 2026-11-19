@@ -142,7 +142,27 @@ export async function dispatch(file: string, inputs: Record<string, string>): Pr
   if (!res.ok) throw new GitHubError(`GitHub error ${res.status}: ${(await res.text()).slice(0, 200)}`, res.status);
 }
 
-export interface Run { id: number; name: string; status: string; conclusion: string | null; created_at: string; html_url: string; event: string }
+export interface Run { id: number; name: string; status: string; conclusion: string | null; created_at: string; html_url: string; event: string; display_title?: string }
+
+/** What a publish run was for, in words: the change that started it, or the button pressed. */
+export function runLabel(r: Run): string {
+  const t = (r.display_title ?? "").split("\n")[0];
+  if (r.event !== "push" || !t || t === r.name) return r.name;
+  const rules: [RegExp, string | ((m: RegExpMatchArray) => string)][] = [
+    [/^Update who can open the site/i, "Changed who can open the site"],
+    [/^Edit (.+) from the Vortex editor/i, (m) => (/access/.test(m[1]) ? "Edited pages and people" : "Edited pages")],
+    [/^Post the announcement “(.*)”/i, (m) => `Posted announcement “${m[1]}”`],
+    [/^Edit the announcement “(.*)”/i, (m) => `Edited announcement “${m[1]}”`],
+    [/^Delete an announcement/i, "Deleted an announcement"],
+    [/^Update log/i, "Edited the update log"],
+    [/^Merge /i, r.name],
+  ];
+  for (const [re, out] of rules) {
+    const m = t.match(re);
+    if (m) return typeof out === "string" ? out : out(m);
+  }
+  return t;
+}
 
 /** The latest publish runs, newest first. */
 export async function recentRuns(token: string): Promise<Run[]> {

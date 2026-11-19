@@ -161,7 +161,10 @@ test("admin page: start a publish action and add someone to the access list", as
     const req = route.request();
     const url = req.url();
     if (url.includes("/dispatches")) { dispatched = url + " " + req.postData(); return route.fulfill({ status: 204, body: "" }); }
-    if (url.includes("/actions/runs")) return route.fulfill({ json: { workflow_runs: [] } });
+    if (url.includes("/actions/runs")) return route.fulfill({ json: { workflow_runs: [
+      { id: 1, name: "Publish test site to real site", event: "push", display_title: "Update who can open the sites (from the Admin page)", status: "completed", conclusion: "success", created_at: "2026-11-19T10:00:00Z", html_url: "https://example.com/1" },
+      { id: 2, name: "Publish test site to real site", event: "workflow_dispatch", display_title: "Publish test site to real site", status: "completed", conclusion: "success", created_at: "2026-11-19T09:00:00Z", html_url: "https://example.com/2" },
+    ] } });
     if (url.includes("/contents/config/allowed-emails.json")) return route.fulfill({ json: { content: b64({ emails: ["me@school.edu.co"], domains: [] }) } });
     if (url.endsWith("/git/ref/heads/main")) return route.fulfill({ json: { object: { sha: "base" } } });
     if (url.endsWith("/git/commits/base")) return route.fulfill({ json: { tree: { sha: "t" } } });
@@ -177,6 +180,9 @@ test("admin page: start a publish action and add someone to the access list", as
   await page.getByRole("button", { name: "Publish code to test site" }).click();
   await expect(page.getByRole("status")).toContainText("Started");
   expect(dispatched).toContain("deploy-test.yml/dispatches");
+  // Recent runs say what was done, not only which workflow ran.
+  await expect(page.getByRole("link", { name: "Changed who can open the site" })).toBeVisible();
+  await expect(page.locator(".vx-runs").getByRole("link", { name: "Publish test site to real site" })).toBeVisible();
 
   await page.getByLabel("Email to add").fill("Friend@Example.com");
   await page.getByRole("button", { name: "Add", exact: true }).first().click();
