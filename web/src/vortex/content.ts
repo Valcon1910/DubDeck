@@ -65,7 +65,7 @@ export interface Content {
   announcements: { title: string; subtitle: string; items: Announcement[] };
 }
 
-export const PUBLISHED = published as Content;
+export const PUBLISHED = published as unknown as Content;
 
 /** Fill missing keys from the published defaults, so older or partial files still load. */
 export function normalize(raw: unknown): Content {
