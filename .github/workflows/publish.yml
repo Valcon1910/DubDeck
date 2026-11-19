@@ -55,6 +55,27 @@ jobs:
           VALUE: ${{ secrets.GH_EDIT_TOKEN }}
         run: node scripts/herenow-variable.mjs GITHUB_EDIT_TOKEN api.github.com
 
+      # The public "Apply" page (web/apply): its own Site that anyone can open,
+      # where people who can't sign in ask for access. Admin → Applications reads
+      # the requests through the site's /ap route, which adds HN_OWNER_KEY.
+      - name: Publish the Apply page
+        id: apply
+        env:
+          HERENOW_SLUG: ""
+          HERENOW_SITE_NAME: Vortex Apply
+          HERENOW_SITE_FILE: config/site-apply.json
+          DUBDECK_ALLOW_NO_PROXY: "1"
+        run: |
+          if [ ! -d web/apply ]; then echo "No web/apply on this branch yet."; exit 0; fi
+          node scripts/herenow-publish.mjs web/apply
+          HERENOW_ACCESS_MODE=public node scripts/sync-access.mjs
+
+      - name: Save the owner key for the Applications list
+        if: steps.apply.outputs.slug != ''
+        env:
+          VALUE: ${{ secrets.HERENOW_API_KEY }}
+        run: node scripts/herenow-variable.mjs HN_OWNER_KEY here.now
+
       - name: Install
         working-directory: web
         run: npm ci
@@ -64,6 +85,7 @@ jobs:
         env:
           DUBDECK_API_HOST: ${{ vars.DUBDECK_API_HOST }}
           VORTEX_BRANCH: ${{ inputs.site == 'test' && 'test' || 'main' }}
+          APPLY_SLUG: ${{ steps.apply.outputs.slug }}
         run: npm run build
 
       # create → upload → finalize; fails on proxy.json / data.json warnings.
@@ -75,16 +97,16 @@ jobs:
       # the same Site. (Pushes made with this token don't start new runs.)
       - name: Remember the site address
         run: |
-          F="$HERENOW_SITE_FILE"
-          if [ -n "$(git status --porcelain "$F")" ]; then
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for F in "$HERENOW_SITE_FILE" config/site-apply.json; do
+            [ -f "$F" ] && [ -n "$(git status --porcelain "$F")" ] || continue
             cp "$F" /tmp/site.json
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             for b in main test; do
-              git fetch origin $b && git checkout -B save-$b origin/$b && cp /tmp/site.json "$F"
-              git add "$F" && git commit -m "Remember the $HERENOW_SITE_NAME address" && git push origin HEAD:$b || true
+              git fetch origin $b && git checkout -f -B save-$b origin/$b && cp /tmp/site.json "$F"
+              git add "$F" && git commit -m "Remember the address in $F" && git push origin HEAD:$b || true
             done
-          fi
+          done
 
       - name: Enforce restricted access
         env:
