@@ -666,13 +666,6 @@ body.vx-resizing, body.vx-resizing * { cursor: grabbing !important; user-select:
 @media (min-width: 365px) { .vx-tile-wide { grid-column: span 2; } }
 
 /* Announcements */
-.vx-unread {
-  display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px;
-  border-radius: 999px; background: #e5383b; color: #fff; font: 700 12px/1 system-ui, sans-serif;
-  margin-left: auto; box-shadow: 0 0 0 2px var(--surface, #fff);
-}
-.vx-tile { position: relative; }
-.vx-unread-tile { position: absolute; top: 10px; right: 10px; margin: 0; }
 .vx-news { list-style: none; margin: 0; padding: 0; display: grid; gap: 16px; }
 .vx-news-item { padding: 0; overflow: hidden; }
 .vx-news-item img { display: block; width: 100%; max-height: 420px; object-fit: cover; }

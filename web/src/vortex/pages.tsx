@@ -2,7 +2,6 @@ import { useRef, useState } from "react";
 import { imageSrc, logoFor, safeUrl, useContent, type Content, type Game } from "./content";
 import { Blocks, LinkButton, PictureButton, ResizeHandles } from "./Blocks";
 import { Editable, useEdit } from "./editable";
-import { UnreadBadge, useUnread } from "./Announcements";
 
 export interface Welcome { name: string; avatar: string }
 
@@ -10,7 +9,6 @@ export function HomePage({ welcome }: { welcome?: Welcome }) {
   const c = useContent();
   const edit = useEdit();
   const s = c.sections;
-  const unread = useUnread();
   const tiles: { key: keyof Content["sections"]; href: string | null; external?: boolean; wide?: boolean }[] = [
     { key: "downloader", href: "#/downloader" },
     { key: "games", href: "#/games" },
@@ -30,7 +28,6 @@ export function HomePage({ welcome }: { welcome?: Welcome }) {
         {tiles.filter((t) => edit || s[t.key].visible).map((t) => {
           const body = (
             <>
-              {t.key === "announcements" && !edit && <UnreadBadge count={unread} className="vx-unread-tile" />}
               <Editable as="span" className="vx-eyebrow" path={`sections.${t.key}.label`} placeholder="Label" />
               <Editable as="strong" path={`sections.${t.key}.title`} placeholder="Title" />
               <Editable as="span" className="vx-muted" path={`sections.${t.key}.description`} placeholder="Description" multiline />
