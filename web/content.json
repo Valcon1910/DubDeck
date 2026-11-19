@@ -109,5 +109,11 @@
       }
     ]
   },
-  "updates": []
+  "updates": [
+    {
+      "id": "pub-20261119",
+      "date": "2026-11-19T18:45:00.000Z",
+      "text": "• Announcements: post with photos, videos, files and polls; edit earlier posts\n• Chat and Announcements tiles on the home page\n• Smooth side menu and light/dark transitions\n• A more detailed logo\n• This Update log"
+    }
+  ]
 }

@@ -723,3 +723,4 @@ body.vx-resizing, body.vx-resizing * { cursor: grabbing !important; user-select:
 .vx-updates p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .vx-updates .vx-btn { justify-self: start; }
 .vx-updates textarea { width: 100%; }
+.vx-row-between { justify-content: space-between; align-items: center; }

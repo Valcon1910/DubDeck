@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { CONTENT_PATH, commit, GitHubError, readJson } from "./github";
 import { normalize, useContent, type Update } from "./content";
+import { Editable, useEdit } from "./editable";
 
 const TOKEN = ""; // added by the site's /gh route
 const fmt = (d: string) => new Date(d).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
@@ -8,6 +9,8 @@ const fmt = (d: string) => new Date(d).toLocaleDateString(undefined, { day: "num
 /** Bottom of the home page: what changed in each publish. The owner writes the notes. */
 export function UpdateLog({ owner }: { owner: boolean }) {
   const all = useContent().updates;
+  const edit = useEdit();
+  if (edit) return <UpdateLogEditing />;
   const [saved, setSaved] = useState<Record<string, string>>({});
   const [editing, setEditing] = useState<string | null>(null);
   const items = all.map((u) => (u.id in saved ? { ...u, text: saved[u.id] } : u)).filter((u) => owner || u.text.trim());
@@ -60,5 +63,31 @@ function EditEntry({ u, onDone }: { u: Update; onDone: (text: string | null) => 
       </div>
       {err && <p className="vx-alert vx-alert-error" role="alert">{err}</p>}
     </div>
+  );
+}
+
+/** In the Editor: type the notes right on the page, add or remove entries; saved with Publish. */
+function UpdateLogEditing() {
+  const all = useContent().updates;
+  const edit = useEdit()!;
+  return (
+    <section className="vx-updates" aria-labelledby="vx-updates-h">
+      <div className="vx-row vx-row-between">
+        <h2 id="vx-updates-h">Update log</h2>
+        <button type="button" className="vx-btn vx-btn-ghost vx-btn-sm" onClick={() => edit.addUpdate()}>Add entry</button>
+      </div>
+      {all.length === 0 && <p className="vx-muted vx-small">No entries yet. Every real publish adds one; you can also add one here.</p>}
+      <ol>
+        {all.map((u, i) => (
+          <li key={u.id}>
+            <div className="vx-row vx-row-between">
+              <time dateTime={u.date}>{fmt(u.date)}</time>
+              <button type="button" className="vx-btn vx-btn-ghost vx-btn-sm vx-danger" aria-label={`Remove the ${fmt(u.date)} entry`} onClick={() => edit.removeUpdate(u.id)}>Remove</button>
+            </div>
+            <Editable as="p" path={`updates.${i}.text`} placeholder="What changed in this publish?" multiline />
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }

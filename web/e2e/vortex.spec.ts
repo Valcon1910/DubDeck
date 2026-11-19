@@ -286,7 +286,7 @@ test("announcements: an editor posts one with a title, picture and description",
   await expect(page.getByRole("link", { name: /Rules v2\.pdf/ })).toBeVisible();
 
   // Edit it: change the title and remove the PDF; the photo and video stay.
-  await page.getByRole("button", { name: "Edit" }).click();
+  await page.locator(".vx-news-item", { hasText: "Big update" }).getByRole("button", { name: "Edit" }).click();
   await expect(page.getByRole("heading", { name: "Edit announcement" })).toBeVisible();
   const form = page.locator("form.vx-composer").filter({ hasText: "Edit announcement" });
   await form.getByLabel("Title").fill("Bigger update");
@@ -296,6 +296,47 @@ test("announcements: an editor posts one with a title, picture and description",
   const edited = JSON.parse(Buffer.from(files["web/content.json"] as string, "base64").toString()).announcements.items[0];
   expect(edited).toMatchObject({ id: saved.announcements.items[0].id, title: "Bigger update", date: saved.announcements.items[0].date });
   expect(edited.files.map((f: { kind: string }) => f.kind)).toEqual(["image", "video"]);
+});
+
+test("update log: shown at the bottom of Home and edited in the Editor", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Update log" })).toBeVisible();
+  await expect(page.locator(".vx-updates")).toContainText("Announcements: post with photos");
+
+  const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64");
+  const blobs: { content: string }[] = [];
+  let tree: { path: string; sha: string }[] = [];
+  await page.route("**/gh/**", (route) => {
+    const req = route.request();
+    const url = req.url();
+    if (url.endsWith("/repos/Valcon1910/DubDeck")) return route.fulfill({ json: { permissions: { push: true } } });
+    if (url.endsWith("/user")) return route.fulfill({ json: { login: "owner" } });
+    if (url.includes("/contents/web/content.json")) return route.fulfill({ json: { content: b64({}) } });
+    if (url.includes("/contents/config/allowed-emails.json")) return route.fulfill({ json: { content: b64({ emails: [], domains: [] }) } });
+    if (url.endsWith("/git/ref/heads/main")) return route.fulfill({ json: { object: { sha: "base" } } });
+    if (url.endsWith("/git/commits/base")) return route.fulfill({ json: { tree: { sha: "t" } } });
+    if (url.endsWith("/git/blobs")) { blobs.push(req.postDataJSON()); return route.fulfill({ json: { sha: `b${blobs.length - 1}` } }); }
+    if (url.endsWith("/git/trees")) { tree = req.postDataJSON().tree; return route.fulfill({ json: { sha: "nt" } }); }
+    if (url.endsWith("/git/commits")) return route.fulfill({ json: { sha: "nc" } });
+    if (url.includes("/git/refs/heads/")) return route.fulfill({ json: {} });
+    if (url.includes("/actions/runs")) return route.fulfill({ json: { workflow_runs: [] } });
+    return route.fulfill({ status: 404, json: {} });
+  });
+  await page.goto("/#/admin");
+  const log = page.locator(".vx-updates");
+  await log.scrollIntoViewIfNeeded();
+  await log.getByRole("button", { name: "Add entry" }).click();
+  await expect(log.locator("li")).toHaveCount(2);
+  const first = log.locator("li").first().locator("[contenteditable]");
+  await first.click();
+  await first.pressSequentially("Faster pages");
+  await first.blur();
+  await page.getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(page.getByText("Saved permanently")).toBeVisible();
+  const i = tree.findIndex((f) => f.path === "web/content.json");
+  const saved = JSON.parse(Buffer.from(blobs[Number(tree[i].sha.slice(1))].content, "base64").toString());
+  expect(saved.updates).toHaveLength(2);
+  expect(saved.updates[0].text).toBe("Faster pages");
 });
 
 test("editor: add a box and a picture, set their size, and publish them", async ({ page }) => {

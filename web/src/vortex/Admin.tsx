@@ -191,6 +191,11 @@ function Editor({ token, user, saved, onSaved }: EditorProps) {
       if (i < 0 || j < 0 || j >= c.home.blocks.length) return;
       [c.home.blocks[i], c.home.blocks[j]] = [c.home.blocks[j], c.home.blocks[i]];
     }),
+    addUpdate: () => set((c) => {
+      const now = new Date().toISOString();
+      c.updates = [{ id: `note-${now.replace(/[^0-9]/g, "").slice(0, 14)}`, date: now, text: "" }, ...c.updates];
+    }),
+    removeUpdate: (id) => set((c) => { c.updates = c.updates.filter((u) => u.id !== id); }),
     removeBlock: (id) => { set((c) => { c.home.blocks = c.home.blocks.filter((b) => b.id !== id); }); setSelected(null); },
     selected,
     select: (id) => setSelected(id),
