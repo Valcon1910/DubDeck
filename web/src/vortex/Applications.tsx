@@ -157,3 +157,65 @@ export function ApplicationsCard() {
     </div>
   );
 }
+
+export const APPLY_TEXT_PATH = "config/apply.json";
+const APPLY_FIELDS: [key: string, label: string, long?: boolean][] = [
+  ["title", "Title"], ["intro", "Welcome text", true], ["enterButton", "Enter button"],
+  ["applyTitle", "Apply heading"], ["applyIntro", "Apply text", true],
+  ["emailLabel", "Email label"], ["nameLabel", "Name label"], ["reasonLabel", "Reason label"],
+  ["applyButton", "Apply button"], ["success", "Message after applying", true],
+];
+
+/** Admin → Apply page: change the entry page's texts and colour. */
+export function ApplyPageCard() {
+  const [saved, setSaved] = useState<Record<string, string> | null>(null);
+  const [text, setText] = useState<Record<string, string> | null>(null);
+  const [state, setState] = useState<"idle" | "saving" | "saved">("idle");
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    readJson<Record<string, string>>(TOKEN, APPLY_TEXT_PATH, "main").catch(() => ({}))
+      .then((t) => { setSaved(t); setText(t); });
+  }, []);
+  const dirty = !!text && JSON.stringify(text) !== JSON.stringify(saved);
+  async function save() {
+    if (!text) return;
+    setState("saving"); setErr(null);
+    try {
+      await commit(TOKEN, "Update the Apply page (from the Admin page)", [{ path: APPLY_TEXT_PATH, text: json(text) }], "main");
+      setSaved(text); setState("saved");
+    } catch (e) {
+      setErr(e instanceof GitHubError ? e.message : "Couldn't save. Try again."); setState("idle");
+    }
+  }
+  const set = (k: string, v: string) => { setText((t) => ({ ...(t ?? {}), [k]: v })); setState("idle"); };
+  return (
+    <div className="vx-card vx-stack">
+      <h2 className="vx-card-title">Apply page</h2>
+      <p className="vx-muted vx-small">The public page people see before signing in: an Enter button for the real site and the Apply form. Share its link instead of the site's.</p>
+      {err && <p className="vx-alert vx-alert-error" role="alert">{err}</p>}
+      {!text ? <p className="vx-muted vx-small"><span className="vx-spinner" aria-hidden="true" />Loading…</p> : (
+        <>
+          {APPLY_FIELDS.map(([k, label, long]) => (
+            <label key={k} className="vx-field">
+              <span className="vx-small">{label}</span>
+              {long
+                ? <textarea rows={2} maxLength={1000} value={text[k] ?? ""} onChange={(e) => set(k, e.target.value)} />
+                : <input maxLength={200} value={text[k] ?? ""} onChange={(e) => set(k, e.target.value)} />}
+            </label>
+          ))}
+          <label className="vx-field vx-row">
+            <span className="vx-small">Colour</span>
+            <input type="color" aria-label="Colour" value={/^#[0-9a-f]{6}$/i.test(text.accent ?? "") ? text.accent : "#7c5cff"} onChange={(e) => set("accent", e.target.value)} />
+          </label>
+          <div className="vx-action-row">
+            <button className="vx-btn vx-btn-primary" disabled={!dirty || state === "saving"} onClick={save}>
+              {state === "saving" && <span className="vx-spinner" aria-hidden="true" />}{state === "saving" ? "Saving…" : "Save Apply page"}
+            </button>
+            {APPLY_URL && <a className="vx-btn vx-btn-ghost" href={APPLY_URL} target="_blank" rel="noopener noreferrer">Open it</a>}
+            {state === "saved" && !dirty && <span className="vx-muted vx-small" role="status">Saved. The page updates in about two minutes.</span>}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

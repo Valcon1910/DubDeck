@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Apply to Vortex</title>
+<title>Vortex</title>
 <style>
   :root { color-scheme: dark; --bg:#0b0d14; --card:#151925; --text:#e8eaf2; --muted:#9aa1b5; --accent:#7c5cff; --line:#262b3b; --bad:#ff6b6b; --ok:#3ddc97; }
   * { box-sizing: border-box; }
@@ -19,26 +19,43 @@
   .msg { margin-top:16px; padding:12px; border-radius:10px; font-size:.95rem; }
   .bad { background:#ff6b6b22; color:var(--bad); } .ok { background:#3ddc9722; color:var(--ok); }
   .logo { font-size:2rem; }
+  .enter { display:block; text-align:center; text-decoration:none; padding:12px; border-radius:10px; background:var(--accent); color:#fff; font:600 1rem system-ui, sans-serif; }
+  .enter[hidden] { display:none; }
+  hr { border:0; border-top:1px solid var(--line); margin:24px 0 18px; }
+  h2 { margin:0 0 4px; font-size:1.2rem; }
 </style>
 </head>
 <body>
 <main>
   <div class="logo" aria-hidden="true">🌀</div>
-  <h1>Apply to Vortex</h1>
-  <p>Vortex is invite-only. Couldn't sign in? Ask for access here. If you're accepted, you'll get an email with the site's address.</p>
+  <h1 data-t="title">Welcome to Vortex</h1>
+  <p data-t="intro">Vortex is invite-only. If you already have access, go in and sign in with your email.</p>
+  <a id="enter" class="enter" data-t="enterButton" hidden>Enter Vortex</a>
+  <hr>
+  <h2 data-t="applyTitle">Can't get in? Apply</h2>
+  <p data-t="applyIntro">Ask for access here. If you're accepted, you'll get an email with the site's address.</p>
   <form id="f" novalidate>
-    <label for="email">Your email (the one you'll sign in with)</label>
+    <label for="email" data-t="emailLabel">Your email (the one you'll sign in with)</label>
     <input id="email" name="email" type="email" required maxlength="200" autocomplete="email" placeholder="name@example.com">
-    <label for="name">Your name</label>
+    <label for="name" data-t="nameLabel">Your name</label>
     <input id="name" name="name" required maxlength="80" autocomplete="name">
-    <label for="reason">Who do you know here? (optional)</label>
+    <label for="reason" data-t="reasonLabel">Who do you know here? (optional)</label>
     <textarea id="reason" name="reason" maxlength="500"></textarea>
-    <button id="b">Apply</button>
+    <button id="b" data-t="applyButton">Apply</button>
     <div id="m" class="msg" role="status" hidden></div>
   </form>
 </main>
 <script>
 const f = document.getElementById("f"), b = document.getElementById("b"), m = document.getElementById("m");
+let T = {};
+// Texts and colour set in Admin → Apply page (apply.json, built at publish).
+fetch("./apply.json", { cache: "no-store" }).then((r) => (r.ok ? r.json() : {})).then((c) => {
+  T = c || {};
+  document.querySelectorAll("[data-t]").forEach((el) => { const v = T[el.dataset.t]; if (typeof v === "string" && v) el.textContent = v; });
+  if (T.title) document.title = T.title;
+  if (/^#[0-9a-fA-F]{6}$/.test(T.accent || "")) document.documentElement.style.setProperty("--accent", T.accent);
+  if (/^https:\/\/[a-z0-9-]+\.here\.now\/$/.test(T.siteUrl || "")) { const a = document.getElementById("enter"); a.href = T.siteUrl; a.hidden = false; }
+}).catch(() => {});
 const show = (ok, t) => { m.hidden = false; m.className = "msg " + (ok ? "ok" : "bad"); m.textContent = t; };
 f.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -51,7 +68,7 @@ f.addEventListener("submit", async (e) => {
     if (r.status === 429) throw new Error("Too many tries. Wait a bit and try again.");
     if (!r.ok) throw new Error("Couldn't send it. Try again.");
     f.querySelectorAll("input, textarea, button").forEach((x) => (x.disabled = true));
-    show(true, "Sent! You'll get an email at " + email + " if you're accepted.");
+    show(true, T.success || "Sent! You'll get an email if you're accepted.");
   } catch (err) { show(false, err.message); b.disabled = false; }
 });
 </script>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ApplicationsCard } from "./Applications";
+import { ApplicationsCard, ApplyPageCard } from "./Applications";
 import { AccessList, protect, type Access, type Roles } from "./AccessList";
 import { useVisitorEmail } from "./admins";
 import { ACCESS_PATH, ACCESS_TEST_PATH, ACTIONS, commit, GitHubError, readJson, recentRuns, runAction, ROLES_PATH, type FileChange, type Run } from "./github";
@@ -17,6 +17,7 @@ export function Manage() {
       </header>
       <Actions />
       <ApplicationsCard />
+      <ApplyPageCard />
       <AccessCard />
     </section>
   );
