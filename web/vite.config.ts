@@ -14,7 +14,7 @@ const HOST_RE = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,
  * - injects a Content-Security-Policy: the Site itself, YouTube thumbnails, and
  *   YouTube's video hosts (for saving files).
  */
-function herenow(apiHost: string | null, isBuild: boolean): Plugin {
+function herenow(apiHost: string | null, isBuild: boolean, applySlug: string | null): Plugin {
   const yt = "https://*.googlevideo.com";
   const csp = [
     "default-src 'self'",
@@ -50,6 +50,15 @@ function herenow(apiHost: string | null, isBuild: boolean): Plugin {
         manifest.proxies["/api/*"] = { upstream: `https://${apiHost}/api`, headers, rateLimit: "1000/hour/ip" };
         manifest.proxies["/events"] = { upstream: `https://${apiHost}/api/events`, method: "GET", headers, rateLimit: "600/hour/ip" };
       }
+      if (applySlug) {
+        // Admin → Applications: read-only list of the Apply page's requests.
+        manifest.proxies["/ap"] = {
+          upstream: `https://here.now/api/v1/publishes/${applySlug}/data/applications`,
+          method: "GET",
+          headers: { Authorization: "Bearer ${HN_OWNER_KEY}" },
+          rateLimit: "120/hour/ip",
+        };
+      }
       const out = path.resolve(__dirname, "dist/.herenow/proxy.json");
       fs.mkdirSync(path.dirname(out), { recursive: true });
       fs.writeFileSync(out, JSON.stringify(manifest, null, 2) + "\n");
@@ -60,6 +69,12 @@ function herenow(apiHost: string | null, isBuild: boolean): Plugin {
 export default defineConfig(({ command, mode }) => {
   const env = { ...loadEnv(mode, process.cwd(), ["DUBDECK_", "RAPIDAPI_"]), ...process.env };
   const isBuild = command === "build";
+  // The Apply page's Site, from the publish workflow or config/site-apply.json.
+  const applySlug = ((): string | null => {
+    let v = (env.APPLY_SLUG || "").trim();
+    if (!v) try { v = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../config/site-apply.json"), "utf8")).slug ?? ""; } catch { /* none yet */ }
+    return /^[a-z0-9-]{1,80}$/.test(v) ? v : null;
+  })();
   const apiHost = (env.DUBDECK_API_HOST || "").trim().toLowerCase() || null;
   if (apiHost && !HOST_RE.test(apiHost)) {
     throw new Error(`DUBDECK_API_HOST must be a bare hostname like api.example.com, got "${apiHost}"`);
@@ -78,9 +93,10 @@ export default defineConfig(({ command, mode }) => {
   };
 
   return {
-    plugins: [react(), herenow(apiHost, isBuild)],
+    plugins: [react(), herenow(apiHost, isBuild, applySlug)],
     // The repository the admin editor saves to (set automatically in GitHub Actions).
     define: {
+      __VORTEX_APPLY_URL__: JSON.stringify(applySlug ? `https://${applySlug}.here.now` : ""),
       __VORTEX_REPO__: JSON.stringify(env.GITHUB_REPOSITORY || "Valcon1910/DubDeck"),
       __VORTEX_BRANCH__: JSON.stringify(env.VORTEX_BRANCH || "main"),
       // People with Admin (Editor) rights besides the owners (config/roles.json).

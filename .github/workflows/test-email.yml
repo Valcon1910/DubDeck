@@ -1,0 +1,35 @@
+name: Send a test "you got in" email
+
+# Started from Admin → Applications → Testing. Sends here.now's invite email
+# to an address that is already allowed on the chosen site.
+on:
+  workflow_dispatch:
+    inputs:
+      email:
+        description: Address to send to (must already be allowed on the site)
+        required: true
+      site:
+        description: real or test
+        required: true
+        default: real
+
+permissions:
+  contents: read
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Send
+        env:
+          HERENOW_API_KEY: ${{ secrets.HERENOW_API_KEY }}
+          EMAIL: ${{ inputs.email }}
+          HERENOW_SLUG: ${{ inputs.site == 'real' && vars.HERENOW_SLUG || '' }}
+          HERENOW_SITE_NAME: ${{ inputs.site == 'test' && 'Vortex Engine (test)' || 'Vortex Engine' }}
+          HERENOW_SITE_FILE: ${{ inputs.site == 'test' && 'config/site-test.json' || 'config/site.json' }}
+        run: node scripts/send-invite.mjs

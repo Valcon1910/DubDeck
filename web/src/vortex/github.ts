@@ -11,6 +11,7 @@ export const CONTENT_PATH = "web/content.json";
 export const ACCESS_PATH = "config/allowed-emails.json";
 export const ACCESS_TEST_PATH = "config/allowed-emails-test.json";
 export const ROLES_PATH = "config/roles.json";
+export const APPLICATIONS_PATH = "config/applications.json";
 const API = "/gh";
 
 export class GitHubError extends Error {
@@ -120,6 +121,12 @@ export const ACTIONS = {
 
 export async function runAction(key: keyof typeof ACTIONS): Promise<void> {
   const a = ACTIONS[key];
+  await dispatch(a.file, a.inputs);
+}
+
+/** Start a workflow on main with inputs. */
+export async function dispatch(file: string, inputs: Record<string, string>): Promise<void> {
+  const a = { file, inputs };
   let res: Response;
   try {
     res = await fetch(`${API}/repos/${REPO}/actions/workflows/${a.file}/dispatches`, {
