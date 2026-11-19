@@ -51,7 +51,7 @@
       "title": "Announcements",
       "description": "News and updates.",
       "visible": true,
-      "label": "Coming soon"
+      "label": "News"
     }
   },
   "games": {
@@ -94,5 +94,10 @@
     "title": "Downloader",
     "intro": "Paste a YouTube link, choose a format and save it to this device.",
     "footer": "Only download videos you have the right to keep."
+  },
+  "announcements": {
+    "title": "Announcements",
+    "subtitle": "News and updates from Vortex.",
+    "items": []
   }
 }

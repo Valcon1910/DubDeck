@@ -664,3 +664,22 @@ body.vx-resizing, body.vx-resizing * { cursor: grabbing !important; user-select:
 
 /* Chat and Announcements: twice a normal tile's width (full width on phones). */
 @media (min-width: 365px) { .vx-tile-wide { grid-column: span 2; } }
+
+/* Announcements */
+.vx-unread {
+  display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px;
+  border-radius: 999px; background: #e5383b; color: #fff; font: 700 12px/1 system-ui, sans-serif;
+  margin-left: auto; box-shadow: 0 0 0 2px var(--surface, #fff);
+}
+.vx-tile { position: relative; }
+.vx-unread-tile { position: absolute; top: 10px; right: 10px; margin: 0; }
+.vx-news { list-style: none; margin: 0; padding: 0; display: grid; gap: 16px; }
+.vx-news-item { padding: 0; overflow: hidden; }
+.vx-news-item img { display: block; width: 100%; max-height: 420px; object-fit: cover; }
+.vx-news-body { padding: 18px; display: grid; gap: 6px; }
+.vx-news-body h2 { margin: 0; font-size: 1.25rem; }
+.vx-news-body p { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.vx-news-body .vx-btn { justify-self: start; margin-top: 6px; }
+.vx-composer input, .vx-composer textarea { width: 100%; }
+.vx-composer-img { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.vx-composer-img img { max-width: 160px; max-height: 120px; border-radius: 10px; object-fit: cover; }

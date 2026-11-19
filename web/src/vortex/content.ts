@@ -37,12 +37,23 @@ export interface Game {
   description: string;
 }
 
+export interface Announcement {
+  id: string;
+  title: string;
+  text: string;
+  /** A site path like /logos/x.webp, an https link, or "". */
+  image: string;
+  /** When it was posted (ISO date). */
+  date: string;
+}
+
 export interface Content {
   site: { name: string; accent: string };
   home: { title: string; subtitle: string; blocks: Block[] };
   sections: { games: SectionText; docs: SectionText; slides: SectionText; chat: SectionText; announcements: SectionText; downloader: SectionText; roblox: SectionText };
   games: { title: string; subtitle: string; intro: string; empty: string; items: Game[] };
   downloader: { title: string; intro: string; footer: string };
+  announcements: { title: string; subtitle: string; items: Announcement[] };
 }
 
 export const PUBLISHED = published as Content;
@@ -63,6 +74,13 @@ export function normalize(raw: unknown): Content {
       })),
     },
     sections: { games: sec("games"), docs: sec("docs"), slides: sec("slides"), chat: sec("chat"), announcements: sec("announcements"), downloader: sec("downloader"), roblox: sec("roblox") },
+    announcements: {
+      ...d.announcements, ...(r.announcements ?? {}),
+      items: (r.announcements?.items ?? d.announcements?.items ?? []).map((a) => ({
+        id: String(a.id || crypto.randomUUID()), title: String(a.title ?? "").slice(0, 200), text: String(a.text ?? "").slice(0, 5000),
+        image: String(a.image ?? ""), date: String(a.date ?? ""),
+      })).sort((a, b) => b.date.localeCompare(a.date)),
+    },
     games: {
       ...d.games, ...(r.games ?? {}),
       items: (r.games?.items ?? d.games.items).map((g) => ({

@@ -105,7 +105,7 @@ export function Avatar({ src, name, size = 34 }: { src: string; name: string; si
   );
 }
 
-export type IconName = "chevron-left" | "chevron-right" | "home" | "games" | "download" | "flask" | "shield" | "pen" | "menu" | "gear" | "logout";
+export type IconName = "chevron-left" | "chevron-right" | "home" | "games" | "download" | "flask" | "shield" | "pen" | "menu" | "gear" | "logout" | "megaphone";
 const PATHS: Record<IconName, string> = {
   "chevron-left": "M15 5l-7 7 7 7",
   "chevron-right": "M9 5l7 7-7 7",
@@ -117,6 +117,7 @@ const PATHS: Record<IconName, string> = {
   pen: "M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4",
   menu: "M4 6h16M4 12h16M4 18h16",
   gear: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm7.4-3a7.4 7.4 0 0 0-.1-1.3l2-1.6-2-3.4-2.4 1a7.6 7.6 0 0 0-2.2-1.3L14.3 3h-4l-.4 2.4a7.6 7.6 0 0 0-2.2 1.3l-2.4-1-2 3.4 2 1.6a7.4 7.4 0 0 0 0 2.6l-2 1.6 2 3.4 2.4-1a7.6 7.6 0 0 0 2.2 1.3l.4 2.4h4l.4-2.4a7.6 7.6 0 0 0 2.2-1.3l2.4 1 2-3.4-2-1.6c.1-.4.1-.9.1-1.3z",
+  megaphone: "M4 10v4a1 1 0 0 0 1 1h2l5 4V5L7 9H5a1 1 0 0 0-1 1zM16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12",
   logout: "M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 16l4-4-4-4M14 12H3",
 };
 export function Icon({ name }: { name: IconName }) {
