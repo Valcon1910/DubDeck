@@ -1,0 +1,13 @@
+{
+  "title": "Welcome to Vortex",
+  "intro": "Vortex is invite-only. If you already have access, go in and sign in with your email.",
+  "enterButton": "Enter Vortex",
+  "applyTitle": "Can't get in? Apply",
+  "applyIntro": "Ask for access here. If you're accepted, you'll get an email with the site's address.",
+  "emailLabel": "Your email (the one you'll sign in with)",
+  "nameLabel": "Your name",
+  "reasonLabel": "Who do you know here? (optional)",
+  "applyButton": "Apply",
+  "success": "Sent! You'll get an email if you're accepted.",
+  "accent": "#7c5cff"
+}

@@ -58,8 +58,10 @@ jobs:
       # The public "Apply" page (web/apply): its own Site that anyone can open,
       # where people who can't sign in ask for access. Admin → Applications reads
       # the requests through the site's /ap route, which adds HN_OWNER_KEY.
+      # Only the real site's publish updates it (it always points to the real site).
       - name: Publish the Apply page
         id: apply
+        if: inputs.site == 'real'
         env:
           HERENOW_SLUG: ""
           HERENOW_SITE_NAME: Vortex Apply
@@ -67,11 +69,12 @@ jobs:
           DUBDECK_ALLOW_NO_PROXY: "1"
         run: |
           if [ ! -d web/apply ]; then echo "No web/apply on this branch yet."; exit 0; fi
-          node scripts/herenow-publish.mjs web/apply
+          node scripts/build-apply.mjs /tmp/apply-dist
+          node scripts/herenow-publish.mjs /tmp/apply-dist
           HERENOW_ACCESS_MODE=public node scripts/sync-access.mjs
 
       - name: Save the owner key for the Applications list
-        if: steps.apply.outputs.slug != ''
+        if: env.HERENOW_API_KEY != ''
         env:
           VALUE: ${{ secrets.HERENOW_API_KEY }}
         run: node scripts/herenow-variable.mjs HN_OWNER_KEY here.now
