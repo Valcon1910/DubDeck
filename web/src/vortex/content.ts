@@ -37,12 +37,21 @@ export interface Game {
   description: string;
 }
 
+export interface Attachment {
+  /** Site path like /files/x.mp4. */
+  path: string;
+  name: string;
+  kind: "image" | "video" | "file";
+}
+
 export interface Announcement {
   id: string;
   title: string;
   text: string;
-  /** A site path like /logos/x.webp, an https link, or "". */
+  /** Older posts: one picture (site path or https link). */
   image: string;
+  /** Photos, videos and files. */
+  files: Attachment[];
   /** When it was posted (ISO date). */
   date: string;
 }
@@ -79,6 +88,9 @@ export function normalize(raw: unknown): Content {
       items: (r.announcements?.items ?? d.announcements?.items ?? []).map((a) => ({
         id: String(a.id || crypto.randomUUID()), title: String(a.title ?? "").slice(0, 200), text: String(a.text ?? "").slice(0, 5000),
         image: String(a.image ?? ""), date: String(a.date ?? ""),
+        files: (Array.isArray(a.files) ? a.files : [])
+          .filter((f) => f && /^\/files\/[\w.-]+$/.test(String(f.path)))
+          .map((f) => ({ path: String(f.path), name: String(f.name ?? "").slice(0, 200) || "file", kind: (["image", "video"].includes(f.kind) ? f.kind : "file") as Attachment["kind"] })),
       })).sort((a, b) => b.date.localeCompare(a.date)),
     },
     games: {

@@ -255,14 +255,33 @@ test("announcements: an editor posts one with a title, picture and description",
   await expect(page.getByRole("heading", { name: "Announcements", level: 1 })).toBeVisible();
   await page.getByLabel("Title").fill("Big update");
   await page.getByLabel("Description").fill("New games are here.");
-  await page.getByLabel("Picture").setInputFiles({ name: "pic.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64") });
+  await page.getByLabel("Upload File").setInputFiles([
+    { name: "pic.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64") },
+    { name: "clip.mp4", mimeType: "video/mp4", buffer: Buffer.from("fake") },
+    { name: "Rules v2.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF") },
+  ]);
+  await expect(page.locator(".vx-composer-files li")).toHaveCount(3);
   await page.getByRole("button", { name: "Post" }).click();
   await expect(page.getByText("Posted.")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Big update" })).toBeVisible();
   const saved = JSON.parse(Buffer.from(files["web/content.json"] as string, "base64").toString());
   expect(saved.announcements.items[0]).toMatchObject({ title: "Big update", text: "New games are here." });
-  expect(saved.announcements.items[0].image).toMatch(/^\/logos\/news-.+\.png$/);
-  expect(Object.keys(files).some((k) => /^web\/public\/logos\/news-/.test(k))).toBe(true);
+  expect(saved.announcements.items[0].files.map((f: { kind: string }) => f.kind)).toEqual(["image", "video", "file"]);
+  expect(saved.announcements.items[0].files[2]).toMatchObject({ name: "Rules v2.pdf", path: expect.stringMatching(/^\/files\/.+-Rules-v2\.pdf$/) });
+  expect(Object.keys(files).filter((k) => k.startsWith("web/public/files/"))).toHaveLength(3);
+  await expect(page.getByRole("link", { name: /Rules v2\.pdf/ })).toBeVisible();
+
+  // Edit it: change the title and remove the PDF; the photo and video stay.
+  await page.getByRole("button", { name: "Edit" }).click();
+  await expect(page.getByRole("heading", { name: "Edit announcement" })).toBeVisible();
+  const form = page.locator("form.vx-composer").filter({ hasText: "Edit announcement" });
+  await form.getByLabel("Title").fill("Bigger update");
+  await form.getByRole("button", { name: "Remove Rules v2.pdf" }).click();
+  await form.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByRole("heading", { name: "Bigger update" })).toBeVisible();
+  const edited = JSON.parse(Buffer.from(files["web/content.json"] as string, "base64").toString()).announcements.items[0];
+  expect(edited).toMatchObject({ id: saved.announcements.items[0].id, title: "Bigger update", date: saved.announcements.items[0].date });
+  expect(edited.files.map((f: { kind: string }) => f.kind)).toEqual(["image", "video"]);
 });
 
 test("editor: add a box and a picture, set their size, and publish them", async ({ page }) => {
