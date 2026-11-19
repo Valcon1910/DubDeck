@@ -3,4 +3,3 @@ declare const __VORTEX_REPO__: string;
 declare const __VORTEX_BRANCH__: string;
 declare const __VORTEX_ADMINS__: string[];
 declare const __VORTEX_SITES__: { real: string; test: string };
-declare const __VORTEX_APPLY_URL__: string;

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { ApplicationsCard, ApplyPageCard, EmailCard } from "./Applications";
 import { AccessList, protect, type Access, type Roles } from "./AccessList";
 import { useVisitorEmail } from "./admins";
 import { ACCESS_PATH, ACCESS_TEST_PATH, ACTIONS, commit, GitHubError, readJson, recentRuns, runAction, ROLES_PATH, type FileChange, type Run } from "./github";
@@ -16,9 +15,6 @@ export function Manage() {
         <p className="vx-muted">Publish changes and choose who can open the sites.</p>
       </header>
       <Actions />
-      <ApplicationsCard />
-      <ApplyPageCard />
-      <EmailCard />
       <AccessCard />
     </section>
   );

@@ -9,7 +9,6 @@
 
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { findSlug, SITE_NAME } from "./herenow-site.mjs";
-import { sendWelcome } from "./mail.mjs";
 
 const API = (process.env.HERENOW_API ?? "https://here.now").replace(/\/$/, "");
 const CLIENT = process.env.HERENOW_CLIENT ?? "github-actions/dubdeck-access";
@@ -63,17 +62,6 @@ async function call(method, body) {
   return data.access;
 }
 
-// The Apply page is a separate Site anyone can open: HERENOW_ACCESS_MODE=public.
-if (process.env.HERENOW_ACCESS_MODE === "public") {
-  if (!KEY) fail("HERENOW_API_KEY is not set.");
-  SLUG = (await findSlug({ api: API, key: KEY, client: CLIENT })) ?? "";
-  if (!SLUG) fail(`No ${SITE_NAME} Site found.`);
-  const now = await call("GET");
-  if (now.mode !== "anyone_with_link") await call("PATCH", { mode: "anyone_with_link" });
-  console.log(`${SITE_NAME} (${SLUG}) is open to anyone with the link.`);
-  process.exit(0);
-}
-
 const want = load();
 if (process.argv.includes("--check")) {
   console.log(`${FILE} is valid: ${want.emails.length} email(s), ${want.domains.length} domain(s).`);
@@ -121,31 +109,6 @@ const ok = saved.mode === "restricted" &&
   JSON.stringify([...saved.allowedEmails].sort()) === JSON.stringify(want.emails) &&
   JSON.stringify([...saved.allowedDomains].sort()) === JSON.stringify(want.domains);
 if (!ok) fail(`here.now saved a different policy than requested: ${JSON.stringify(saved)}`);
-// Accepted applicants who were just let in get here.now's invite email: it says
-// they were given access and links to the site.
-const ACCEPTED_FILE = "config/applications.json";
-// Test mode accepts onto the test site (testAccepted).
-const KEY_NAME = FILE === "config/allowed-emails.json" ? "accepted" : FILE === "config/allowed-emails-test.json" ? "testAccepted" : "";
-if (KEY_NAME && existsSync(ACCEPTED_FILE)) {
-  let accepted = [];
-  try { accepted = (JSON.parse(readFileSync(ACCEPTED_FILE, "utf8"))[KEY_NAME] ?? []).map((e) => String(e).toLowerCase()); } catch {}
-  const invite = diff(want.emails, have.emails).filter((e) => accepted.includes(e));
-  let names = {};
-  try { names = JSON.parse(readFileSync(ACCEPTED_FILE, "utf8")).names ?? {}; } catch {}
-  // Your own email from Gmail when set up; here.now's invite email otherwise.
-  const viaGmail = await sendWelcome(invite, `https://${SLUG}.here.now/`, names);
-  if (viaGmail.length) console.log(`Sent your "you got in" email from Gmail to ${viaGmail.length} accepted applicant(s).`);
-  const rest = invite.filter((e) => !viaGmail.includes(e));
-  if (rest.length) {
-    const res = await fetch(`${API}/api/v1/publish/${encodeURIComponent(SLUG)}/access/invites`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${KEY}`, "X-HereNow-Client": CLIENT, "Content-Type": "application/json" },
-      body: JSON.stringify({ emails: rest }),
-    });
-    if (res.ok) console.log(`Sent here.now's invite email to ${rest.length} accepted applicant(s).`);
-    else console.log(`::warning::Couldn't send the invite email(s): ${res.status} ${(await res.text()).slice(0, 200)}`);
-  }
-}
 console.log(`Saved: restricted, ${want.emails.length} email(s), ${want.domains.length} domain(s) (policy v${saved.accessPolicyVersion}).`);
 if (process.env.GITHUB_STEP_SUMMARY) {
   appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### Access synced\n\n\`\`\`diff\n${lines.join("\n")}\n\`\`\`\n`);
