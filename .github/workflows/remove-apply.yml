@@ -1,0 +1,24 @@
+name: Remove the Apply page (one-off)
+
+# Deletes the old public Apply page Site and the key its Admin list used.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  remove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Delete the Site and the HN_OWNER_KEY variable
+        env:
+          KEY: ${{ secrets.HERENOW_API_KEY }}
+        run: |
+          H=(-H "Authorization: Bearer $KEY" -H "X-HereNow-Client: github-actions/vortex-cleanup")
+          code=$(curl -s -o /tmp/r -w '%{http_code}' -X DELETE "${H[@]}" https://here.now/api/v1/publish/deep-badge-a4x2)
+          echo "Delete Site deep-badge-a4x2 → $code"; head -c 300 /tmp/r; echo
+          code2=$(curl -s -o /tmp/r -w '%{http_code}' -X DELETE "${H[@]}" https://here.now/api/v1/me/variables/HN_OWNER_KEY)
+          echo "Delete HN_OWNER_KEY → $code2"; head -c 300 /tmp/r; echo
+          case "$code" in 2*|404) ;; *) exit 1 ;; esac
