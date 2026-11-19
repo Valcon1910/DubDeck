@@ -40,7 +40,7 @@ export interface Game {
 export interface Content {
   site: { name: string; accent: string };
   home: { title: string; subtitle: string; blocks: Block[] };
-  sections: { games: SectionText; docs: SectionText; slides: SectionText; downloader: SectionText; roblox: SectionText };
+  sections: { games: SectionText; docs: SectionText; slides: SectionText; chat: SectionText; announcements: SectionText; downloader: SectionText; roblox: SectionText };
   games: { title: string; subtitle: string; intro: string; empty: string; items: Game[] };
   downloader: { title: string; intro: string; footer: string };
 }
@@ -62,7 +62,7 @@ export function normalize(raw: unknown): Content {
         width: clamp(Number(b.width) || 100, 10, 100), height: clamp(Number(b.height) || 0, 0, 2000),
       })),
     },
-    sections: { games: sec("games"), docs: sec("docs"), slides: sec("slides"), downloader: sec("downloader"), roblox: sec("roblox") },
+    sections: { games: sec("games"), docs: sec("docs"), slides: sec("slides"), chat: sec("chat"), announcements: sec("announcements"), downloader: sec("downloader"), roblox: sec("roblox") },
     games: {
       ...d.games, ...(r.games ?? {}),
       items: (r.games?.items ?? d.games.items).map((g) => ({

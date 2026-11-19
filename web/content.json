@@ -40,6 +40,18 @@
       "visible": true,
       "url": "https://www.roblox.com/communities/35223720/Randomized-Gaming-Studios#!/about",
       "logo": "/roblox-group.png"
+    },
+    "chat": {
+      "title": "Chat",
+      "description": "Talk with everyone on Vortex.",
+      "visible": true,
+      "label": "Coming soon"
+    },
+    "announcements": {
+      "title": "Announcements",
+      "description": "News and updates.",
+      "visible": true,
+      "label": "Coming soon"
     }
   },
   "games": {

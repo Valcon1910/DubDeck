@@ -14,6 +14,8 @@ export function HomePage({ welcome }: { welcome?: Welcome }) {
     { key: "games", href: "#/games" },
     { key: "docs", href: null },
     { key: "slides", href: null },
+    { key: "chat", href: null },
+    { key: "announcements", href: null },
   ];
   return (
     <section className="vx-page">

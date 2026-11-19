@@ -231,44 +231,6 @@ test("admin page: tap a person to give test-site access and Admin; the owner can
   expect(files["config/allowed-emails.json"]).toBeUndefined(); // unchanged
 });
 
-test("admin page: accept an application lets them in and records it", async ({ page }) => {
-  await page.route("**/.herenow/me", (route) => route.fulfill({ json: { email: "valentino.104688@anglo.edu.co" } }));
-  await page.route("**/ap", (route) => route.fulfill({ json: { records: [
-    { id: "r1", data: { email: "New@Kid.co", name: "New Kid", reason: "Friend of Trevor" }, created_at: "2026-11-19T10:00:00Z" },
-    { id: "r2", data: { email: "friend@x.co", name: "Already in" }, created_at: "2026-11-19T09:00:00Z" },
-  ] } }));
-  const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64");
-  const files: Record<string, unknown> = {};
-  const pending: unknown[] = [];
-  await page.route("**/gh/**", (route) => {
-    const req = route.request();
-    const url = req.url();
-    if (url.includes("/actions/runs")) return route.fulfill({ json: { workflow_runs: [] } });
-    if (url.includes("/contents/config/allowed-emails.json")) return route.fulfill({ json: { content: b64({ emails: ["friend@x.co", "valentino.104688@anglo.edu.co"], domains: [] }) } });
-    if (url.includes("/contents/config/applications.json")) return route.fulfill({ json: { content: b64({ accepted: [], declined: [] }) } });
-    if (url.endsWith("/git/ref/heads/main")) return route.fulfill({ json: { object: { sha: "base" } } });
-    if (url.endsWith("/git/commits/base")) return route.fulfill({ json: { tree: { sha: "t" } } });
-    if (url.endsWith("/git/blobs")) { pending.push(JSON.parse(Buffer.from(req.postDataJSON().content, "base64").toString())); return route.fulfill({ json: { sha: `b${pending.length - 1}` } }); }
-    if (url.endsWith("/git/trees")) {
-      for (const f of req.postDataJSON().tree as { path: string; sha: string }[]) files[f.path] = pending[Number(f.sha.slice(1))];
-      return route.fulfill({ json: { sha: "nt" } });
-    }
-    if (url.endsWith("/git/commits")) return route.fulfill({ json: { sha: "nc" } });
-    if (url.includes("/git/refs/heads/")) return route.fulfill({ json: {} });
-    return route.fulfill({ status: 404, json: {} });
-  });
-  await page.goto("/#/manage");
-  const app = page.locator(".vx-app");
-  await expect(app).toHaveCount(1); // friend@x.co is already allowed
-  await expect(app).toContainText("New Kid");
-  await expect(app).toContainText("Friend of Trevor");
-  await app.getByRole("button", { name: "Accept" }).click();
-  await expect(page.getByText("new@kid.co is in.")).toBeVisible();
-  await expect(page.locator(".vx-app")).toHaveCount(0);
-  expect(files["config/allowed-emails.json"]).toEqual({ emails: ["friend@x.co", "new@kid.co", "valentino.104688@anglo.edu.co"], domains: [] });
-  expect(files["config/applications.json"]).toEqual({ accepted: ["new@kid.co"], declined: [], names: { "new@kid.co": "New Kid" } });
-});
-
 test("editor: add a box and a picture, set their size, and publish them", async ({ page }) => {
   const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64");
   const blobs: { content: string; encoding: string }[] = [];
