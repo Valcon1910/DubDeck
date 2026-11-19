@@ -231,6 +231,40 @@ test("admin page: tap a person to give test-site access and Admin; the owner can
   expect(files["config/allowed-emails.json"]).toBeUndefined(); // unchanged
 });
 
+test("announcements: an editor posts one with a title, picture and description", async ({ page }) => {
+  await page.route("**/.herenow/me", (route) => route.fulfill({ json: { email: "valentino.104688@anglo.edu.co" } }));
+  const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64");
+  const files: Record<string, unknown> = {};
+  const pending: string[] = [];
+  await page.route("**/gh/**", (route) => {
+    const req = route.request();
+    const url = req.url();
+    if (url.includes("/contents/web/content.json")) return route.fulfill({ json: { content: b64({ announcements: { items: [] } }) } });
+    if (url.endsWith("/git/ref/heads/main") || url.endsWith("/git/ref/heads/test")) return route.fulfill({ json: { object: { sha: "base" } } });
+    if (url.endsWith("/git/commits/base")) return route.fulfill({ json: { tree: { sha: "t" } } });
+    if (url.endsWith("/git/blobs")) { pending.push(req.postDataJSON().content); return route.fulfill({ json: { sha: `b${pending.length - 1}` } }); }
+    if (url.endsWith("/git/trees")) {
+      for (const f of req.postDataJSON().tree as { path: string; sha: string }[]) files[f.path] = pending[Number(f.sha.slice(1))];
+      return route.fulfill({ json: { sha: "nt" } });
+    }
+    if (url.endsWith("/git/commits")) return route.fulfill({ json: { sha: "nc" } });
+    if (url.includes("/git/refs/heads/")) return route.fulfill({ json: {} });
+    return route.fulfill({ status: 404, json: {} });
+  });
+  await page.goto("/#/announcements");
+  await expect(page.getByRole("heading", { name: "Announcements", level: 1 })).toBeVisible();
+  await page.getByLabel("Title").fill("Big update");
+  await page.getByLabel("Description").fill("New games are here.");
+  await page.getByLabel("Picture").setInputFiles({ name: "pic.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64") });
+  await page.getByRole("button", { name: "Post" }).click();
+  await expect(page.getByText("Posted.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Big update" })).toBeVisible();
+  const saved = JSON.parse(Buffer.from(files["web/content.json"] as string, "base64").toString());
+  expect(saved.announcements.items[0]).toMatchObject({ title: "Big update", text: "New games are here." });
+  expect(saved.announcements.items[0].image).toMatch(/^\/logos\/news-.+\.png$/);
+  expect(Object.keys(files).some((k) => /^web\/public\/logos\/news-/.test(k))).toBe(true);
+});
+
 test("editor: add a box and a picture, set their size, and publish them", async ({ page }) => {
   const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64");
   const blobs: { content: string; encoding: string }[] = [];

@@ -5,14 +5,15 @@ import { Avatar, Icon, type IconName, Settings } from "./Settings";
 import { ContentContext, normalize, PUBLISHED } from "./content";
 import { Downloader } from "./Downloader";
 import { GamesPage, HomePage, NotFound, SignedOut } from "./pages";
+import { AnnouncementsPage, UnreadBadge, useUnread } from "./Announcements";
 import "@fontsource-variable/space-grotesk";
 import "./vortex.css";
 
 const Manage = lazy(() => import("./Manage").then((m) => ({ default: m.Manage })));
 const Admin = lazy(() => import("./Admin").then((m) => ({ default: m.Admin })));
 
-type Route = "home" | "games" | "downloader" | "admin" | "manage" | "notfound";
-const ROUTES: Route[] = ["games", "downloader", "admin", "manage"];
+type Route = "home" | "games" | "downloader" | "announcements" | "admin" | "manage" | "notfound";
+const ROUTES: Route[] = ["games", "downloader", "announcements", "admin", "manage"];
 
 function readRoute(): Route {
   const r = location.hash.replace(/^#\/?/, "").split(/[/?]/)[0] as Route;
@@ -52,7 +53,7 @@ export function VortexApp() {
   }, []);
 
   useEffect(() => {
-    const page = { home: "", games: content.games.title, downloader: content.downloader.title, admin: "Editor", manage: "Admin", notfound: "Page not found" }[route];
+    const page = { home: "", games: content.games.title, downloader: content.downloader.title, announcements: content.announcements.title, admin: "Editor", manage: "Admin", notfound: "Page not found" }[route];
     document.title = page ? `${page} · ${content.site.name}` : content.site.name;
   }, [route]);
 
@@ -61,7 +62,9 @@ export function VortexApp() {
     { r: "home", label: "Home", icon: "home", show: true },
     { r: "games", label: s.games.title, icon: "games", show: s.games.visible },
     { r: "downloader", label: s.downloader.title, icon: "download", show: s.downloader.visible },
+    { r: "announcements", label: s.announcements.title, icon: "megaphone", show: s.announcements.visible },
   ];
+  const unread = useUnread();
   const name = prefs.name.trim() || nameFromEmail(email);
   const accent = prefs.accent || content.site.accent;
   const avatar = prefs.avatar || gravatar || "";
@@ -90,7 +93,7 @@ export function VortexApp() {
             <p className="vx-side-label">Browse</p>
             {nav.filter((n) => n.show).map((n) => (
               <a key={n.r} href={n.r === "home" ? "#/" : `#/${n.r}`} aria-current={route === n.r ? "page" : undefined}>
-                <Icon name={n.icon} />{n.label}
+                <Icon name={n.icon} />{n.label}{n.r === "announcements" && <UnreadBadge count={unread} />}
               </a>
             ))}
             {OTHER_SITE.url && (
@@ -119,7 +122,7 @@ export function VortexApp() {
                   <Icon name="chevron-right" />
                 </button>
                 {nav.filter((n) => n.show).map((n) => (
-                  <a key={n.r} href={n.r === "home" ? "#/" : `#/${n.r}`} aria-current={route === n.r ? "page" : undefined}>{n.label}</a>
+                  <a key={n.r} href={n.r === "home" ? "#/" : `#/${n.r}`} aria-current={route === n.r ? "page" : undefined}>{n.label}{n.r === "announcements" && <UnreadBadge count={unread} />}</a>
                 ))}
                 {OTHER_SITE.url && <a href={OTHER_SITE.url} className="vx-site-switch">{OTHER_SITE.label}</a>}
                 {(editor || route === "manage" || route === "admin") && (
@@ -156,6 +159,7 @@ export function VortexApp() {
             {route === "notfound" && <NotFound />}
             {route === "games" && <GamesPage />}
             {route === "downloader" && <Downloader />}
+            {route === "announcements" && <AnnouncementsPage editor={editor} />}
             {route === "manage" && (
               <Suspense fallback={<div className="vx-card vx-skeleton" aria-hidden="true" />}><Manage /></Suspense>
             )}
