@@ -49,7 +49,7 @@ export function HomePage({ welcome }: { welcome?: Welcome }) {
       </div>
       {(edit || s.roblox.visible) && <RobloxCard />}
       <Blocks />
-      {!edit && <UpdateLogFor />}
+      <UpdateLogFor />
     </section>
   );
 }

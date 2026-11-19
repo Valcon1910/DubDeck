@@ -15,6 +15,9 @@ export interface EditApi {
   updateBlock: (id: string, patch: Partial<Block>) => void;
   moveBlock: (id: string, by: number) => void;
   removeBlock: (id: string) => void;
+  /** Update log: add an entry dated now, or remove one. */
+  addUpdate: () => void;
+  removeUpdate: (id: string) => void;
   setSection: (key: keyof Content["sections"], patch: Partial<SectionText>) => void;
   /** The block selected on the page (its settings show in the panel). */
   selected: string | null;
