@@ -25,9 +25,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Install the mail sender
+        run: npm install --no-save --no-package-lock nodemailer@6.9.16
       - name: Send
         env:
           HERENOW_API_KEY: ${{ secrets.HERENOW_API_KEY }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           EMAIL: ${{ inputs.email }}
           HERENOW_SLUG: ${{ inputs.site == 'real' && vars.HERENOW_SLUG || '' }}
           HERENOW_SITE_NAME: ${{ inputs.site == 'test' && 'Vortex Engine (test)' || 'Vortex Engine' }}

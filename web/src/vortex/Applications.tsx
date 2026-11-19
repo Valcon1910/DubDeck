@@ -7,7 +7,7 @@ const TOKEN = ""; // added by the site's /gh route
 export const APPLY_URL: string = __VORTEX_APPLY_URL__;
 
 export interface Application { id: string; email: string; name: string; reason: string; at: string }
-interface Decided { accepted: string[]; declined: string[]; testAccepted?: string[] }
+interface Decided { accepted: string[]; declined: string[]; testAccepted?: string[]; names?: Record<string, string> }
 
 const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 
@@ -71,6 +71,8 @@ export function ApplicationsCard() {
         readJson<Decided>(TOKEN, APPLICATIONS_PATH, "main").catch((): Decided => ({ accepted: [], declined: [] })),
       ]);
       const decided: Decided = { ...d, accepted: d.accepted ?? [], declined: d.declined ?? [] };
+      // The name goes into the "you got in" email.
+      if (a.name) decided.names = { ...(d.names ?? {}), [a.email]: a.name };
       const files = testMode
         ? [
           { path: APPLICATIONS_PATH, text: json({ ...decided, testAccepted: add(decided.testAccepted ?? [], a.email) }) },
@@ -213,6 +215,58 @@ export function ApplyPageCard() {
             </button>
             {APPLY_URL && <a className="vx-btn vx-btn-ghost" href={APPLY_URL} target="_blank" rel="noopener noreferrer">Open it</a>}
             {state === "saved" && !dirty && <span className="vx-muted vx-small" role="status">Saved. The page updates in about two minutes.</span>}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+export const EMAIL_PATH = "config/email.json";
+
+/** Admin → Email: the "you got in" email accepted people get. */
+export function EmailCard() {
+  const [saved, setSaved] = useState<{ subject?: string; body?: string } | null>(null);
+  const [t, setT] = useState<{ subject?: string; body?: string } | null>(null);
+  const [state, setState] = useState<"idle" | "saving" | "saved">("idle");
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    readJson<{ subject?: string; body?: string }>(TOKEN, EMAIL_PATH, "main").catch(() => ({})).then((v) => { setSaved(v); setT(v); });
+  }, []);
+  const dirty = !!t && JSON.stringify(t) !== JSON.stringify(saved);
+  async function save() {
+    if (!t) return;
+    setState("saving"); setErr(null);
+    try {
+      await commit(TOKEN, "Update the welcome email (from the Admin page)", [{ path: EMAIL_PATH, text: json(t) }], "main");
+      setSaved(t); setState("saved");
+    } catch (e) {
+      setErr(e instanceof GitHubError ? e.message : "Couldn't save. Try again."); setState("idle");
+    }
+  }
+  const preview = (s: string) => s.replace(/\{name\}/g, "Ana").replace(/\{email\}/g, "ana@school.edu.co").replace(/\{site\}/g, "https://your-site.here.now/");
+  return (
+    <div className="vx-card vx-stack">
+      <h2 className="vx-card-title">"You got in" email</h2>
+      <p className="vx-muted vx-small">
+        Sent from your Gmail when you accept someone. Use <code>{"{name}"}</code>, <code>{"{email}"}</code> and <code>{"{site}"}</code> (the site's address).
+        Until the Gmail secrets are added, here.now's own invite email goes out instead.
+      </p>
+      {err && <p className="vx-alert vx-alert-error" role="alert">{err}</p>}
+      {!t ? <p className="vx-muted vx-small"><span className="vx-spinner" aria-hidden="true" />Loading…</p> : (
+        <>
+          <label className="vx-field"><span className="vx-small">Subject</span>
+            <input maxLength={200} value={t.subject ?? ""} onChange={(e) => { setT({ ...t, subject: e.target.value }); setState("idle"); }} /></label>
+          <label className="vx-field"><span className="vx-small">Message</span>
+            <textarea rows={8} maxLength={5000} value={t.body ?? ""} onChange={(e) => { setT({ ...t, body: e.target.value }); setState("idle"); }} /></label>
+          <details><summary className="vx-small">Preview</summary>
+            <div className="vx-email-preview"><strong>{preview(t.subject ?? "")}</strong><p>{preview(t.body ?? "")}</p></div>
+          </details>
+          <div className="vx-action-row">
+            <button className="vx-btn vx-btn-primary" disabled={!dirty || state === "saving"} onClick={save}>
+              {state === "saving" && <span className="vx-spinner" aria-hidden="true" />}{state === "saving" ? "Saving…" : "Save email"}
+            </button>
+            {state === "saved" && !dirty && <span className="vx-muted vx-small" role="status">Saved. Used for the next person you accept.</span>}
           </div>
         </>
       )}

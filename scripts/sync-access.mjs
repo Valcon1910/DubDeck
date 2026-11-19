@@ -9,6 +9,7 @@
 
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { findSlug, SITE_NAME } from "./herenow-site.mjs";
+import { sendWelcome } from "./mail.mjs";
 
 const API = (process.env.HERENOW_API ?? "https://here.now").replace(/\/$/, "");
 const CLIENT = process.env.HERENOW_CLIENT ?? "github-actions/dubdeck-access";
@@ -129,13 +130,19 @@ if (KEY_NAME && existsSync(ACCEPTED_FILE)) {
   let accepted = [];
   try { accepted = (JSON.parse(readFileSync(ACCEPTED_FILE, "utf8"))[KEY_NAME] ?? []).map((e) => String(e).toLowerCase()); } catch {}
   const invite = diff(want.emails, have.emails).filter((e) => accepted.includes(e));
-  if (invite.length) {
+  let names = {};
+  try { names = JSON.parse(readFileSync(ACCEPTED_FILE, "utf8")).names ?? {}; } catch {}
+  // Your own email from Gmail when set up; here.now's invite email otherwise.
+  const viaGmail = await sendWelcome(invite, `https://${SLUG}.here.now/`, names);
+  if (viaGmail.length) console.log(`Sent your "you got in" email from Gmail to ${viaGmail.length} accepted applicant(s).`);
+  const rest = invite.filter((e) => !viaGmail.includes(e));
+  if (rest.length) {
     const res = await fetch(`${API}/api/v1/publish/${encodeURIComponent(SLUG)}/access/invites`, {
       method: "POST",
       headers: { Authorization: `Bearer ${KEY}`, "X-HereNow-Client": CLIENT, "Content-Type": "application/json" },
-      body: JSON.stringify({ emails: invite }),
+      body: JSON.stringify({ emails: rest }),
     });
-    if (res.ok) console.log(`Sent the "you got in" email to ${invite.length} accepted applicant(s).`);
+    if (res.ok) console.log(`Sent here.now's invite email to ${rest.length} accepted applicant(s).`);
     else console.log(`::warning::Couldn't send the invite email(s): ${res.status} ${(await res.text()).slice(0, 200)}`);
   }
 }
