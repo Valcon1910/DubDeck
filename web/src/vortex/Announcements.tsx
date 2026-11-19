@@ -1,40 +1,9 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useState } from "react";
 import { CONTENT_PATH, commit, GitHubError, readJson } from "./github";
 import { imageSrc, normalize, useContent, type Announcement } from "./content";
 import { prepareImage } from "./images";
 
 const TOKEN = ""; // added by the site's /gh route
-const SEEN_KEY = "vortex.seenAnnouncements";
-
-/* ---------- unread count (kept in this browser) ---------- */
-
-const listeners = new Set<() => void>();
-function readSeen(): string[] {
-  try { return JSON.parse(localStorage.getItem(SEEN_KEY) ?? "[]"); } catch { return []; }
-}
-let seenCache = JSON.stringify(readSeen());
-function markSeen(ids: string[]) {
-  const next = JSON.stringify([...new Set([...readSeen(), ...ids])]);
-  try { localStorage.setItem(SEEN_KEY, next); } catch { /* private window: counts reset next visit */ }
-  seenCache = next;
-  listeners.forEach((l) => l());
-}
-const subscribe = (l: () => void) => { listeners.add(l); return () => listeners.delete(l); };
-
-/** How many announcements this person hasn't opened yet. */
-export function useUnread(): number {
-  const items = useContent().announcements.items;
-  const seen = useSyncExternalStore(subscribe, () => seenCache);
-  const s = new Set<string>(JSON.parse(seen));
-  return items.filter((a) => !s.has(a.id)).length;
-}
-
-/** The red circle with the number of unread announcements. */
-export function UnreadBadge({ count, className = "" }: { count: number; className?: string }) {
-  if (!count) return null;
-  return <span className={`vx-unread ${className}`} aria-label={`${count} unread`}>{count > 99 ? "99+" : count}</span>;
-}
-
 /* ---------- the page ---------- */
 
 export function AnnouncementsPage({ editor }: { editor: boolean }) {
@@ -43,8 +12,6 @@ export function AnnouncementsPage({ editor }: { editor: boolean }) {
   const [removed, setRemoved] = useState<string[]>([]);
   const items = [...posted, ...c.announcements.items].filter((a) => !removed.includes(a.id));
 
-  // Opening the page reads them all.
-  useEffect(() => { markSeen(items.map((a) => a.id)); }, [items.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function remove(a: Announcement) {
     if (!confirm(`Delete “${a.title}”?`)) return;
@@ -119,7 +86,6 @@ function Composer({ onPosted }: { onPosted: (a: Announcement) => void }) {
       const withImage = image ? [...files, { path: `web/public${path}`, bytes: new Uint8Array(await image.blob.arrayBuffer()) }] : files;
       await commit(TOKEN, `Post the announcement “${a.title.slice(0, 60)}”`, withImage);
       onPosted({ ...a, image: image ? image.url : "" });
-      markSeen([id]);
       setTitle(""); setText(""); setImage(null);
       setMsg({ ok: true, text: "Posted. Everyone sees it in about a minute." });
     } catch (err) {

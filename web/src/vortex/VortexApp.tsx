@@ -5,7 +5,7 @@ import { Avatar, Icon, type IconName, Settings } from "./Settings";
 import { ContentContext, normalize, PUBLISHED } from "./content";
 import { Downloader } from "./Downloader";
 import { GamesPage, HomePage, NotFound, SignedOut } from "./pages";
-import { AnnouncementsPage, UnreadBadge, useUnread } from "./Announcements";
+import { AnnouncementsPage } from "./Announcements";
 import "@fontsource-variable/space-grotesk";
 import "./vortex.css";
 
@@ -64,7 +64,6 @@ export function VortexApp() {
     { r: "downloader", label: s.downloader.title, icon: "download", show: s.downloader.visible },
     { r: "announcements", label: s.announcements.title, icon: "megaphone", show: s.announcements.visible },
   ];
-  const unread = useUnread();
   const name = prefs.name.trim() || nameFromEmail(email);
   const accent = prefs.accent || content.site.accent;
   const avatar = prefs.avatar || gravatar || "";
@@ -93,7 +92,7 @@ export function VortexApp() {
             <p className="vx-side-label">Browse</p>
             {nav.filter((n) => n.show).map((n) => (
               <a key={n.r} href={n.r === "home" ? "#/" : `#/${n.r}`} aria-current={route === n.r ? "page" : undefined}>
-                <Icon name={n.icon} />{n.label}{n.r === "announcements" && <UnreadBadge count={unread} />}
+                <Icon name={n.icon} />{n.label}
               </a>
             ))}
             {OTHER_SITE.url && (
@@ -122,7 +121,7 @@ export function VortexApp() {
                   <Icon name="chevron-right" />
                 </button>
                 {nav.filter((n) => n.show).map((n) => (
-                  <a key={n.r} href={n.r === "home" ? "#/" : `#/${n.r}`} aria-current={route === n.r ? "page" : undefined}>{n.label}{n.r === "announcements" && <UnreadBadge count={unread} />}</a>
+                  <a key={n.r} href={n.r === "home" ? "#/" : `#/${n.r}`} aria-current={route === n.r ? "page" : undefined}>{n.label}</a>
                 ))}
                 {OTHER_SITE.url && <a href={OTHER_SITE.url} className="vx-site-switch">{OTHER_SITE.label}</a>}
                 {(editor || route === "manage" || route === "admin") && (
