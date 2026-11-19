@@ -6,8 +6,8 @@
   "applyIntro": "Ask for access here. If you're accepted, you'll get an email with the site's address.",
   "emailLabel": "Your email (the one you'll sign in with)",
   "nameLabel": "Your name",
-  "reasonLabel": "Who do you know here? (optional)",
+  "reasonLabel": "Why do you want to enter Vortex? (optional)",
   "applyButton": "Apply",
-  "success": "Sent! You'll get an email if you're accepted.",
+  "success": "Sent! You'll get an email if you're accepted with the sites address.",
   "accent": "#7c5cff"
 }
