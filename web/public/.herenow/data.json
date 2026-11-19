@@ -1,0 +1,13 @@
+{
+  "collections": {
+    "votes": {
+      "fields": {
+        "poll": { "type": "string", "required": true, "maxLength": 64, "trim": true },
+        "option": { "type": "integer", "required": true, "minimum": 0, "maximum": 19 },
+        "voter": { "type": "string", "required": true, "maxLength": 200, "trim": true }
+      },
+      "access": { "read": "public", "insert": "public", "update": "owner", "delete": "owner" },
+      "rateLimit": "60/hour/ip"
+    }
+  }
+}

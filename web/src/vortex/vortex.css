@@ -491,9 +491,21 @@ button.vx-vchan:hover { color: var(--vx-accent); }
 .vx-side-hide, .vx-side-show { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--ink); border-radius: 10px; padding: 6px; cursor: pointer; font: inherit; font-weight: 500; }
 .vx-side-hide:hover, .vx-side-show:hover { border-color: var(--vx-accent); color: var(--vx-accent); }
 .vx-side-show { padding: 7px 12px 7px 8px; margin-right: 8px; }
-.vx-shell.vx-side-hidden { grid-template-columns: minmax(0, 1fr); }
-.vx-shell.vx-side-hidden .vx-side { display: none; }
+/* Hiding/showing the side menu slides it out/in while the page widens/narrows. */
+@media (min-width: 861px) {
+  .vx-shell { overflow-x: clip; transition: grid-template-columns 0.32s var(--ease); }
+  .vx-side { width: 240px; transition: transform 0.32s var(--ease), opacity 0.25s var(--ease), visibility 0s; }
+  .vx-shell.vx-side-hidden { grid-template-columns: 0px minmax(0, 1fr); }
+  .vx-shell.vx-side-hidden .vx-side { transform: translateX(-100%); opacity: 0; visibility: hidden; pointer-events: none; transition: transform 0.32s var(--ease), opacity 0.25s var(--ease), visibility 0s 0.32s; }
+  .vx-topnav { animation: vx-fade-in 0.3s var(--ease); }
+}
+@keyframes vx-fade-in { from { opacity: 0; transform: translateY(-4px); } }
 .vx-shell.vx-side-hidden .vx-top { justify-content: flex-end; }
+
+/* Switching light/dark fades the colours instead of flashing. */
+:root.vx-theming, :root.vx-theming *, :root.vx-theming *::before, :root.vx-theming *::after {
+  transition: background-color 0.4s var(--ease), color 0.4s var(--ease), border-color 0.4s var(--ease), fill 0.4s var(--ease), stroke 0.4s var(--ease), box-shadow 0.4s var(--ease) !important;
+}
 
 /* Welcome */
 .vx-welcome { display: flex; align-items: center; gap: 18px; padding: 20px; border-radius: 18px; color: var(--ink);
@@ -688,3 +700,26 @@ body.vx-resizing, body.vx-resizing * { cursor: grabbing !important; user-select:
 .vx-composer-old { position: relative; display: grid; }
 .vx-composer-old button { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border-radius: 50%; border: 0; background: #000a; color: #fff; cursor: pointer; }
 .vx-composer-old img { width: 100%; height: 80px; object-fit: cover; border-radius: 10px; }
+/* Polls */
+.vx-poll { display: grid; gap: 8px; margin-top: 8px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; }
+.vx-poll ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.vx-poll-opt { position: relative; width: 100%; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 14px; overflow: hidden;
+  border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.vx-poll-opt:hover:not(:disabled) { border-color: var(--vx-accent); }
+.vx-poll-opt.mine { border-color: var(--vx-accent); font-weight: 600; }
+.vx-poll-bar { position: absolute; inset: 0 auto 0 0; background: color-mix(in srgb, var(--vx-accent) 18%, transparent); transition: width 0.5s var(--ease); }
+.vx-poll-label, .vx-poll-pct { position: relative; }
+.vx-poll-label { flex: 1; overflow-wrap: anywhere; }
+.vx-poll-pct { font-variant-numeric: tabular-nums; font-weight: 600; }
+.vx-poll-edit input { width: 100%; }
+.vx-poll-edit .vx-row { flex-wrap: nowrap; }
+/* Update log */
+.vx-updates { margin-top: 32px; padding-top: 20px; border-top: 1px solid var(--border); }
+.vx-updates h2 { margin: 0 0 14px; font-size: 1.15rem; }
+.vx-updates ol { list-style: none; margin: 0; padding: 0 0 0 18px; border-left: 2px solid var(--border); display: grid; gap: 18px; }
+.vx-updates li { position: relative; display: grid; gap: 4px; }
+.vx-updates li::before { content: ""; position: absolute; left: -24px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: var(--vx-accent); box-shadow: 0 0 0 3px var(--bg, #f5f4f0); }
+.vx-updates time { font-weight: 700; font-size: 14px; }
+.vx-updates p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.vx-updates .vx-btn { justify-self: start; }
+.vx-updates textarea { width: 100%; }

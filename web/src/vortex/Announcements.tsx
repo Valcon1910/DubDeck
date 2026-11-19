@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useVisitorEmail } from "./admins";
 import { CONTENT_PATH, commit, GitHubError, readJson } from "./github";
 import { imageSrc, normalize, useContent, type Announcement, type Attachment } from "./content";
 import { prepareImage } from "./images";
@@ -56,6 +57,7 @@ export function AnnouncementsPage({ editor }: { editor: boolean }) {
                     {a.date && <time className="vx-muted vx-small" dateTime={a.date}>{new Date(a.date).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}</time>}
                     {a.text && <p>{a.text}</p>}
                     <Attachments files={a.files} />
+                    {a.poll && <Poll id={a.id} poll={a.poll} owner={editor} />}
                     {editor && (
                       <div className="vx-row">
                         <button type="button" className="vx-btn vx-btn-ghost vx-btn-sm" onClick={() => setEditing(a.id)}>Edit</button>
@@ -69,6 +71,104 @@ export function AnnouncementsPage({ editor }: { editor: boolean }) {
           </ul>
         )}
     </section>
+  );
+}
+
+/* ---------- polls (votes live in the site's Site Data "votes" collection) ---------- */
+
+interface Vote { poll: string; option: number; voter: string; at: string }
+
+/** Everyone's votes, one per person (their latest). */
+async function loadVotes(): Promise<Vote[]> {
+  const all: Vote[] = [];
+  let cursor = "";
+  for (let page = 0; page < 50; page++) {
+    const res = await fetch(`./.herenow/data/votes?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(String(res.status));
+    const body = await res.json() as Record<string, unknown>;
+    const rows = (body.records ?? body.items ?? body.data ?? []) as Record<string, unknown>[];
+    for (const r of rows) {
+      const d = (r.data && typeof r.data === "object" ? r.data : r) as Record<string, unknown>;
+      all.push({ poll: String(d.poll ?? ""), option: Number(d.option), voter: String(d.voter ?? ""), at: String(r.created_at ?? r.createdAt ?? "") });
+    }
+    cursor = String(body.nextCursor ?? body.next_cursor ?? "");
+    if (!cursor || !rows.length) break;
+  }
+  return all;
+}
+
+let votesCache: Promise<Vote[]> | null = null;
+const votes = (fresh = false) => (votesCache && !fresh ? votesCache : (votesCache = loadVotes()));
+
+function voterId(email: string | null): string {
+  if (email) return email;
+  try {
+    let id = localStorage.getItem("vortex.voter");
+    if (!id) { id = `anon-${crypto.randomUUID()}`; localStorage.setItem("vortex.voter", id); }
+    return id;
+  } catch { return "anon"; }
+}
+
+function Poll({ id, poll, owner }: { id: string; poll: { question: string; options: string[] }; owner: boolean }) {
+  const email = useVisitorEmail();
+  const me = voterId(email);
+  const [counts, setCounts] = useState<number[] | null>(null);
+  const [mine, setMine] = useState<number | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const tally = useCallback((list: Vote[]) => {
+    const latest = new Map<string, Vote>();
+    for (const v of list.filter((x) => x.poll === id && x.option >= 0 && x.option < poll.options.length).sort((a, b) => a.at.localeCompare(b.at))) latest.set(v.voter, v);
+    const c = poll.options.map(() => 0);
+    for (const v of latest.values()) c[v.option]++;
+    setCounts(c);
+    setMine(latest.get(me)?.option ?? null);
+  }, [id, poll.options, me]);
+
+  useEffect(() => { votes().then(tally).catch(() => setErr("Voting isn't available right now.")); }, [tally]);
+
+  async function vote(option: number) {
+    setBusy(true); setErr(null);
+    try {
+      const res = await fetch("./.herenow/data/votes", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ poll: id, option, voter: me }),
+      });
+      if (res.status === 429) throw new Error("Too many votes from here. Try again later.");
+      if (!res.ok) throw new Error("Couldn't save your vote. Try again.");
+      tally(await votes(true));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Couldn't save your vote.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const total = counts?.reduce((a, b) => a + b, 0) ?? 0;
+  const show = mine !== null || owner;
+  return (
+    <div className="vx-poll" role="group" aria-label={poll.question || "Poll"}>
+      {poll.question && <strong>{poll.question}</strong>}
+      <ul>
+        {poll.options.map((o, i) => {
+          const n = counts?.[i] ?? 0;
+          const pct = total ? Math.round((n / total) * 100) : 0;
+          return (
+            <li key={i}>
+              <button type="button" className={`vx-poll-opt ${mine === i ? "mine" : ""}`} disabled={busy || !counts} aria-pressed={mine === i} onClick={() => vote(i)}>
+                {show && <span className="vx-poll-bar" style={{ width: `${pct}%` }} aria-hidden="true" />}
+                <span className="vx-poll-label">{mine === i && "✓ "}{o}</span>
+                {show && <span className="vx-poll-pct">{pct}%</span>}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      <span className="vx-muted vx-small">
+        {err ?? (counts === null ? "Loading votes…" : `${total} vote${total === 1 ? "" : "s"}${mine !== null ? " · tap another option to change your vote" : ""}`)}
+      </span>
+    </div>
   );
 }
 
@@ -113,6 +213,7 @@ function Composer({ initial, onDone, onCancel }: { initial?: Announcement; onDon
   const [title, setTitle] = useState(initial?.title ?? "");
   const [text, setText] = useState(initial?.text ?? "");
   const [keepImage, setKeepImage] = useState(!!initial?.image);
+  const [poll, setPoll] = useState<{ question: string; options: string[] } | null>(initial?.poll ? { ...initial.poll, options: [...initial.poll.options] } : null);
   const [files, setFiles] = useState<Pending[]>(() => (initial?.files ?? []).map((f) => ({
     key: f.path, name: f.name, kind: f.kind, ext: "", url: (f as Attachment & { url?: string }).url ?? f.path, path: f.path,
   })));
@@ -141,6 +242,8 @@ function Composer({ initial, onDone, onCancel }: { initial?: Announcement; onDon
   async function post(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) { setMsg({ ok: false, text: "Give it a title." }); return; }
+    const options = poll?.options.map((o) => o.trim()).filter(Boolean) ?? [];
+    if (poll && options.length < 2) { setMsg({ ok: false, text: "A poll needs at least two options." }); return; }
     setBusy(true); setMsg(null);
     try {
       const id = initial?.id ?? crypto.randomUUID();
@@ -154,6 +257,7 @@ function Composer({ initial, onDone, onCancel }: { initial?: Announcement; onDon
         id, title: title.trim(), text: text.trim(), image: keepImage ? initial?.image ?? "" : "",
         date: initial?.date || new Date().toISOString(),
         files: attached.map(({ path, name, kind }) => ({ path, name, kind })),
+        ...(poll ? { poll: { question: poll.question.trim(), options } } : {}),
       };
       // Start from the newest saved copy so nothing saved meanwhile is lost.
       const cur = normalize(await readJson(TOKEN, CONTENT_PATH));
@@ -167,7 +271,7 @@ function Composer({ initial, onDone, onCancel }: { initial?: Announcement; onDon
       await commit(TOKEN, `${initial ? "Edit" : "Post"} the announcement “${a.title.slice(0, 60)}”`, changes);
       onDone({ ...a, files: attached.map(({ path, name, kind, url }) => ({ path, name, kind, url })) as Attachment[] });
       if (initial) return;
-      setTitle(""); setText(""); setFiles([]);
+      setTitle(""); setText(""); setFiles([]); setPoll(null);
       setMsg({ ok: true, text: "Posted. Everyone sees it in about a minute." });
     } catch (err) {
       setMsg({ ok: false, text: err instanceof GitHubError ? err.message : "Couldn't post it. Try again." });
@@ -198,7 +302,29 @@ function Composer({ initial, onDone, onCancel }: { initial?: Announcement; onDon
           ))}
         </ul>
       )}
+      {poll && (
+        <fieldset className="vx-fieldset vx-poll-edit">
+          <legend>Poll</legend>
+          <input aria-label="Poll question" placeholder="Question (optional)" maxLength={300} value={poll.question} onChange={(e) => setPoll({ ...poll, question: e.target.value })} />
+          {poll.options.map((o, i) => (
+            <div key={i} className="vx-row">
+              <input aria-label={`Option ${i + 1}`} placeholder={`Option ${i + 1}`} maxLength={120} value={o}
+                onChange={(e) => setPoll({ ...poll, options: poll.options.map((x, j) => (j === i ? e.target.value : x)) })} />
+              {poll.options.length > 2 && (
+                <button type="button" className="vx-btn vx-btn-ghost vx-btn-sm" aria-label={`Remove option ${i + 1}`}
+                  onClick={() => setPoll({ ...poll, options: poll.options.filter((_, j) => j !== i) })}>×</button>
+              )}
+            </div>
+          ))}
+          <div className="vx-row">
+            {poll.options.length < 10 && <button type="button" className="vx-btn vx-btn-ghost vx-btn-sm" onClick={() => setPoll({ ...poll, options: [...poll.options, ""] })}>Add option</button>}
+            <button type="button" className="vx-btn vx-btn-ghost vx-btn-sm vx-danger" onClick={() => setPoll(null)}>Remove poll</button>
+          </div>
+          {initial?.poll && <p className="vx-muted vx-small">Changing the options' order changes which option earlier votes count for.</p>}
+        </fieldset>
+      )}
       <div className="vx-action-row">
+        {!poll && <button type="button" className="vx-btn vx-btn-ghost" onClick={() => setPoll({ question: "", options: ["", ""] })}>Add poll</button>}
         <label className="vx-btn vx-btn-ghost vx-upload">
           Upload File
           <input type="file" multiple accept={ACCEPT} hidden aria-label="Upload File" onChange={(e) => { void pick(e.target.files); e.target.value = ""; }} />

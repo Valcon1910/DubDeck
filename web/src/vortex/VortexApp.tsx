@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
-import { isEditor, useVisitorEmail } from "./admins";
+import { isEditor, isOwner, useVisitorEmail } from "./admins";
 import { isSignedOut, logout, nameFromEmail, signBackIn, useApplyAppearance, useGravatar, usePrefs } from "./account";
 import { Avatar, Icon, type IconName, Settings } from "./Settings";
 import { ContentContext, normalize, PUBLISHED } from "./content";
@@ -158,7 +158,7 @@ export function VortexApp() {
             {route === "notfound" && <NotFound />}
             {route === "games" && <GamesPage />}
             {route === "downloader" && <Downloader />}
-            {route === "announcements" && <AnnouncementsPage editor={editor} />}
+            {route === "announcements" && <AnnouncementsPage editor={isOwner(email ?? "")} />}
             {route === "manage" && (
               <Suspense fallback={<div className="vx-card vx-skeleton" aria-hidden="true" />}><Manage /></Suspense>
             )}
@@ -175,7 +175,8 @@ export function VortexApp() {
 
 function VortexMark() {
   // A hexagon (tech) with three blades swirling around a core: one engine,
-  // many uses (games, docs, utilities).
+  // many uses (games, docs, utilities). Dark outline, inner bevel and a soft
+  // highlight give it depth at small sizes.
   return (
     <svg viewBox="0 0 48 48" width="34" height="34" aria-hidden="true" className="vx-mark">
       <defs>
@@ -183,21 +184,37 @@ function VortexMark() {
           <stop offset="0" stopColor="var(--vx-accent)" />
           <stop offset="1" stopColor="#06b6d4" />
         </linearGradient>
+        <linearGradient id="vx-shine" x1="24" y1="3" x2="24" y2="26" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#fff" stopOpacity="0.45" />
+          <stop offset="1" stopColor="#fff" stopOpacity="0" />
+        </linearGradient>
       </defs>
-      <path d="M24 2.5 42.6 13.25v21.5L24 45.5 5.4 34.75v-21.5Z" fill="url(#vx-g)" stroke="url(#vx-g)" strokeWidth="3" strokeLinejoin="round" />
-      <g fill="none" stroke="#fff" strokeWidth="3.2" strokeLinecap="round">
-        <path d="M24 12.5a11.5 11.5 0 0 1 10 5.8" />
-        <path d="M34 29.7a11.5 11.5 0 0 1-10 5.8" transform="rotate(0 24 24)" />
-        <path d="M14 29.7A11.5 11.5 0 0 1 14 18.3" />
+      {/* outline + body */}
+      <path d="M24 2 43.05 13v22L24 46 4.95 35V13Z" fill="#1e1b4b" />
+      <path d="M24 4.3 41.05 14.15v19.7L24 43.7 6.95 33.85v-19.7Z" fill="url(#vx-g)" />
+      {/* highlight on the upper half and an inner bevel line */}
+      <path d="M24 4.3 41.05 14.15V24H6.95v-9.85Z" fill="url(#vx-shine)" />
+      <path d="M24 7.6 38.2 15.8v16.4L24 40.4 9.8 32.2V15.8Z" fill="none" stroke="#fff" strokeOpacity="0.28" strokeWidth="1" strokeLinejoin="round" />
+      {/* blades: dark shadow first, then white */}
+      <g fill="none" strokeLinecap="round" strokeWidth="3.4">
+        <g stroke="#1e1b4b" strokeOpacity="0.35" transform="translate(0.6 0.9)">
+          <path d="M24 12.5a11.5 11.5 0 0 1 10 5.8" /><path d="M34 29.7a11.5 11.5 0 0 1-10 5.8" /><path d="M14 29.7A11.5 11.5 0 0 1 14 18.3" />
+        </g>
+        <g stroke="#fff">
+          <path d="M24 12.5a11.5 11.5 0 0 1 10 5.8" /><path d="M34 29.7a11.5 11.5 0 0 1-10 5.8" /><path d="M14 29.7A11.5 11.5 0 0 1 14 18.3" />
+        </g>
       </g>
-      <g fill="none" stroke="#fff" strokeOpacity="0.55" strokeWidth="2.4" strokeLinecap="round">
+      <g fill="none" stroke="#fff" strokeOpacity="0.6" strokeWidth="2.2" strokeLinecap="round">
         <path d="M24 17.5a6.5 6.5 0 0 1 6.5 6.5" />
         <path d="M24 30.5a6.5 6.5 0 0 1-6.5-6.5" />
       </g>
+      {/* core and blade tips */}
+      <circle cx="24" cy="24" r="3.6" fill="#1e1b4b" fillOpacity="0.35" />
       <circle cx="24" cy="24" r="2.8" fill="#fff" />
-      <circle cx="34" cy="18.3" r="1.8" fill="#fff" />
-      <circle cx="24" cy="35.5" r="1.8" fill="#fff" />
-      <circle cx="14" cy="18.3" r="1.8" fill="#fff" />
+      <circle cx="24" cy="24" r="1.1" fill="url(#vx-g)" />
+      <g fill="#fff" stroke="#1e1b4b" strokeOpacity="0.35" strokeWidth="0.8">
+        <circle cx="34" cy="18.3" r="2" /><circle cx="24" cy="35.5" r="2" /><circle cx="14" cy="18.3" r="2" />
+      </g>
     </svg>
   );
 }

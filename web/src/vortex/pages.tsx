@@ -2,6 +2,8 @@ import { useRef, useState } from "react";
 import { imageSrc, logoFor, safeUrl, useContent, type Content, type Game } from "./content";
 import { Blocks, LinkButton, PictureButton, ResizeHandles } from "./Blocks";
 import { Editable, useEdit } from "./editable";
+import { UpdateLog } from "./UpdateLog";
+import { isOwner, useVisitorEmail } from "./admins";
 
 export interface Welcome { name: string; avatar: string }
 
@@ -47,8 +49,14 @@ export function HomePage({ welcome }: { welcome?: Welcome }) {
       </div>
       {(edit || s.roblox.visible) && <RobloxCard />}
       <Blocks />
+      {!edit && <UpdateLogFor />}
     </section>
   );
+}
+
+function UpdateLogFor() {
+  const email = useVisitorEmail();
+  return <UpdateLog owner={isOwner(email ?? "")} />;
 }
 
 /** The Roblox group: name on top, then the logo with the description at its right. */

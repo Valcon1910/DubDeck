@@ -17,6 +17,8 @@ export interface Prefs {
   reduceMotion: boolean;
 }
 
+let themeTimer = 0;
+
 export const DEFAULT_PREFS: Prefs = { name: "", avatar: "", theme: "system", accent: "", textSize: "normal", reduceMotion: false };
 
 const storeKey = (email: string | null) => `vortex.prefs.${email ?? "guest"}`;
@@ -56,7 +58,15 @@ export function useApplyAppearance(prefs: Prefs) {
     const media = window.matchMedia?.("(prefers-color-scheme: dark)");
     const apply = () => {
       const dark = prefs.theme === "dark" || (prefs.theme === "system" && !!media?.matches);
-      document.documentElement.dataset.theme = dark ? "dark" : "light";
+      const root = document.documentElement;
+      const next = dark ? "dark" : "light";
+      if (root.dataset.theme && root.dataset.theme !== next) {
+        // Fade between light and dark (see .vx-theming in vortex.css).
+        root.classList.add("vx-theming");
+        clearTimeout(themeTimer);
+        themeTimer = window.setTimeout(() => root.classList.remove("vx-theming"), 450);
+      }
+      root.dataset.theme = next;
     };
     apply();
     const root = document.documentElement;

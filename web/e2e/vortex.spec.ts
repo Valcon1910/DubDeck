@@ -261,11 +261,25 @@ test("announcements: an editor posts one with a title, picture and description",
     { name: "Rules v2.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF") },
   ]);
   await expect(page.locator(".vx-composer-files li")).toHaveCount(3);
+  const votes: unknown[] = [{ data: { poll: "x", option: 0, voter: "other" } }];
+  await page.route("**/.herenow/data/votes**", async (route) => {
+    if (route.request().method() === "POST") { votes.push({ data: route.request().postDataJSON(), created_at: "2026-11-19T12:00:00Z" }); return route.fulfill({ status: 201, json: {} }); }
+    return route.fulfill({ json: { records: votes } });
+  });
+  await page.getByRole("button", { name: "Add poll" }).click();
+  await page.getByLabel("Poll question").fill("Best game?");
+  await page.getByLabel("Option 1").fill("Krunker");
+  await page.getByLabel("Option 2").fill("Slope");
   await page.getByRole("button", { name: "Post" }).click();
   await expect(page.getByText("Posted.")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Big update" })).toBeVisible();
   const saved = JSON.parse(Buffer.from(files["web/content.json"] as string, "base64").toString());
-  expect(saved.announcements.items[0]).toMatchObject({ title: "Big update", text: "New games are here." });
+  expect(saved.announcements.items[0]).toMatchObject({ title: "Big update", text: "New games are here.", poll: { question: "Best game?", options: ["Krunker", "Slope"] } });
+  const id = saved.announcements.items[0].id;
+  await page.getByRole("button", { name: "Slope" }).click();
+  await expect(page.getByText("1 vote")).toBeVisible();
+  expect(votes.at(-1)).toMatchObject({ data: { poll: id, option: 1, voter: "valentino.104688@anglo.edu.co" } });
+  await expect(page.getByRole("button", { name: /Slope/ })).toContainText("100%");
   expect(saved.announcements.items[0].files.map((f: { kind: string }) => f.kind)).toEqual(["image", "video", "file"]);
   expect(saved.announcements.items[0].files[2]).toMatchObject({ name: "Rules v2.pdf", path: expect.stringMatching(/^\/files\/.+-Rules-v2\.pdf$/) });
   expect(Object.keys(files).filter((k) => k.startsWith("web/public/files/"))).toHaveLength(3);

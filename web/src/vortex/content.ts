@@ -52,6 +52,8 @@ export interface Announcement {
   image: string;
   /** Photos, videos and files. */
   files: Attachment[];
+  /** Optional poll people vote on. */
+  poll?: { question: string; options: string[] };
   /** When it was posted (ISO date). */
   date: string;
 }
@@ -63,7 +65,11 @@ export interface Content {
   games: { title: string; subtitle: string; intro: string; empty: string; items: Game[] };
   downloader: { title: string; intro: string; footer: string };
   announcements: { title: string; subtitle: string; items: Announcement[] };
+  /** Update log: one entry per real publish (date), with what changed. */
+  updates: Update[];
 }
+
+export interface Update { id: string; date: string; text: string }
 
 export const PUBLISHED = published as unknown as Content;
 
@@ -83,6 +89,10 @@ export function normalize(raw: unknown): Content {
       })),
     },
     sections: { games: sec("games"), docs: sec("docs"), slides: sec("slides"), chat: sec("chat"), announcements: sec("announcements"), downloader: sec("downloader"), roblox: sec("roblox") },
+    updates: (Array.isArray(r.updates) ? r.updates : d.updates ?? [])
+      .map((u) => ({ id: String(u.id ?? u.date ?? ""), date: String(u.date ?? ""), text: String(u.text ?? "").slice(0, 5000) }))
+      .filter((u) => u.id && u.date)
+      .sort((a, b) => b.date.localeCompare(a.date)),
     announcements: {
       ...d.announcements, ...(r.announcements ?? {}),
       items: (r.announcements?.items ?? d.announcements?.items ?? []).map((a) => ({
@@ -91,6 +101,9 @@ export function normalize(raw: unknown): Content {
         files: (Array.isArray(a.files) ? a.files : [])
           .filter((f) => f && /^\/files\/[\w.-]+$/.test(String(f.path)))
           .map((f) => ({ path: String(f.path), name: String(f.name ?? "").slice(0, 200) || "file", kind: (["image", "video"].includes(f.kind) ? f.kind : "file") as Attachment["kind"] })),
+        ...(a.poll && Array.isArray(a.poll.options) && a.poll.options.length >= 2
+          ? { poll: { question: String(a.poll.question ?? "").slice(0, 300), options: a.poll.options.slice(0, 20).map((o) => String(o).slice(0, 120)) } }
+          : {}),
       })).sort((a, b) => b.date.localeCompare(a.date)),
     },
     games: {
