@@ -266,7 +266,7 @@ test("admin page: accept an application lets them in and records it", async ({ p
   await expect(page.getByText("new@kid.co is in.")).toBeVisible();
   await expect(page.locator(".vx-app")).toHaveCount(0);
   expect(files["config/allowed-emails.json"]).toEqual({ emails: ["friend@x.co", "new@kid.co", "valentino.104688@anglo.edu.co"], domains: [] });
-  expect(files["config/applications.json"]).toEqual({ accepted: ["new@kid.co"], declined: [] });
+  expect(files["config/applications.json"]).toEqual({ accepted: ["new@kid.co"], declined: [], names: { "new@kid.co": "New Kid" } });
 });
 
 test("editor: add a box and a picture, set their size, and publish them", async ({ page }) => {

@@ -670,3 +670,5 @@ body.vx-resizing, body.vx-resizing * { cursor: grabbing !important; user-select:
 .vx-test-mode { border: 1px dashed var(--vx-line, #2a2f40); border-radius: 12px; padding: 10px 12px; display: grid; gap: 8px; }
 .vx-field { display: grid; gap: 4px; }
 .vx-field textarea, .vx-field input:not([type=color]) { width: 100%; }
+.vx-email-preview { white-space: pre-wrap; padding: 12px; border-radius: 10px; border: 1px solid var(--vx-line, #2a2f40); margin-top: 8px; }
+.vx-email-preview p { margin: 8px 0 0; }
