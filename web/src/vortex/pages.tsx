@@ -9,13 +9,13 @@ export function HomePage({ welcome }: { welcome?: Welcome }) {
   const c = useContent();
   const edit = useEdit();
   const s = c.sections;
-  const tiles: { key: keyof Content["sections"]; href: string | null; external?: boolean }[] = [
+  const tiles: { key: keyof Content["sections"]; href: string | null; external?: boolean; wide?: boolean }[] = [
     { key: "downloader", href: "#/downloader" },
     { key: "games", href: "#/games" },
     { key: "docs", href: null },
     { key: "slides", href: null },
-    { key: "chat", href: null },
-    { key: "announcements", href: null },
+    { key: "chat", href: null, wide: true },
+    { key: "announcements", href: null, wide: true },
   ];
   return (
     <section className="vx-page">
@@ -39,7 +39,7 @@ export function HomePage({ welcome }: { welcome?: Welcome }) {
               )}
             </>
           );
-          const cls = `vx-tile ${t.href ? "vx-tile-live" : ""} ${edit && !s[t.key].visible ? "vx-hidden-tile" : ""}`;
+          const cls = `vx-tile ${t.wide ? "vx-tile-wide" : ""} ${t.href ? "vx-tile-live" : ""} ${edit && !s[t.key].visible ? "vx-hidden-tile" : ""}`;
           return t.href && !edit
             ? <a key={t.key} className={cls} href={t.href} {...(t.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}>{body}</a>
             : <div key={t.key} className={cls} aria-disabled={t.href ? undefined : "true"}>{body}</div>;
