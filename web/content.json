@@ -27,6 +27,18 @@
       "visible": true,
       "label": "Coming soon"
     },
+    "chat": {
+      "title": "Chat",
+      "description": "Talk with everyone on Vortex.",
+      "visible": true,
+      "label": "Coming soon"
+    },
+    "announcements": {
+      "title": "Announcements",
+      "description": "News and updates.",
+      "visible": true,
+      "label": "News"
+    },
     "downloader": {
       "title": "Downloader",
       "description": "Save YouTube videos and audio.",
@@ -40,19 +52,20 @@
       "visible": true,
       "url": "https://www.roblox.com/communities/35223720/Randomized-Gaming-Studios#!/about",
       "logo": "/roblox-group.png"
-    },
-    "chat": {
-      "title": "Chat",
-      "description": "Talk with everyone on Vortex.",
-      "visible": true,
-      "label": "Coming soon"
-    },
-    "announcements": {
-      "title": "Announcements",
-      "description": "News and updates.",
-      "visible": true,
-      "label": "News"
     }
+  },
+  "announcements": {
+    "title": "Announcements",
+    "subtitle": "News and updates from Vortex.",
+    "items": [
+      {
+        "id": "a527c45a-6c3e-46bc-a109-0624be3d42e6",
+        "title": "Chat is coming next!",
+        "text": "",
+        "image": "",
+        "date": "2026-11-19T17:41:06.042Z"
+      }
+    ]
   },
   "games": {
     "title": "Games",
@@ -94,10 +107,5 @@
     "title": "Downloader",
     "intro": "Paste a YouTube link, choose a format and save it to this device.",
     "footer": "Only download videos you have the right to keep."
-  },
-  "announcements": {
-    "title": "Announcements",
-    "subtitle": "News and updates from Vortex.",
-    "items": []
   }
 }
