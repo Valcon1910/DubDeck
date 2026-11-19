@@ -662,3 +662,5 @@ body.vx-resizing, body.vx-resizing * { cursor: grabbing !important; user-select:
 .vx-ed { grid-template-columns: minmax(0, 1fr); width: 100%; }
 .vx-ed-status .vx-editable { max-width: 100%; }
 
+/* Chat and Announcements: twice a normal tile's width (full width on phones). */
+@media (min-width: 365px) { .vx-tile-wide { grid-column: span 2; } }
