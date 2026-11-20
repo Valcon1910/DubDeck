@@ -297,7 +297,7 @@ function coupe(k: Kit): Spec {
 
 function furia(k: Kit): Spec {
   const wheels: Wheel[] = [
-    { x: 0.94, z: 1.5, r: 0.42, w: 0.3, front: true }, { x: -0.94, z: 1.5, r: 0.42, w: 0.3, front: true },
+    { x: 0.94, z: 1.5, r: 0.39, w: 0.3, front: true }, { x: -0.94, z: 1.5, r: 0.39, w: 0.3, front: true },
     { x: 0.96, z: -1.4, r: 0.44, w: 0.36, front: false }, { x: -0.96, z: -1.4, r: 0.44, w: 0.36, front: false },
   ];
   loft(k, arches([
@@ -306,9 +306,9 @@ function furia(k: Kit): Spec {
     st(-1.0, 0.25, 0.4, 1.06, 0.88, 1.0, 0.92, 0.66, "paint", "gloss"),
     st(-0.3, 0.25, 0.4, 1.02, 0.8, 0.9, 1.16, 0.58, "glass", "gloss"),
     st(0.5, 0.25, 0.4, 1.0, 0.78, 0.9, 1.14, 0.6, "paint", "glass"),
-    st(1.2, 0.25, 0.4, 1.0, 0.72, 0.92, 0.74, 0.84),
-    st(1.95, 0.25, 0.38, 0.98, 0.62, 0.9, 0.64, 0.8),
-    st(2.5, 0.3, 0.36, 0.88, 0.46, 0.8, 0.48, 0.7),
+    st(1.2, 0.25, 0.4, 1.0, 0.76, 0.92, 0.78, 0.84),
+    st(1.95, 0.25, 0.38, 0.98, 0.68, 0.9, 0.7, 0.8),
+    st(2.5, 0.28, 0.36, 0.9, 0.52, 0.82, 0.54, 0.72),
   ], wheels, "round", 0.06), { cap: "paint" });
   // Big side intakes ahead of the rear wheels.
   k.both((s) => {
@@ -319,8 +319,8 @@ function furia(k: Kit): Spec {
   k.box("trim", 1.4, 0.16, 0.06, 0, 0.36, 2.48);
   k.box("trim", 1.8, 0.04, 0.35, 0, 0.26, 2.4);
   k.both((s) => {
-    k.box("lamp", 0.42, 0.045, 0.2, s * 0.62, 0.55, 2.2, -0.15, s * 0.32);
-    k.box("trim", 0.45, 0.09, 0.2, s * 0.62, 0.52, 2.19, -0.15, s * 0.32);
+    k.box("lamp", 0.42, 0.045, 0.2, s * 0.62, 0.61, 2.2, -0.15, s * 0.32);
+    k.box("trim", 0.45, 0.09, 0.2, s * 0.62, 0.58, 2.19, -0.15, s * 0.32);
     k.box("trim", 0.06, 0.03, 0.4, s * 0.22, 0.735, 1.5, -0.12);
   });
   // Rear: thin tail lights, diffuser fins, high exhausts, mirrors on stalks.
@@ -373,7 +373,7 @@ function rig(k: Kit): Spec {
 
 function zenith(k: Kit): Spec {
   const wheels: Wheel[] = [
-    { x: 0.94, z: 1.45, r: 0.41, w: 0.32, front: true }, { x: -0.94, z: 1.45, r: 0.41, w: 0.32, front: true },
+    { x: 0.94, z: 1.45, r: 0.39, w: 0.32, front: true }, { x: -0.94, z: 1.45, r: 0.39, w: 0.32, front: true },
     { x: 0.96, z: -1.4, r: 0.44, w: 0.38, front: false }, { x: -0.96, z: -1.4, r: 0.44, w: 0.38, front: false },
   ];
   loft(k, arches([
@@ -382,8 +382,8 @@ function zenith(k: Kit): Spec {
     st(-0.95, 0.26, 0.42, 1.05, 0.92, 0.98, 1.0, 0.72, "paint", "glass"),
     st(-0.35, 0.26, 0.42, 1.03, 0.86, 0.94, 1.18, 0.6, "glass", "gloss"),
     st(0.42, 0.26, 0.42, 1.0, 0.84, 0.94, 1.16, 0.62, "paint", "glass"),
-    st(1.12, 0.26, 0.42, 1.0, 0.78, 0.95, 0.8, 0.86),
-    st(1.95, 0.26, 0.4, 0.98, 0.64, 0.92, 0.66, 0.82),
+    st(1.12, 0.26, 0.42, 1.0, 0.8, 0.95, 0.82, 0.86),
+    st(1.95, 0.26, 0.4, 0.98, 0.68, 0.92, 0.7, 0.82),
     st(2.42, 0.3, 0.38, 0.9, 0.5, 0.82, 0.52, 0.74),
   ], wheels, "round", 0.05), { cap: "paint" });
   // Big side scoops, hood vent, angular headlights, wide grille, dive planes.

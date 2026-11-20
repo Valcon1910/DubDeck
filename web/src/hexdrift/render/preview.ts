@@ -64,8 +64,11 @@ export class Preview {
     const w = this.canvas.clientWidth || 1, h = this.canvas.clientHeight || 1;
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
-    // Keep the whole car in view on narrow screens.
-    this.camera.fov = w / h < 1.2 ? 40 : 34;
+    // Keep the whole car (the truck is the longest) in view on narrow screens.
+    const narrow = w / h < 1.2;
+    this.camera.fov = narrow ? 40 : 34;
+    this.camera.position.set(0, narrow ? 3 : 2.6, narrow ? 10.5 : 8.6);
+    this.camera.lookAt(0, 0.7, 0);
     this.camera.updateProjectionMatrix();
   }
 
