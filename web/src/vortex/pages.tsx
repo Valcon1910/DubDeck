@@ -116,6 +116,15 @@ export function GamesPage() {
         <Editable as="h1" path="games.title" placeholder="Page title" />
         <Editable as="p" className="vx-muted" path="games.intro" placeholder="Introduction (optional)" multiline />
       </header>
+      <a className="vx-featured" href="#/hexdrift">
+        <span className="vx-featured-art" aria-hidden="true"><span /></span>
+        <span className="vx-featured-text">
+          <span className="vx-eyebrow">New</span>
+          <strong>Hexdrift</strong>
+          <span className="vx-muted vx-small">Time-trial racing built into Vortex. Five maps, medals, and it plays on phones, keyboards and gamepads.</span>
+        </span>
+        <span className="vx-featured-go">Play</span>
+      </a>
       <Editable as="h2" className="vx-subtitle" path="games.subtitle" placeholder="Subtitle" />
       {items.length === 0 && !edit && <p className="vx-empty">{g.empty}</p>}
       {items.length === 0 && edit && (
