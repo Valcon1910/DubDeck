@@ -331,8 +331,9 @@ test("update log: shown at the bottom of Home and edited in the Editor", async (
   await page.goto("/#/admin");
   const log = page.locator(".vx-updates");
   await log.scrollIntoViewIfNeeded();
+  const before = await log.locator("li").count();
   await log.getByRole("button", { name: "Add entry" }).click();
-  await expect(log.locator("li")).toHaveCount(2);
+  await expect(log.locator("li")).toHaveCount(before + 1);
   const first = log.locator("li").first().locator("[contenteditable]");
   await first.click();
   await first.pressSequentially("Faster pages");
@@ -341,7 +342,7 @@ test("update log: shown at the bottom of Home and edited in the Editor", async (
   await expect(page.getByText("Saved permanently")).toBeVisible();
   const i = tree.findIndex((f) => f.path === "web/content.json");
   const saved = JSON.parse(Buffer.from(blobs[Number(tree[i].sha.slice(1))].content, "base64").toString());
-  expect(saved.updates).toHaveLength(2);
+  expect(saved.updates).toHaveLength(before + 1);
   expect(saved.updates[0].text).toBe("Faster pages");
 });
 

@@ -455,14 +455,14 @@ function MemberPicker({ exclude, chosen, onPick, multi }: { exclude: string[]; c
   return (
     <div className="vx-stack">
       <input className="vx-chat-search" type="search" placeholder="Search people" aria-label="Search people" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
-      <ul className="vx-people">
+      <ul className="vx-chat-people">
         {list.length === 0 && <li className="vx-muted vx-small">Nobody to add.</li>}
         {list.map((p) => (
           <li key={p.email}>
-            <button type="button" className="vx-person" aria-pressed={multi ? chosen.includes(p.email) : undefined} onClick={() => onPick(p.email)}>
+            <button type="button" className="vx-chat-person" aria-pressed={multi ? chosen.includes(p.email) : undefined} onClick={() => onPick(p.email)}>
               <Avatar src={p.avatar} name={displayName(p, p.email)} size={34} />
               <span><strong>{displayName(p, p.email)}</strong><em>{p.email}</em></span>
-              {multi && <span className="vx-check" aria-hidden="true">{chosen.includes(p.email) ? "✓" : ""}</span>}
+              {multi && <span className="vx-chat-tick" aria-hidden="true">{chosen.includes(p.email) ? "✓" : ""}</span>}
             </button>
           </li>
         ))}
@@ -587,11 +587,11 @@ function GroupInfo({ c, onClose }: { c: Conversation; onClose: () => void }) {
       </div>
 
       <h3 className="vx-small">{people.length} members</h3>
-      <ul className="vx-people">
+      <ul className="vx-chat-people">
         {people.map((p) => {
           const prof: Profile | undefined = profiles.get(p.email);
           return (
-            <li key={p.email} className="vx-person">
+            <li key={p.email} className="vx-chat-person">
               <Avatar src={prof?.avatar ?? ""} name={displayName(prof, p.email)} size={34} />
               <span><strong>{displayName(prof, p.email)}{p.email === me ? " (you)" : ""}</strong><em>{p.role === "admin" ? "Group admin" : p.email}</em></span>
               {admin && p.email !== me && (

@@ -97,8 +97,8 @@ function Shell({ email, prefs, setPrefs, gravatar }: { email: string | null; pre
       <div className={`vx vx-shell ${sideHidden ? "vx-side-hidden" : ""}`} style={{ ["--vx-accent" as string]: accent }}>
         <aside className={`vx-side ${drawer ? "open" : ""}`} aria-label="Main">
           <div className="vx-side-head">
-            <a className="vx-brand" href="#/" aria-label={`${content.site.name} home`}>
-              <VortexMark />
+            <a className="vx-brand vx-brand-side" href="#/" aria-label={`${content.site.name} home`}>
+              <VortexMark size={46} />
               <BrandName name={content.site.name} />
             </a>
             <button type="button" className="vx-side-hide" aria-label="Hide menu" title="Hide menu"
@@ -131,6 +131,11 @@ function Shell({ email, prefs, setPrefs, gravatar }: { email: string | null; pre
               <Icon name="menu" />
             </button>
             <a className="vx-brand vx-brand-mobile" href="#/" aria-label={`${content.site.name} home`}><VortexMark /></a>
+            {sideHidden && (
+              <a className="vx-brand vx-brand-top" href="#/" aria-label={`${content.site.name} home`}>
+                <VortexMark size={40} /><BrandName name={content.site.name} />
+              </a>
+            )}
             {sideHidden && (
               <nav className="vx-topnav" aria-label="Main">
                 <button type="button" className="vx-side-show" aria-label="Show side menu" title="Show side menu" onClick={() => toggleSide(false)}>
@@ -192,12 +197,12 @@ function Shell({ email, prefs, setPrefs, gravatar }: { email: string | null; pre
   );
 }
 
-function VortexMark() {
+function VortexMark({ size = 34 }: { size?: number }) {
   // A hexagon (tech) with three blades swirling around a core: one engine,
   // many uses (games, docs, utilities). Dark outline, inner bevel and a soft
   // highlight give it depth at small sizes.
   return (
-    <svg viewBox="0 0 48 48" width="34" height="34" aria-hidden="true" className="vx-mark">
+    <svg viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" className="vx-mark">
       <defs>
         <linearGradient id="vx-g" x1="4" y1="2" x2="44" y2="46" gradientUnits="userSpaceOnUse">
           <stop offset="0" stopColor="var(--vx-accent)" />

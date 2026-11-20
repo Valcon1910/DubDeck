@@ -107,7 +107,7 @@ test("groups: create with an icon, add and remove people, outsiders can't see it
   await ann.getByRole("dialog").getByRole("button", { name: /Cy/ }).click();
   await ann.getByRole("dialog").getByRole("button", { name: /^Add 1/ }).click();
   await expect(cy.locator(".vx-chat-item", { hasText: name })).toBeVisible();
-  await ann.getByRole("dialog").locator(".vx-person", { hasText: "bob@x.test" }).getByRole("button", { name: "Remove" }).click();
+  await ann.getByRole("dialog").locator(".vx-chat-person", { hasText: "bob@x.test" }).getByRole("button", { name: "Remove" }).click();
   await expect(bob.locator(".vx-chat-item", { hasText: name })).toHaveCount(0);
   await expect(ann.getByRole("dialog")).toContainText("2 members");
 });

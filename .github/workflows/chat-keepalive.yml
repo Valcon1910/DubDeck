@@ -1,0 +1,40 @@
+name: Keep Chat awake
+
+# Supabase pauses a free project after 7 days without use. This touches the
+# database every 2 days so that never happens, and wakes the project if it
+# was paused anyway. The site also starts it when Chat finds Supabase asleep.
+on:
+  schedule:
+    - cron: "17 6 */2 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - name: Wake or touch the Chat database
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ] || [ -z "$SUPABASE_PROJECT_REF" ]; then echo "Chat isn't set up yet."; exit 0; fi
+          API="https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF"
+          AUTH="Authorization: Bearer $SUPABASE_ACCESS_TOKEN"
+          status=$(curl -s -H "$AUTH" "$API" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>console.log(JSON.parse(d||'{}').status||'unknown'))")
+          echo "Project status: $status"
+          if [ "$status" = "INACTIVE" ] || [ "$status" = "PAUSED" ]; then
+            curl -sf -X POST -H "$AUTH" "$API/restore" > /dev/null || { echo "::error::Supabase didn't accept the wake-up request. Open the project in the Supabase dashboard and press Restore."; exit 1; }
+            echo "Waking the project up…"
+            for i in $(seq 1 40); do
+              sleep 15
+              status=$(curl -s -H "$AUTH" "$API" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>console.log(JSON.parse(d||'{}').status||'unknown'))")
+              [ "$status" = "ACTIVE_HEALTHY" ] && break
+            done
+            echo "Project status: $status"
+          fi
+          curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{"query":"select count(*) from public.messages"}' "$API/database/query" > /dev/null \
+            && echo "Chat database touched." || echo "::warning::Couldn't reach the database yet (status $status)."

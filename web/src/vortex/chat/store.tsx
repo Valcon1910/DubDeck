@@ -3,6 +3,7 @@
 // proxy route) adds the visitor's verified email, and Supabase answers with a
 // session for it. Supabase's library is only downloaded once Chat is used.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { dispatch } from "../github";
 import type { RealtimePostgresChangesPayload, SupabaseClient } from "@supabase/supabase-js";
 
 export const CHAT_ON = __VORTEX_CHAT__;
@@ -46,6 +47,17 @@ const Ctx = createContext<ChatValue | null>(null);
 export const useChat = () => useContext(Ctx);
 
 const NOTIFY_KEY = "vortex.chatNotify";
+const ASLEEP = "Chat was asleep and is waking up. This takes a few minutes; it opens on its own when ready.";
+
+/** Starts the "Keep Chat awake" workflow (at most every 10 minutes from this browser). */
+async function wake() {
+  try {
+    const last = Number(localStorage.getItem("vortex.chatWake") ?? 0);
+    if (Date.now() - last < 10 * 60_000) return;
+    localStorage.setItem("vortex.chatWake", String(Date.now()));
+  } catch { /* ignore */ }
+  try { await dispatch("chat-keepalive.yml", {}); } catch { /* the scheduled run will wake it */ }
+}
 
 export function displayName(p: Profile | undefined, email: string) {
   return p?.name?.trim() || email.split("@")[0];
@@ -89,9 +101,12 @@ export function ChatProvider({ email, owner, name, avatar, children }: Props) {
     if (!CHAT_ON || !email) return;
     let alive = true;
     let client: SupabaseClient | null = null;
+    let retryTimer: number | undefined;
     setStatus("loading");
     (async () => {
-      const res = await fetch("./chat-login", { method: "POST", credentials: "same-origin", cache: "no-store" });
+      const res = await fetch("./chat-login", { method: "POST", credentials: "same-origin", cache: "no-store" }).catch(() => null);
+      // A free Supabase project falls asleep after a week unused: start waking it.
+      if (!res || res.status >= 500) { await wake(); throw new Error(ASLEEP); }
       const s = await res.json().catch(() => null) as { url?: string; anonKey?: string; access_token?: string; refresh_token?: string; error?: string } | null;
       if (!res.ok || !s?.access_token || !s.url || !s.anonKey) throw new Error(s?.error || "Chat isn't available right now.");
       const { createClient } = await import("@supabase/supabase-js");
@@ -105,8 +120,9 @@ export function ChatProvider({ email, owner, name, avatar, children }: Props) {
       if (!alive) return;
       setError(e instanceof Error ? e.message : "Chat isn't available right now.");
       setStatus("error");
+      if (e instanceof Error && e.message === ASLEEP) retryTimer = window.setTimeout(() => setAttempt((a) => a + 1), 60_000);
     });
-    return () => { alive = false; void client?.removeAllChannels(); };
+    return () => { alive = false; window.clearTimeout(retryTimer); void client?.removeAllChannels(); };
   }, [email, attempt]);
 
   const loadProfiles = useCallback(async () => {

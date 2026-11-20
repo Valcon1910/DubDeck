@@ -25,58 +25,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  merge:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
-      - name: Merge test into main
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git config merge.vortexjson.driver "node scripts/merge-json.mjs %O %A %B"
-          VORTEX_MAIN=ours git merge --no-edit origin/test || { echo "::error::test and main changed the same lines of code. Ask Claude to resolve the conflict."; exit 1; }
-          # A dated entry in the home page's Update log for this publish.
-          node scripts/add-update.mjs && git commit -qam "Update log: publish of $(date -u +%Y-%m-%d)"
-          git push origin HEAD:main
-
+  # Each site is merged and published on one machine.
   publish:
-    needs: merge
-    if: always() && (needs.merge.result == 'success' || needs.merge.result == 'skipped')
     uses: ./.github/workflows/publish.yml
     with:
       site: real
+      merge: ${{ github.event_name == 'workflow_dispatch' && 'test' || '' }}
     secrets: inherit
 
   # Bring everything from main into test, so the test site never loses what
   # was added on the published site.
-  sync-test:
-    needs: merge
-    if: always() && (needs.merge.result == 'success' || needs.merge.result == 'skipped')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: test
-          fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Merge main into test
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git config merge.vortexjson.driver "node scripts/merge-json.mjs %O %A %B"
-          git fetch origin main
-          VORTEX_MAIN=theirs git merge --no-edit origin/main || { echo "::error::main and test changed the same lines of code. Ask Claude to resolve the conflict."; exit 1; }
-          git push origin HEAD:test
-
   publish-test:
-    needs: sync-test
+    needs: publish
     uses: ./.github/workflows/publish.yml
     with:
       site: test
+      merge: main
     secrets: inherit
