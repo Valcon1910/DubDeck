@@ -48,3 +48,10 @@ jobs:
           HERENOW_SITE_FILE: config/site-test.json
           HERENOW_ACCESS_FILE: config/allowed-emails-test.json
         run: node scripts/sync-access.mjs
+
+      - name: Update Chat members
+        if: env.SUPABASE_ACCESS_TOKEN != '' && env.SUPABASE_PROJECT_REF != ''
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: node scripts/chat-sync.mjs

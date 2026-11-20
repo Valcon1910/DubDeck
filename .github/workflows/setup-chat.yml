@@ -1,0 +1,104 @@
+name: Set up Chat
+
+# Run once after adding the SUPABASE_ACCESS_TOKEN and SUPABASE_PROJECT_REF
+# repository secrets (and again any time, it's safe to repeat). It:
+#   1. turns off Supabase's own sign-up (people only get in through Vortex),
+#   2. creates the chat tables, privacy rules and file storage,
+#   3. adds everyone on the access lists as Chat members,
+#   4. deploys the sign-in bridge (supabase/functions/vortex-login) with a new
+#      shared secret, also saved in here.now for the /chat-login route,
+#   5. checks the bridge works, then republishes the test site with Chat on.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: herenow-deploy
+  cancel-in-progress: false
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      HERENOW_API_KEY: ${{ secrets.HERENOW_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check the secrets
+        run: |
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "::error::Add the SUPABASE_ACCESS_TOKEN repository secret (Supabase → Account → Access Tokens)."; exit 1; }
+          test -n "$SUPABASE_PROJECT_REF" || { echo "::error::Add the SUPABASE_PROJECT_REF repository secret (the 20-letter id in your project's address)."; exit 1; }
+          test -n "$HERENOW_API_KEY" || { echo "::error::The HERENOW_API_KEY repository secret is missing."; exit 1; }
+          echo "$SUPABASE_PROJECT_REF" | grep -Eq '^[a-z0-9]{20}$' || { echo "::error::SUPABASE_PROJECT_REF should be the 20-letter id from https://<id>.supabase.co, not the whole address."; exit 1; }
+          code=$(curl -s -o /tmp/p.json -w '%{http_code}' -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF")
+          [ "$code" = 200 ] || { echo "::error::Supabase didn't accept the token for project $SUPABASE_PROJECT_REF (HTTP $code). Check both secrets, and that the project isn't paused."; exit 1; }
+          echo "Project: $(node -e "console.log(require('/tmp/p.json').name)") ($(node -e "console.log(require('/tmp/p.json').status)"))"
+
+      - name: Turn off Supabase sign-up
+        run: |
+          code=$(curl -s -o /tmp/a.txt -w '%{http_code}' -X PATCH -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" \
+            -d '{"disable_signup": true}' "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/config/auth")
+          [ "$code" = 200 ] || { echo "::error::Couldn't change the sign-up setting (HTTP $code): $(head -c 300 /tmp/a.txt)"; exit 1; }
+
+      - name: Create the chat database and members
+        run: node scripts/chat-sync.mjs --schema
+
+      - name: Make a new shared secret
+        run: |
+          SECRET=$(openssl rand -hex 32)
+          echo "::add-mask::$SECRET"
+          echo "CHAT_SECRET=$SECRET" >> "$GITHUB_ENV"
+
+      - name: Save the secret in Supabase
+        run: |
+          node -e 'process.stdout.write(JSON.stringify([{ name: "VORTEX_CHAT_SECRET", value: process.env.CHAT_SECRET }]))' > /tmp/s.json
+          code=$(curl -s -o /tmp/r.txt -w '%{http_code}' -X POST -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" \
+            --data @/tmp/s.json "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/secrets")
+          rm -f /tmp/s.json
+          [ "$code" = 200 ] || [ "$code" = 201 ] || { echo "::error::Couldn't save the secret in Supabase (HTTP $code)."; exit 1; }
+
+      - name: Save the secret in here.now (only sent to Supabase)
+        env:
+          VALUE: ${{ env.CHAT_SECRET }}
+        run: node scripts/herenow-variable.mjs VORTEX_CHAT_SECRET "$SUPABASE_PROJECT_REF.supabase.co"
+
+      - name: Deploy the sign-in bridge
+        run: npx -y supabase@2.122.1 functions deploy vortex-login --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt --use-api
+
+      - name: Check the sign-in bridge
+        run: |
+          F="https://$SUPABASE_PROJECT_REF.supabase.co/functions/v1/vortex-login"
+          OWNER=$(node -e "console.log(require('fs').readFileSync('web/src/vortex/admins.ts','utf8').match(/OWNER_EMAILS = \[\s*\"([^\"]+)\"/)[1])")
+          for i in 1 2 3 4 5 6; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$F" -H "x-vortex-email: $OWNER" -H "x-vortex-secret: wrong")
+            [ "$code" = 403 ] && break
+            echo "Waiting for the function to start ($code)…"; sleep 10
+          done
+          [ "$code" = 403 ] || { echo "::error::The bridge should refuse a wrong secret but answered HTTP $code."; exit 1; }
+          code=$(curl -s -o /tmp/l.json -w '%{http_code}' -X POST "$F" -H "x-vortex-email: $OWNER" -H "x-vortex-secret: $CHAT_SECRET")
+          node -e "const j=require('/tmp/l.json'); if(!j.access_token){console.log('::error::Sign-in failed (HTTP $code): '+(j.error||JSON.stringify(j).slice(0,200)));process.exit(1)}"
+          rm -f /tmp/l.json
+          echo "Sign-in bridge works."
+
+      - name: Republish the test site with Chat on
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy-test.yml --repo "$GITHUB_REPOSITORY" --ref main -f code_branch=claude/dubdeck-architecture-nxzvcz
+
+      - name: Summary
+        run: |
+          {
+            echo "### Chat is set up"
+            echo "The test site is being republished with Chat on (see *Publish code to test site*)."
+            echo "Chat reaches the real site the next time you publish it."
+          } >> "$GITHUB_STEP_SUMMARY"

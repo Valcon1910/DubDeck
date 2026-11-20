@@ -24,6 +24,9 @@ jobs:
       HERENOW_ACCESS_FILE: ${{ inputs.site == 'test' && 'config/allowed-emails-test.json' || 'config/allowed-emails.json' }}
       RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
       GH_EDIT_TOKEN: ${{ secrets.GH_EDIT_TOKEN }}
+      # Chat (Supabase). Without these, Chat shows "Coming soon".
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -54,6 +57,11 @@ jobs:
         env:
           VALUE: ${{ secrets.GH_EDIT_TOKEN }}
         run: node scripts/herenow-variable.mjs GITHUB_EDIT_TOKEN api.github.com
+
+      # Applies database changes and lets in anyone newly added to the access lists.
+      - name: Update Chat
+        if: env.SUPABASE_ACCESS_TOKEN != '' && env.SUPABASE_PROJECT_REF != ''
+        run: node scripts/chat-sync.mjs --schema
 
       - name: Install
         working-directory: web
