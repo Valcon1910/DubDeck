@@ -11,6 +11,8 @@ import { canFullscreen, disableGaming, enableGaming, enterFullscreen, isFullscre
 import { board, playerRecords, rankFor, recordRun, syncPending, worldRecords, type Entry, type Submitted } from "./online.ts";
 import { CHAT_ON, displayName, useChat, type Profile } from "../vortex/chat/store";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { MAX_POINTS, medalPoints, readLook, saveLook, SLOTS, type BodyDef, type Item, type Look, type Slot } from "./garage.ts";
+import { Preview } from "./render/preview.ts";
 import "./hexdrift.css";
 
 const MEDAL_NAME: Record<Exclude<Medal, null>, string> = { vortex: "Vortex", gold: "Gold", silver: "Silver", bronze: "Bronze" };
@@ -24,11 +26,13 @@ type View =
   | { kind: "menu" }
   | { kind: "play"; map: MapDef }
   | { kind: "records"; map: MapDef }
-  | { kind: "player"; email: string };
+  | { kind: "player"; email: string }
+  | { kind: "garage" };
 
 /** #/hexdrift, #/hexdrift/<map>, #/hexdrift/<map>/records, #/hexdrift/player/<email> */
 function readView(): View {
   const parts = location.hash.replace(/^#\/?/, "").split("/");
+  if (parts[1] === "garage") return { kind: "garage" };
   if (parts[1] === "player" && parts[2]) return { kind: "player", email: decodeURIComponent(parts[2]).toLowerCase() };
   const map = MAPS.find((m) => m.id === parts[1]);
   if (!map) return { kind: "menu" };
@@ -94,6 +98,7 @@ export function Hexdrift() {
         {view.kind === "play" ? <Play key={view.map.id} map={view.map} />
           : view.kind === "records" ? <Records key={view.map.id} map={view.map} />
           : view.kind === "player" ? <Player key={view.email} email={view.email} />
+          : view.kind === "garage" ? <Garage />
           : <Menu />}
         {toast && <div className="hx-toast" role="status">{toast}</div>}
       </div>
@@ -144,6 +149,7 @@ function Menu() {
         <div className="hx-menu-bar">
           {gaming ? <span className="hx-back hx-dim">Gaming Mode is on</span> : <a className="hx-back" href="#/games" aria-label="Back to Vortex">‹ Vortex</a>}
           <span className="hx-row-tight">
+            <a className="hx-gaming" href="#/hexdrift/garage">🔧 Garage</a>
             {sb && me && <a className="hx-gaming" href={`#/hexdrift/player/${encodeURIComponent(me)}`}>My records</a>}
             <GamingButton />
           </span>
@@ -339,7 +345,7 @@ function Play({ map }: { map: MapDef }) {
           });
         },
         onHidden() { pause(true); },
-      }, c, (Number(pref("hexdrift.cam", "0")) || 0) % 3);
+      }, c, (Number(pref("hexdrift.cam", "0")) || 0) % 3, readLook());
     } catch (e) {
       setError(e instanceof Error ? e.message : "This device can't show 3D graphics.");
       return () => c.dispose();
@@ -649,6 +655,95 @@ function Player({ email }: { email: string }) {
           })}
         </ol>
       )}
+    </div>
+  );
+}
+
+/** Pick your car and parts. Locked parts can be previewed but not used yet. */
+function Garage() {
+  const host = useRef<HTMLDivElement>(null);
+  const preview = useRef<Preview | null>(null);
+  const [points, setPoints] = useState<number | null>(null);
+  const [look, setLook] = useState<Look>(() => readLook());
+  const [trying, setTrying] = useState<Look | null>(null);
+  const [tab, setTab] = useState<Slot>("body");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    void allBests().then((m) => {
+      if (!alive) return;
+      const p = medalPoints(m);
+      setPoints(p);
+      setLook(readLook(p));
+    });
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    try { preview.current = new Preview(host.current!); } catch { setError("This device can't show 3D graphics."); }
+    return () => { preview.current?.dispose(); preview.current = null; };
+  }, []);
+
+  const shown = trying ?? look;
+  useEffect(() => { preview.current?.setLook(shown); }, [shown]);
+
+  const slot = SLOTS.find((s) => s.slot === tab)!;
+  const have = points ?? 0;
+  const pick = (it: Item | BodyDef) => {
+    const next = { ...look, [tab]: it.id };
+    if (tab === "trail") preview.current?.boost();
+    if (it.need > have) { setTrying(next); return; }
+    setTrying(null);
+    setLook(next);
+    saveLook(next);
+  };
+  const locked = trying ? SLOTS.find((s) => trying[s.slot] !== look[s.slot]) : null;
+  const lockedItem = locked ? locked.items.find((i) => i.id === trying![locked.slot]) : null;
+
+  return (
+    <div className="hx-menu hx-page hx-garage">
+      <header className="hx-menu-bar">
+        <a className="hx-back" href="#/hexdrift">‹ Maps</a>
+        <span className="hx-points" title="Your best medal on each map: bronze 1, silver 2, gold 3, Vortex 4">
+          <MedalIcon m="gold" size={14} /> {points ?? "…"} / {MAX_POINTS} medal points
+        </span>
+      </header>
+      <h1 className="hx-page-title">Garage</h1>
+      <div className="hx-preview" ref={host}>
+        {error && <p className="hx-dim">{error}</p>}
+        <p className="hx-preview-hint hx-dim">Drag to spin</p>
+        {lockedItem && (
+          <div className="hx-preview-lock" role="status">
+            🔒 {lockedItem.name}: unlocks at {lockedItem.need} medal points (you have {have}).
+            <button type="button" className="hx-btn" onClick={() => setTrying(null)}>Back to my car</button>
+          </div>
+        )}
+      </div>
+      <p className="hx-dim hx-small">Looks only: every car drives exactly the same, so records stay fair.</p>
+      <div className="hx-tabs" role="tablist">
+        {SLOTS.map((s) => (
+          <button key={s.slot} type="button" role="tab" aria-selected={tab === s.slot} className={tab === s.slot ? "on" : ""}
+            onClick={() => { setTab(s.slot); setTrying(null); }}>{s.label}</button>
+        ))}
+      </div>
+      <ul className="hx-parts" role="tabpanel" aria-label={slot.label}>
+        {slot.items.map((it) => {
+          const lock = it.need > have;
+          const on = look[tab] === it.id;
+          const color = (it as Item).color;
+          return (
+            <li key={it.id}>
+              <button type="button" className={`hx-part ${on ? "on" : ""} ${lock ? "locked" : ""} ${trying?.[tab] === it.id ? "trying" : ""}`}
+                aria-pressed={on} onClick={() => pick(it)}>
+                {color ? <span className="hx-swatch" style={{ background: color }} /> : it.id === "rainbow" ? <span className="hx-swatch hx-rainbow" /> : null}
+                <span className="hx-part-name">{it.name}</span>
+                <span className="hx-part-tag">{on ? "Equipped" : lock ? `🔒 ${it.need} pts` : it.need === 0 ? "Free" : "Unlocked"}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
