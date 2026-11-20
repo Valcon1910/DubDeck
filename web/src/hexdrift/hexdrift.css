@@ -87,3 +87,25 @@
 .hx-t-drift { width: 64px; height: 40px; font-size: 12px !important; grid-column: 1; grid-row: 1; }
 .hx-t-small { position: absolute; right: 14px; bottom: calc(max(14px, env(safe-area-inset-bottom)) + 160px); width: 44px; height: 44px; font-size: 18px !important; }
 .hx-play:has(.hx-touch) .hx-speed { right: auto; left: 18px; bottom: calc(max(14px, env(safe-area-inset-bottom)) + 92px); font-size: 28px; }
+
+/* ── Step 2: ghost splits, Gaming Mode, offline ── */
+.hx-small { font-size: 13px; }
+.hx-menu-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.hx-offline { margin: 10px 0 0; padding: 8px 12px; border-radius: 10px; background: rgba(255, 210, 61, 0.14); color: #ffe48a; font-size: 14px; }
+.hx-split { position: absolute; top: calc(max(10px, env(safe-area-inset-top)) + 70px); left: 0; right: 0; text-align: center; font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.hx-split:empty { display: none; }
+.hx-split[data-kind="ahead"] { color: #6dffb3; }
+.hx-split[data-kind="behind"] { color: #ff6b8a; }
+.hx-icon.off { opacity: 0.45; }
+.hx-gaming { position: relative; display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 99px; border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08); cursor: pointer; font-weight: 700; touch-action: none; }
+.hx-gaming.hx-icon { padding: 0; justify-content: center; border-radius: 10px; border: 0; background: rgba(0, 0, 0, 0.4); }
+.hx-gaming.on { background: linear-gradient(90deg, rgba(35, 184, 255, 0.35), rgba(179, 61, 255, 0.35)); border-color: transparent; }
+.hx-ring { width: 22px; height: 22px; transform: rotate(-90deg); flex: none; }
+.hx-ring circle { fill: none; stroke: rgba(255, 255, 255, 0.25); stroke-width: 4; }
+.hx-ring .hx-ring-fill { stroke: #6dffb3; stroke-dasharray: 94.3; stroke-dashoffset: 94.3; }
+.hx-gaming.holding .hx-ring-fill { stroke-dashoffset: 0; transition: stroke-dashoffset 3s linear; }
+.hx-tip { position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); width: min(440px, calc(100% - 32px)); z-index: 5;
+  display: flex; gap: 12px; align-items: center; padding: 12px 14px; border-radius: 14px; background: rgba(20, 17, 46, 0.95); border: 1px solid rgba(255, 255, 255, 0.15); font-size: 14px; }
+.hx-tip p { margin: 0; }
+.hx-tip { pointer-events: auto; }

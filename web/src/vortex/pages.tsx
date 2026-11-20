@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { imageSrc, logoFor, safeUrl, useContent, type Content, type Game } from "./content";
 import { Blocks, LinkButton, PictureButton, ResizeHandles } from "./Blocks";
 import { Editable, useEdit } from "./editable";
@@ -108,6 +108,11 @@ function RobloxCard() {
 
 export function GamesPage() {
   const g = useContent().games;
+  // Fetch Hexdrift quietly in the background, so it's saved for offline play.
+  useEffect(() => {
+    const idle = (window as { requestIdleCallback?: (f: () => void) => number }).requestIdleCallback ?? ((f: () => void) => setTimeout(f, 1500));
+    idle(() => { void import("../hexdrift/Hexdrift").catch(() => undefined); });
+  }, []);
   const edit = useEdit();
   const items = edit ? g.items : g.items.filter((x) => x.name.trim() && safeUrl(x.url));
   return (

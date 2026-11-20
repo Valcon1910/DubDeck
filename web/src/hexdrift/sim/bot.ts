@@ -6,7 +6,7 @@ import { newRace, pack, step, COUNTDOWN, HZ, type Race } from "./race.ts";
 import type { Track } from "./track.ts";
 
 export interface BotTuning { look: number; corner: number; gain: number }
-export const DEFAULT_BOT: BotTuning = { look: 3, corner: 22, gain: 2.4 };
+export const DEFAULT_BOT: BotTuning = { look: 4, corner: 15, gain: 2.4 };
 
 export function botInput(r: Race, at: { i: number }, tune: BotTuning = DEFAULT_BOT) {
   const { car, track } = r;

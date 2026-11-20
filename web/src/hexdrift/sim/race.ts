@@ -10,7 +10,7 @@ const DT = 1 / HZ;
 export const COUNTDOWN = 3 * HZ;
 
 // Handling (same for every car).
-const ENGINE = 36;
+const ENGINE = 22;
 const VMAX = 62;
 const BOOST = 80;
 const GRAVITY = 32;
@@ -116,9 +116,9 @@ export function step(r: Race, byte: number) {
     car.vx -= GRAVITY * DT * (0 - nx * ny); car.vy -= GRAVITY * DT * (1 - ny * ny); car.vz -= GRAVITY * DT * (0 - nz * ny);
 
     const sp = vf < 0 ? -vf : vf;
-    let target = -steer * 3.4 * Math.min(1, sp / 8) / (1 + sp / 70) * (vf < 0 ? -1 : 1);
+    let target = -steer * 2.7 * Math.min(1, sp / 8) / (1 + sp / 60) * (vf < 0 ? -1 : 1);
     if (drift) target *= 1.45;
-    car.yawRate += (target - car.yawRate) * Math.min(1, (ice ? 5 : 14) * DT);
+    car.yawRate += (target - car.yawRate) * Math.min(1, (ice ? 3.5 : 7) * DT);
     car.speed = vf; car.slip = vl;
   } else {
     car.vy -= GRAVITY * DT;
