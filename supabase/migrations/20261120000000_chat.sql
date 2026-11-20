@@ -352,3 +352,14 @@ create policy "chat files: admins delete" on storage.objects for delete to authe
 drop policy if exists "pics: delete own" on storage.objects;
 create policy "pics: delete own" on storage.objects for delete to authenticated
   using (bucket_id = 'pics' and owner_id = auth.uid()::text);
+
+-- "…is typing" signals: private live channels named typing:<conversation id>,
+-- which only that conversation's members can send to or hear.
+drop policy if exists "typing: members listen" on realtime.messages;
+create policy "typing: members listen" on realtime.messages for select to authenticated
+  using (realtime.messages.extension = 'broadcast' and realtime.topic() like 'typing:%'
+    and public.is_participant(public.folder_uuid(substr(realtime.topic(), 8))));
+drop policy if exists "typing: members send" on realtime.messages;
+create policy "typing: members send" on realtime.messages for insert to authenticated
+  with check (realtime.messages.extension = 'broadcast' and realtime.topic() like 'typing:%'
+    and public.is_participant(public.folder_uuid(substr(realtime.topic(), 8))));

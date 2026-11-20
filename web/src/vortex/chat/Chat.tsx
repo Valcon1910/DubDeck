@@ -126,6 +126,7 @@ function Thread({ c, onInfo }: { c: Conversation; onInfo: () => void }) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const urls = useSignedUrls();
+  const { typing, sendTyping, clearTyping } = useTyping(c.id);
 
   const markRead = useCallback(() => {
     if (!document.hidden) void sb!.rpc("mark_read", { p_id: c.id }).then(() => chat.reload());
@@ -153,7 +154,7 @@ function Thread({ c, onInfo }: { c: Conversation; onInfo: () => void }) {
     if (row?.conversation_id !== c.id) return;
     if (ch.table === "messages" && ch.eventType !== "DELETE") {
       setMessages((old) => merge(old, [row as unknown as Message]));
-      if (ch.eventType === "INSERT" && row.sender !== me) markRead();
+      if (ch.eventType === "INSERT" && row.sender !== me) { markRead(); clearTyping(row.sender as string); }
     }
     if (ch.table === "participants") void loadPeople();
   }), [chat, c.id, me, loadLatest, loadPeople, markRead]);
@@ -268,11 +269,69 @@ function Thread({ c, onInfo }: { c: Conversation; onInfo: () => void }) {
             </div>
           );
         })}
+        {typing.length > 0 && (
+          <div className="vx-msg vx-typing-row" aria-live="polite">
+            <span className="vx-msg-avatar"><Avatar src={profiles.get(typing[0])?.avatar ?? ""} name={displayName(profiles.get(typing[0]), typing[0])} size={30} /></span>
+            <div className="vx-msg-col">
+              {c.kind === "group" && <span className="vx-msg-name">{typingLabel(typing, profiles)}</span>}
+              <div className="vx-bubble vx-typing" aria-label={`${typingLabel(typing, profiles)} typing`}><i /><i /><i /></div>
+            </div>
+          </div>
+        )}
       </div>
 
-      <Composer c={c} reply={reply} editing={editing} onDone={() => { setReply(null); setEditing(null); stick.current = true; }} />
+      <Composer c={c} reply={reply} editing={editing} onTyping={sendTyping} onDone={() => { setReply(null); setEditing(null); stick.current = true; }} />
     </>
   );
+}
+
+/**
+ * "…is typing": short live signals on a private channel per conversation (only
+ * its members can join). Sent at most every 2.5 s while typing; shown for 5 s
+ * after the last one, or until that person sends or clears their message.
+ */
+function useTyping(cid: string) {
+  const { sb, me } = useChat()!;
+  const [seen, setSeen] = useState<Record<string, number>>({});
+  const channel = useRef<ReturnType<NonNullable<typeof sb>["channel"]> | null>(null);
+  const last = useRef(0);
+
+  useEffect(() => {
+    const ch = sb!.channel(`typing:${cid}`, { config: { private: true, broadcast: { self: false } } });
+    ch.on("broadcast", { event: "typing" }, ({ payload }) => {
+      const p = payload as { email?: string; stop?: boolean };
+      if (!p.email || p.email === me) return;
+      setSeen((s) => ({ ...s, [p.email!]: p.stop ? 0 : Date.now() }));
+    }).subscribe();
+    channel.current = ch;
+    const tick = window.setInterval(() => setSeen((s) => {
+      const live = Object.entries(s).filter(([, t]) => Date.now() - t < 5000);
+      return live.length === Object.keys(s).length ? s : Object.fromEntries(live);
+    }), 1000);
+    return () => { window.clearInterval(tick); channel.current = null; last.current = 0; void sb!.removeChannel(ch); };
+  }, [sb, cid, me]);
+
+  const sendTyping = useCallback((stop = false) => {
+    const ch = channel.current;
+    if (!ch) return;
+    if (stop) {
+      if (!last.current) return;
+      last.current = 0;
+    } else {
+      if (Date.now() - last.current < 2500) return;
+      last.current = Date.now();
+    }
+    void ch.send({ type: "broadcast", event: "typing", payload: { email: me, stop } });
+  }, [me]);
+
+  const clearTyping = useCallback((email: string) => setSeen((s) => ({ ...s, [email]: 0 })), []);
+  const typing = Object.entries(seen).filter(([, t]) => t && Date.now() - t < 5000).map(([e]) => e);
+  return { typing, sendTyping, clearTyping };
+}
+
+function typingLabel(emails: string[], profiles: Map<string, Profile>) {
+  const names = emails.map((e) => displayName(profiles.get(e), e));
+  return names.length === 1 ? `${names[0]} is` : names.length === 2 ? `${names[0]} and ${names[1]} are` : `${names.length} people are`;
 }
 
 function merge(old: Message[], incoming: Message[]) {
@@ -281,7 +340,7 @@ function merge(old: Message[], incoming: Message[]) {
   return [...map.values()].sort((a, b) => a.created_at.localeCompare(b.created_at));
 }
 
-function Composer({ c, reply, editing, onDone }: { c: Conversation; reply: Message | null; editing: Message | null; onDone: () => void }) {
+function Composer({ c, reply, editing, onDone, onTyping }: { c: Conversation; reply: Message | null; editing: Message | null; onDone: () => void; onTyping: (stop?: boolean) => void }) {
   const { sb, profiles } = useChat()!;
   const [text, setText] = useState("");
   const [files, setFiles] = useState<File[]>([]);
@@ -329,7 +388,7 @@ function Composer({ c, reply, editing, onDone }: { c: Conversation; reply: Messa
         if (error) throw error;
         try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
       }
-      setText(""); setFiles([]); onDone();
+      setText(""); setFiles([]); onDone(); onTyping(true);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Couldn't send. Try again.");
     } finally {
@@ -369,7 +428,8 @@ function Composer({ c, reply, editing, onDone }: { c: Conversation; reply: Messa
           </>
         )}
         <textarea ref={box} rows={1} placeholder="Message" aria-label="Message" value={text} maxLength={4000}
-          onChange={(e) => saveDraft(e.target.value)}
+          onChange={(e) => { saveDraft(e.target.value); if (!editing) onTyping(!e.target.value.trim()); }}
+          onBlur={() => onTyping(true)}
           onPaste={(e) => { if (!editing && e.clipboardData.files.length) { e.preventDefault(); add(e.clipboardData.files); } }}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(); } }} />
         <button type="button" className="vx-btn vx-btn-primary vx-btn-sm" disabled={busy || (!text.trim() && files.length === 0)} onClick={() => void send()}>
