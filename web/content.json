@@ -54,6 +54,32 @@
       "logo": "/roblox-group.png"
     }
   },
+  "updates": [
+    {
+      "id": "pub-20261119195747",
+      "date": "2026-11-19T19:57:47.289Z",
+      "text": ""
+    },
+    {
+      "id": "pub-20261119",
+      "date": "2026-11-19T18:45:00.000Z",
+      "text": "• Announcements: post with photos, videos, files and polls; edit earlier posts\n• Chat and Announcements tiles on the home page\n• Smooth side menu and light/dark transitions\n• A more detailed logo"
+    }
+  ],
+  "announcements": {
+    "title": "Announcements",
+    "subtitle": "News and updates from Vortex.",
+    "items": [
+      {
+        "id": "7d303791-c609-48eb-87f6-27ba9927897e",
+        "title": "Announcements Update Log",
+        "text": "- Fixed off centered profile pic\n- Added announcements",
+        "image": "",
+        "date": "2026-11-19T18:23:37.481Z",
+        "files": []
+      }
+    ]
+  },
   "games": {
     "title": "Games",
     "subtitle": "External games",
@@ -94,26 +120,5 @@
     "title": "Downloader",
     "intro": "Paste a YouTube link, choose a format and save it to this device.",
     "footer": "Only download videos you have the right to keep."
-  },
-  "announcements": {
-    "title": "Announcements",
-    "subtitle": "News and updates from Vortex.",
-    "items": [
-      {
-        "id": "7d303791-c609-48eb-87f6-27ba9927897e",
-        "title": "Announcements Update Log",
-        "text": "- Fixed off centered profile pic\n- Added announcements",
-        "image": "",
-        "date": "2026-11-19T18:23:37.481Z",
-        "files": []
-      }
-    ]
-  },
-  "updates": [
-    {
-      "id": "pub-20261119",
-      "date": "2026-11-19T18:45:00.000Z",
-      "text": "• Announcements: post with photos, videos, files and polls; edit earlier posts\n• Chat and Announcements tiles on the home page\n• Smooth side menu and light/dark transitions\n• A more detailed logo\n• This Update log"
-    }
-  ]
+  }
 }
