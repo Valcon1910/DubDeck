@@ -158,7 +158,7 @@ export function step(r: Race, byte: number) {
     settle(car, g.nx, g.ny, g.nz);
     car.offroad = false;
     reached(r, g.piece);
-  } else if (ter.h > NO_GROUND && car.y <= ter.h + (car.grounded ? 0.9 : 0.05)) {
+  } else if (ter.h > NO_GROUND && car.y <= ter.h + (car.grounded && car.offroad ? 0.9 : 0.05)) {
     if (ter.ravine) { respawn(r); return; }
     if (py < ter.h - 0.9) {
       // Ran into a steep bank: stop at it.

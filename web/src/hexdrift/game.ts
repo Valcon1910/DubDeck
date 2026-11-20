@@ -7,6 +7,7 @@ import { botInput } from "./sim/bot.ts";
 import { COUNTDOWN, formatTime, HZ, newRace, pack, raceTicks, step, type Race } from "./sim/race.ts";
 import { groundAt } from "./sim/track.ts";
 import { buildWorld, type World } from "./render/world.ts";
+import { NO_GROUND, terrainAt } from "./sim/terrain.ts";
 import { blobShadow, buildCar, type CarModel } from "./render/car.ts";
 import type { Controls } from "./input.ts";
 import { DEFAULT_LOOK, type Look } from "./garage.ts";
@@ -357,15 +358,17 @@ export class Game {
       }
     }
 
-    // Shadow on the road below.
-    const g = groundAt(this.race.track, x, y + 0.5, z, 0.5);
-    if (g && y - g.h < 25) {
+    // Shadow on the road or the ground below.
+    const road = groundAt(this.race.track, x, y + 0.5, z, 0.5);
+    const ter = terrainAt(this.race.track, x, z).h;
+    const gh = Math.max(road ? road.h : NO_GROUND, ter <= y + 0.5 ? ter : NO_GROUND);
+    if (gh > NO_GROUND && y - gh < 25) {
       this.shadow.mesh.visible = true;
-      this.shadow.mesh.position.set(x, g.h + 0.06, z);
+      this.shadow.mesh.position.set(x, gh + 0.09, z);
       this.shadow.mesh.rotation.y = yaw;
-      const s = 1 + (y - g.h) * 0.06;
+      const s = 1 + (y - gh) * 0.06;
       this.shadow.mesh.scale.set(s, 1, s);
-      (this.shadow.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 1 - (y - g.h) / 25);
+      (this.shadow.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 1 - (y - gh) / 25);
     } else this.shadow.mesh.visible = false;
 
     // Chase camera.

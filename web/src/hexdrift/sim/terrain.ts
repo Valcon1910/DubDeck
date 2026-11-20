@@ -50,7 +50,7 @@ export interface TerrainInfo { h: number; ravine: boolean }
 export function terrainAt(track: Track, x: number, z: number): TerrainInfo {
   const cx = Math.round(x / CELL), cz = Math.round(z / CELL);
   const sky = track.sky === true;
-  const bank = sky ? 1.1 : 0.4;
+  const bank = 0.4;
   let emb = NONE, ceil = 1e9, near = 1e9;
   for (let ox = -2; ox <= 2; ox++) {
     for (let oz = -2; oz <= 2; oz++) {
@@ -60,7 +60,8 @@ export function terrainAt(track: Track, x: number, z: number): TerrainInfo {
         const { u, w } = local(p, x, z);
         const d = distTo(p, u, w);
         const top = heightAlong(p, w) - SHOULDER;
-        const e = top - bank * d;
+        // Sky islands: a grassy shoulder, then cliffs.
+        const e = sky ? top - (d < 6 ? 0.08 * d : 0.48 + 1.6 * (d - 6)) : top - bank * d;
         if (e > emb) emb = e;
         if (d < near) near = d;
         if (d < 4 && top < ceil) ceil = top; // where roads cross, the lower one wins

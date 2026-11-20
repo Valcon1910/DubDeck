@@ -2,11 +2,10 @@
 // meshes with vertex colours (one draw call each), and scenery is instanced,
 // so even big maps stay cheap on phones.
 import * as THREE from "three";
-import { CELL, CURVE_IN, CURVE_OUT, DIRV, HALF_W, LEVEL, surface, type Piece, type Track } from "../sim/track.ts";
+import { CELL, CURVE_IN, CURVE_OUT, DIRV, HALF_W, LEVEL, surface, THICK, WALL_H, WALL_T, type Piece, type Track } from "../sim/track.ts";
+import { NO_GROUND, terrainAt } from "../sim/terrain.ts";
 import type { Biome, BiomeId } from "../maps.ts";
 
-const THICK = 1.4; // road slab thickness
-const WALL_H = 1.3;
 const ARCH_H = 9;
 
 /** Collects triangles with flat normals and colours, then makes one geometry. */
@@ -92,31 +91,62 @@ export function buildWorld(track: Track, biome: Biome, biomeId: BiomeId): World 
     const f = frame(p);
     const rs = rails(p);
     const top = p.ice ? ice.clone().lerp(new THREE.Color(i % 2 ? biome.road : biome.roadAlt), 0.25) : i % 2 ? road : roadAlt;
+    const wt = p.wall ? WALL_T : 0;
+    const slab = rails(p, -wt), outer = rails(p, -WALL_T);
+    const P = (q: [number, number], dh = 0) => f(q[0], q[1], hOf(p, q[0], q[1]) + dh);
     for (let k = 0; k < rs.length - 1; k++) {
       const [l0, r0] = rs[k], [l1, r1] = rs[k + 1];
-      const P = (q: [number, number], dh = 0) => f(q[0], q[1], hOf(p, q[0], q[1]) + dh);
+      const [L0, R0] = slab[k], [L1, R1] = slab[k + 1];
       // Top (seen from above): l0 → r0 → r1 → l1 is clockwise from above in a
       // right-handed frame where u is to the right, so wind it the other way.
       b.quad(P(l0), P(l1), P(r1), P(r0), top);
-      // Underside and the two side faces.
-      b.quad(P(l0, -THICK), P(r0, -THICK), P(r1, -THICK), P(l1, -THICK), side);
-      b.quad(P(l0), P(l0, -THICK), P(l1, -THICK), P(l1), side);
-      b.quad(P(r0), P(r1), P(r1, -THICK), P(r0, -THICK), side);
-      // Edge stripes.
+      // Underside and the two side faces (the slab runs under the walls).
+      b.quad(P(L0, -THICK), P(R0, -THICK), P(R1, -THICK), P(L1, -THICK), side);
+      b.quad(P(L0, p.wall ? WALL_H : 0), P(L0, -THICK), P(L1, -THICK), P(L1, p.wall ? WALL_H : 0), p.wall ? biome.wall : side);
+      b.quad(P(R0, p.wall ? WALL_H : 0), P(R1, p.wall ? WALL_H : 0), P(R1, -THICK), P(R0, -THICK), p.wall ? biome.wall : side);
+      // Edge stripes, raised a little so they never flicker against the road.
       const sl = rails(p, 0.55)[k], sl1 = rails(p, 0.55)[k + 1];
-      const e = 0.03;
+      const e = 0.06;
       b.quad(P(l0, e), P(l1, e), P(sl1[0], e), P(sl[0], e), biome.edge);
       b.quad(P(sr(sl), e), P(sr(sl1), e), P(r1, e), P(r0, e), biome.edge);
       if (p.wall) {
-        b.quad2(P(l0), P(l1), P(l1, WALL_H), P(l0, WALL_H), biome.wall);
-        b.quad2(P(r0), P(r0, WALL_H), P(r1, WALL_H), P(r1), biome.wall);
-        b.quad(P(l0, WALL_H), P(l1, WALL_H), P(sl1[0], WALL_H), P(sl[0], WALL_H), biome.wall);
+        // Solid walls: inner face, top, outer face (the slab side above).
+        const [o0, q0] = outer[k], [o1, q1] = outer[k + 1];
+        b.quad(P(l0), P(l1), P(l1, WALL_H), P(l0, WALL_H), biome.wall);
+        b.quad(P(r0), P(r0, WALL_H), P(r1, WALL_H), P(r1), biome.wall);
+        b.quad(P(o0, WALL_H), P(o1, WALL_H), P(l1, WALL_H), P(l0, WALL_H), biome.edge);
+        b.quad(P(r0, WALL_H), P(r1, WALL_H), P(q1, WALL_H), P(q0, WALL_H), biome.edge);
       }
     }
-    // Entry and exit faces (only visible where the road ends or at a gap).
+    // Dashed centre line.
+    if (p.t !== "start" && p.t !== "finish" && p.t !== "boost") {
+      const mid = rails(p, 0);
+      for (let k = 0; k < mid.length - 1; k += p.t === "curveL" || p.t === "curveR" ? 2 : 1) {
+        const a = mid[k], c = mid[Math.min(mid.length - 1, k + 1)];
+        const m0: [number, number] = [(a[0][0] + a[1][0]) / 2, (a[0][1] + a[1][1]) / 2];
+        const m1: [number, number] = [(c[0][0] + c[1][0]) / 2, (c[0][1] + c[1][1]) / 2];
+        const n = p.t === "curveL" || p.t === "curveR" ? 1 : 3;
+        for (let j = 0; j < n; j++) {
+          const t0 = (j + 0.2) / n, t1 = (j + 0.6) / n;
+          const A: [number, number] = [m0[0] + (m1[0] - m0[0]) * t0, m0[1] + (m1[1] - m0[1]) * t0];
+          const B: [number, number] = [m0[0] + (m1[0] - m0[0]) * t1, m0[1] + (m1[1] - m0[1]) * t1];
+          const dx = B[0] - A[0], dz = B[1] - A[1], len = Math.hypot(dx, dz) || 1;
+          const nx = (-dz / len) * 0.18, nz = (dx / len) * 0.18;
+          b.quad(P([A[0] - nx, A[1] - nz], 0.06), P([B[0] - nx, B[1] - nz], 0.06), P([B[0] + nx, B[1] + nz], 0.06), P([A[0] + nx, A[1] + nz], 0.06), "#e9e6dc");
+        }
+      }
+    }
+    // End faces where the road stops (start, finish, the edges of a gap).
+    for (const end of [p.endIn ? 0 : -1, p.endOut ? slab.length - 1 : -1]) {
+      if (end < 0) continue;
+      const [L, R] = slab[end];
+      const hl = p.wall ? WALL_H : 0;
+      if (end === 0) b.quad(P(L, hl), P(R, hl), P(R, -THICK), P(L, -THICK), side);
+      else b.quad(P(L, hl), P(L, -THICK), P(R, -THICK), P(R, hl), side);
+    }
     if (p.t === "boost") {
       for (const w0 of [-6, 0, 6]) {
-        const h = (u: number, w: number) => f(u, w, hOf(p, u, w) + 0.05);
+        const h = (u: number, w: number) => f(u, w, hOf(p, u, w) + 0.07);
         b.tri(h(-4, w0), h(0, w0 + 3.5), h(0, w0 + 1.8), accent);
         b.tri(h(-4, w0), h(0, w0 + 1.8), h(-4, w0 - 1.7), accent);
         b.tri(h(4, w0), h(4, w0 - 1.7), h(0, w0 + 1.8), accent);
@@ -128,7 +158,7 @@ export function buildWorld(track: Track, biome: Biome, biomeId: BiomeId): World 
       const n = 8, wq = 1.6, cw = (2 * HALF_W) / n;
       for (let r = 0; r < 2; r++) for (let c = 0; c < n; c++) {
         const u0 = -HALF_W + c * cw, w0 = (p.t === "start" ? 2 : -2) + r * wq;
-        const h = (u: number, w: number) => f(u, w, hOf(p, u, w) + 0.04);
+        const h = (u: number, w: number) => f(u, w, hOf(p, u, w) + 0.07);
         b.quad(h(u0, w0), h(u0, w0 + wq), h(u0 + cw, w0 + wq), h(u0 + cw, w0), (r + c) % 2 ? "#111111" : "#f4f4f4");
       }
     }
@@ -140,43 +170,32 @@ export function buildWorld(track: Track, biome: Biome, biomeId: BiomeId): World 
   });
 
   geos.push(b.geometry());
-  const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
   mats.push(mat);
   group.add(new THREE.Mesh(geos[0], mat));
 
-  // Ramps get a bright lip so jumps read from far away.
-  // (Part of the road colours above; nothing extra needed.)
+  // ── The ground: roads run over it, on embankments ──
+  terrain(group, track, biome, biomeId, geos, mats);
 
-  // ── Support pillars under raised pieces (one instanced mesh) ──
-  const groundY = biomeId === "sky" ? null : track.minY - 40;
-  if (groundY !== null) {
-    const pillars = track.pieces.filter((p) => p.t !== "curveL" && p.t !== "curveR");
+  // Pillars only where a road passes high over the ground (bridges).
+  const tall = track.pieces.filter((p) => p.t !== "curveL" && p.t !== "curveR").map((p) => {
+    const top = p.y * LEVEL - THICK + (p.t === "down" ? -LEVEL : 0);
+    const g = terrainAt(track, p.x * CELL, p.z * CELL).h;
+    return { p, top, g };
+  }).filter((q) => q.g > NO_GROUND && q.top - q.g > 1.5);
+  if (tall.length) {
     const pg = new THREE.BoxGeometry(1.6, 1, 1.6);
     pg.translate(0, 0.5, 0);
     geos.push(pg);
     const pm = new THREE.MeshLambertMaterial({ color: new THREE.Color(biome.wall).multiplyScalar(0.6) });
     mats.push(pm);
-    const im = new THREE.InstancedMesh(pg, pm, pillars.length);
+    const im = new THREE.InstancedMesh(pg, pm, tall.length);
     const m = new THREE.Matrix4();
-    pillars.forEach((p, i) => {
-      const top = p.y * LEVEL - THICK + (p.t === "down" ? -LEVEL : 0);
-      m.makeScale(1, top - groundY, 1).setPosition(p.x * CELL, groundY, p.z * CELL);
-      im.setMatrixAt(i, m);
-    });
+    tall.forEach((q, i) => { m.makeScale(1, q.top - q.g + 1, 1).setPosition(q.p.x * CELL, q.g - 1, q.p.z * CELL); im.setMatrixAt(i, m); });
     group.add(im);
-
-    // Ground.
-    const span = bounds(track);
-    const gg = new THREE.PlaneGeometry(span.size + 2400, span.size + 2400);
-    gg.rotateX(-Math.PI / 2);
-    geos.push(gg);
-    const gm = new THREE.MeshLambertMaterial({ color: biome.ground });
-    mats.push(gm);
-    const ground = new THREE.Mesh(gg, gm);
-    ground.position.set(span.cx, groundY, span.cz);
-    group.add(ground);
   }
 
+  const groundY = biomeId === "sky" ? null : track.minY;
   scenery(group, track, biome, biomeId, groundY, geos, mats);
   sky(group, biome, geos, mats);
 
@@ -248,7 +267,7 @@ function scenery(group: THREE.Group, track: Track, biome: Biome, id: BiomeId, gr
     for (let z = span.z0 - R; z <= span.z1 + R; z++) {
       if (near(x, z, id === "sky" ? 0 : 1) || rand() > (id === "city" ? 0.55 : 0.3)) continue;
       const jx = (rand() - 0.5) * CELL * 0.6, jz = (rand() - 0.5) * CELL * 0.6;
-      const gy = groundY ?? track.minY - 30;
+      const gy = groundY === null ? track.minY - 30 : terrainAt(track, x * CELL + jx, z * CELL + jz).h - 0.5;
       q.setFromAxisAngle(up, rand() * Math.PI * 2);
       if (id === "city") { const w = 6 + rand() * 9; s.set(w, 30 + rand() * 70, w); v.set(x * CELL + jx, gy, z * CELL + jz); }
       else if (id === "canyon") { const w = 5 + rand() * 9; s.set(w, 25 + rand() * 45, w); v.set(x * CELL + jx, gy, z * CELL + jz); }
@@ -263,6 +282,89 @@ function scenery(group: THREE.Group, track: Track, biome: Biome, id: BiomeId, gr
   spots.forEach((mm, i) => { im.setMatrixAt(i, mm); im.setColorAt(i, c.set(colours[i % colours.length])); });
   m.identity();
   group.add(im);
+  void biome;
+}
+
+const GROUND: Record<BiomeId, { flat: string; bank: string; low: string }> = {
+  city: { flat: "#24223a", bank: "#3a3456", low: "#101024" },
+  canyon: { flat: "#c2643a", bank: "#8e3b22", low: "#ff7a2a" },
+  glacier: { flat: "#f2f8ff", bank: "#a9cfe8", low: "#5fa8d8" },
+  sky: { flat: "#86d46c", bank: "#8c7a68", low: "#6b5d50" },
+  desert: { flat: "#ecc985", bank: "#c99a52", low: "#b07a3a" },
+};
+
+/**
+ * The ground as one smooth mesh, sampled from the same height function the
+ * physics uses. Fine near the roads, coarser towards the horizon.
+ */
+function terrain(group: THREE.Group, track: Track, biome: Biome, id: BiomeId, geos: THREE.BufferGeometry[], mats: THREE.Material[]) {
+  const span = bounds(track);
+  const sky = id === "sky";
+  const axis = (a0: number, a1: number) => {
+    const out: number[] = [];
+    const lo = a0 * CELL - CELL - 50, hi = a1 * CELL + CELL + 50, far = sky ? 30 : 520;
+    let x = lo - far, stepOut = 40;
+    const before: number[] = [];
+    for (let v = lo, st = 3; v > lo - far; st = Math.min(stepOut, st * 1.2), v -= st) before.push(v);
+    out.push(...before.reverse());
+    for (x = lo + 3; x < hi; x += 3) out.push(x);
+    for (let v = hi, st = 3; v < hi + far; st = Math.min(stepOut, st * 1.2), v += st) out.push(v);
+    return out;
+  };
+  const xs = axis(span.x0, span.x1), zs = axis(span.z0, span.z1);
+  const nx = xs.length, nz = zs.length;
+  const pos = new Float32Array(nx * nz * 3), col = new Float32Array(nx * nz * 3);
+  const hs = new Float32Array(nx * nz);
+  const valid = new Uint8Array(nx * nz);
+  const pal = GROUND[id];
+  const flat = new THREE.Color(pal.flat), bank = new THREE.Color(pal.bank), low = new THREE.Color(pal.low), c = new THREE.Color();
+  const floor = track.minY - 8;
+  const bottom = track.minY - 26;
+  for (let j = 0; j < nz; j++) {
+    for (let i = 0; i < nx; i++) {
+      const k = j * nx + i;
+      const t = terrainAt(track, xs[i], zs[j]);
+      const ok = t.h > NO_GROUND;
+      valid[k] = ok ? 1 : 0;
+      hs[k] = ok ? t.h - 0.12 : bottom;
+      pos[k * 3] = xs[i]; pos[k * 3 + 1] = hs[k]; pos[k * 3 + 2] = zs[j];
+    }
+  }
+  // Colour by steepness and height: banks and cliffs differ from flat ground.
+  for (let j = 0; j < nz; j++) {
+    for (let i = 0; i < nx; i++) {
+      const k = j * nx + i;
+      const i0 = Math.max(0, i - 1), i1 = Math.min(nx - 1, i + 1), j0 = Math.max(0, j - 1), j1 = Math.min(nz - 1, j + 1);
+      const gx = (hs[j * nx + i1] - hs[j * nx + i0]) / ((xs[i1] - xs[i0]) || 1);
+      const gz = (hs[j1 * nx + i] - hs[j0 * nx + i]) / ((zs[j1] - zs[j0]) || 1);
+      const steep = Math.min(1, Math.sqrt(gx * gx + gz * gz) * 1.6);
+      c.copy(flat).lerp(bank, steep);
+      if (!valid[k]) c.copy(bank).multiplyScalar(0.6);
+      else if (!sky && hs[k] < floor - 2) c.lerp(low, Math.min(1, (floor - 2 - hs[k]) / 4));
+      // A little variation so big areas don't look flat.
+      const v = 0.94 + (((i * 73856093) ^ (j * 19349663)) >>> 0) % 1000 / 1000 * 0.08;
+      col[k * 3] = c.r * v; col[k * 3 + 1] = c.g * v; col[k * 3 + 2] = c.b * v;
+    }
+  }
+  const idx: number[] = [];
+  for (let j = 0; j < nz - 1; j++) {
+    for (let i = 0; i < nx - 1; i++) {
+      const a = j * nx + i, b = a + 1, d = a + nx, e = d + 1;
+      if (sky && !valid[a] && !valid[b] && !valid[d] && !valid[e]) continue;
+      idx.push(a, d, b, b, d, e);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals(); // shared vertices: smooth shading
+  geos.push(g);
+  const m = new THREE.MeshLambertMaterial({ vertexColors: true, side: sky ? THREE.DoubleSide : THREE.FrontSide });
+  mats.push(m);
+  const mesh = new THREE.Mesh(g, m);
+  mesh.name = "terrain";
+  group.add(mesh);
   void biome;
 }
 
