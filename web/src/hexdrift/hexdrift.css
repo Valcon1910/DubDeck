@@ -148,3 +148,27 @@ a.hx-gaming { text-decoration: none; display: inline-flex; align-items: center; 
 .hx-player { display: flex; align-items: center; gap: 14px; margin-top: 12px; }
 .hx-player .hx-page-title { margin: 0; }
 @media (max-width: 520px) { .hx-board li { grid-template-columns: 30px 1fr auto auto; } .hx-board-gap { display: none; } }
+
+/* ── Step 4: garage ── */
+.hx-points { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.hx-preview { position: relative; height: min(40vh, 380px); border-radius: 20px; overflow: hidden; touch-action: none;
+  background: radial-gradient(600px 300px at 50% 20%, #3a2a7a 0%, #141228 70%); }
+.hx-preview-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
+.hx-preview-canvas:active { cursor: grabbing; }
+.hx-preview-hint { position: absolute; left: 14px; bottom: 8px; margin: 0; font-size: 12px; pointer-events: none; }
+.hx-preview-lock { position: absolute; left: 10px; right: 10px; top: 10px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 12px; border-radius: 12px; background: rgba(0, 0, 0, 0.6); font-size: 14px; }
+.hx-tabs { display: flex; gap: 6px; overflow-x: auto; padding: 4px 0 10px; scrollbar-width: none; }
+.hx-tabs button { flex: none; border: 0; border-radius: 999px; padding: 8px 14px; background: rgba(255, 255, 255, 0.08); color: inherit; font-weight: 700; }
+.hx-tabs button.on { background: #7a5cff; }
+.hx-parts { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+.hx-part { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 10px 12px; border-radius: 14px; border: 2px solid transparent;
+  background: rgba(255, 255, 255, 0.07); color: inherit; text-align: left; cursor: pointer; }
+.hx-part:hover { background: rgba(255, 255, 255, 0.12); }
+.hx-part.on { border-color: #7af7ff; }
+.hx-part.trying { border-color: #ffd34d; border-style: dashed; }
+.hx-part.locked .hx-part-name { opacity: 0.6; }
+.hx-part-name { font-weight: 700; }
+.hx-part-tag { font-size: 12px; opacity: 0.75; }
+.hx-swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.4); }
+.hx-rainbow { background: conic-gradient(#ff5a3c, #ffc53d, #8cff5a, #5fffd2, #2f7bff, #8f5bff, #ff6fb5, #ff5a3c); }

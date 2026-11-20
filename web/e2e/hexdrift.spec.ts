@@ -111,3 +111,27 @@ test("Gaming Mode: one tap on, Back and links stay in the game, hold 3 s to turn
   await page.getByRole("link", { name: /Back to Vortex/ }).click();
   await expect(page).toHaveURL(/#\/games$/);
 });
+
+test("garage: free parts equip and stay, locked parts preview only, and the car uses the look", async ({ page }) => {
+  await page.goto("/#/hexdrift");
+  await page.getByRole("link", { name: /Garage/ }).click();
+  await expect(page.locator(".hx-page-title")).toHaveText("Garage");
+  await expect(page.locator(".hx-points")).toContainText("/ 20 medal points");
+  // A free paint equips and is remembered.
+  await page.getByRole("tab", { name: "Paint" }).click();
+  await page.getByRole("button", { name: /^Ocean/ }).click();
+  await expect(page.getByRole("button", { name: /^Ocean/ })).toHaveAttribute("aria-pressed", "true");
+  // A locked car can be looked at but not equipped.
+  await page.getByRole("tab", { name: "Car" }).click();
+  await page.getByRole("button", { name: /^Apex/ }).click();
+  await expect(page.locator(".hx-preview-lock")).toContainText("Apex: unlocks at 18 medal points");
+  await expect(page.getByRole("button", { name: /^Viper/ })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: /^Bolt/ }).click();
+  await page.reload();
+  await page.getByRole("tab", { name: "Paint" }).click();
+  await expect(page.getByRole("button", { name: /^Ocean/ })).toHaveAttribute("aria-pressed", "true");
+  expect(JSON.parse(await page.evaluate(() => localStorage.getItem("hexdrift.look") ?? "{}"))).toMatchObject({ body: "bolt", paint: "ocean" });
+  // The game still starts with the new car.
+  await page.goto("/#/hexdrift/neon-downtown");
+  await expect(page.locator(".hx-time")).toBeVisible();
+});
