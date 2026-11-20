@@ -25,30 +25,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  merge:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: test
-          fetch-depth: 0
-      - name: Merge the code and main into test
-        env:
-          CODE: ${{ inputs.code_branch }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git config merge.vortexjson.driver "node scripts/merge-json.mjs %O %A %B"
-          git fetch origin "$CODE" main
-          VORTEX_MAIN=theirs git merge --no-edit origin/main || { echo "::error::main and test changed the same lines. Ask Claude to resolve the conflict."; exit 1; }
-          VORTEX_MAIN=ours git merge --no-edit "origin/$CODE" || { echo "::error::$CODE and test changed the same lines. Ask Claude to resolve the conflict."; exit 1; }
-          git push origin HEAD:test
-
+  # One machine merges and publishes (pushes to test skip the merge).
   publish:
-    needs: merge
-    if: always() && (needs.merge.result == 'success' || needs.merge.result == 'skipped')
     uses: ./.github/workflows/publish.yml
     with:
       site: test
+      merge: ${{ github.event_name == 'workflow_dispatch' && format('code:{0}', inputs.code_branch) || '' }}
     secrets: inherit
