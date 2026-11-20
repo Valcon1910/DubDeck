@@ -9,6 +9,7 @@ import { groundAt } from "./sim/track.ts";
 import { buildWorld, type World } from "./render/world.ts";
 import { blobShadow, buildCar, type CarModel } from "./render/car.ts";
 import type { Controls } from "./input.ts";
+import { DEFAULT_LOOK, type Look } from "./garage.ts";
 
 export interface HudRefs {
   time: HTMLElement | null;
@@ -71,6 +72,7 @@ export class Game {
   private ratio: number;
   private maxRatio: number;
   private minRatio: number;
+  private lowered = 0;
   private frameMs = 16;
   private resAt = 0;
   private hudCache = { time: "", speed: "", cps: "", count: "", split: "" };
@@ -94,6 +96,7 @@ export class Game {
     private events: GameEvents,
     private controls: Controls,
     camMode = 0,
+    private look: Look = DEFAULT_LOOK,
   ) {
     const biome = BIOMES[map.biome];
     const track = trackOf(map);
@@ -128,7 +131,7 @@ export class Game {
 
     this.world = buildWorld(track, biome, map.biome);
     this.scene.add(this.world.group);
-    this.car = buildCar("#e8edf7", biome.accent);
+    this.car = buildCar({ look, mapAccent: biome.accent });
     this.scene.add(this.car.root);
     this.scene.add(this.shadow.mesh);
 
@@ -193,7 +196,7 @@ export class Game {
     while (check.phase === "countdown") step(check, 0);
     for (const b of inputs) { step(check, b); if (check.phase === "finished") break; }
     if (check.phase !== "finished" || check.finishTicks !== ticks) return null;
-    const model = buildCar("#ffffff", "#ffffff", kind, label);
+    const model = buildCar({ look: kind === "pb" ? this.look : undefined, ghost: kind, label });
     model.root.visible = false;
     this.scene.add(model.root);
     const race = newRace(this.race.track);
@@ -301,8 +304,10 @@ export class Game {
       }
       if (n === 6) this.acc = 0; // way behind (tab was busy): don't spiral
     }
-    this.draw(this.paused ? 1 : this.acc * HZ, dt);
+    // Resize before drawing: resizing clears the picture, and doing it after
+    // the draw showed a black frame (the dark flicker).
     this.adaptResolution(now);
+    this.draw(this.paused ? 1 : this.acc * HZ, dt);
   }
 
   private input(): number {
@@ -334,7 +339,8 @@ export class Game {
 
     this.pose(this.car, this.smoothN, b, jump, x, y, z, yaw, dt);
     const steer = this.race.inputs.length ? ((this.race.inputs[this.race.inputs.length - 1] & 15) - 7) / 7 : 0;
-    this.car.update(car.speed, steer, dt);
+    const lastIn = this.race.inputs[this.race.inputs.length - 1] ?? 0;
+    this.car.update(car.speed, steer, dt, (lastIn & 32) !== 0);
     this.car.setBoost(car.boosting > 0);
 
     // The ghosts.
@@ -436,11 +442,12 @@ export class Game {
 
   /** Lowers or raises the render resolution to keep frames fast. */
   private adaptResolution(now: number) {
-    if (now - this.resAt < 1000) return;
+    if (now - this.resAt < 2000) return;
     this.resAt = now;
     let r = this.ratio;
-    if (this.frameMs > 21 && r > this.minRatio) r = Math.max(this.minRatio, r - 0.15);
-    else if (this.frameMs < 14 && r < this.maxRatio) r = Math.min(this.maxRatio, r + 0.1);
+    // Few, big steps; and once it has had to step down twice, it stays put.
+    if (this.frameMs > 21 && r > this.minRatio) { r = Math.max(this.minRatio, r - 0.35); this.lowered++; }
+    else if (this.frameMs < 12 && r < this.maxRatio && this.lowered < 2) r = Math.min(this.maxRatio, r + 0.25);
     if (r !== this.ratio) {
       this.ratio = r;
       this.renderer.setPixelRatio(r);
