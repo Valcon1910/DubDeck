@@ -418,3 +418,7 @@ enabled = true
 # The sign-in bridge is called by here.now's proxy (with a shared secret), not with a Supabase login.
 [functions.vortex-login]
 verify_jwt = false
+
+# Hexdrift record checker (deployed as hexdrift-v<physics version>; checks the session itself).
+[functions.hexdrift-submit]
+verify_jwt = false

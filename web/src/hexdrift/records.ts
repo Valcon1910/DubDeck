@@ -3,8 +3,8 @@
 // bytes, so it doubles as the ghost and, later, as proof for online records.
 // Falls back to localStorage if IndexedDB isn't available.
 
-/** Bump when the physics change: older runs can't be replayed exactly. */
-export const PHYSICS_V = 3;
+import { PHYSICS_V } from "./sim/race.ts";
+export { PHYSICS_V };
 
 export interface Run {
   map: string;
@@ -112,6 +112,24 @@ export async function clearBest(map: string) {
   if (db) await new Promise<void>((resolve) => { const tx = db.transaction(STORE, "readwrite"); tx.objectStore(STORE).delete(map); tx.oncomplete = () => resolve(); tx.onerror = () => resolve(); });
   try { localStorage.removeItem(`hexdrift.best.${map}`); } catch { /* */ }
 }
+
+/** Runs not yet sent to the online records. */
+export async function unsynced(): Promise<Run[]> {
+  const m = await allBests();
+  return [...m.values()].filter((r) => !r.synced && r.v === PHYSICS_V);
+}
+
+/** Marks a run as sent (unless a newer best replaced it meanwhile). */
+export async function markSynced(map: string, t: number) {
+  const r = cache.get(map);
+  if (!r || r.t !== t) return;
+  r.synced = true;
+  const db = await open();
+  if (db) await write(db, r);
+}
+
+export const toB64 = b64;
+export const fromB64 = unb64;
 
 // ── The run in progress, saved every few seconds so a reload doesn't lose it ─
 export interface Live { map: string; inputs: Uint8Array; v: number }

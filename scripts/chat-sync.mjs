@@ -34,7 +34,12 @@ const name = (e) => e.split("@")[0].split(/[._-]+/).filter((p) => p && !/^\d+$/.
 const list = [...emails].filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)).sort();
 
 let sql = "";
-if (process.argv.includes("--schema")) sql += read("supabase/migrations/20261120000000_chat.sql") + "\n";
+if (process.argv.includes("--schema")) {
+  // Every migration, in order (each one is safe to run again).
+  for (const f of fs.readdirSync(root + "supabase/migrations").filter((f) => f.endsWith(".sql")).sort()) {
+    sql += read(`supabase/migrations/${f}`) + "\n";
+  }
+}
 sql += `
 begin;
 insert into public.profiles (email, name, member) values
