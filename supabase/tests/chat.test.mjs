@@ -92,5 +92,20 @@ const heard = new Promise((res) => {
 });
 assert.equal(await Promise.race([heard, new Promise((r) => setTimeout(() => r("timeout"), 8000))]), "live!");
 
+// Typing signals: members hear them, outsiders can't even join.
+const join = (sb, topic) => new Promise((res) => {
+  const ch = sb.channel(topic, { config: { private: true } });
+  ch.subscribe((st) => { if (st !== "SUBSCRIBED" && st !== "CLOSED") res([st, ch]); if (st === "SUBSCRIBED") res([st, ch]); });
+  setTimeout(() => res(["TIMEOUT", ch]), 8000);
+});
+const [cyState] = await join(cy, `typing:${dm}`);
+assert.notEqual(cyState, "SUBSCRIBED", "outsider joined a typing channel");
+const [bobState, bobCh] = await join(bob, `typing:${dm}`);
+assert.equal(bobState, "SUBSCRIBED");
+const typed = new Promise((res) => bobCh.on("broadcast", { event: "typing" }, (m) => res(m.payload.email)));
+const [, annCh] = await join(ann, `typing:${dm}`);
+await annCh.send({ type: "broadcast", event: "typing", payload: { email: "ann@x.test" } });
+assert.equal(await Promise.race([typed, new Promise((r) => setTimeout(() => r("timeout"), 5000))]), "ann@x.test");
+
 console.log("Chat rules: all checks passed");
 process.exit(0);
