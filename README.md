@@ -79,6 +79,23 @@ A private, personal web app for downloading video and audio. Paste links, previe
 | `web/herenow/proxy.template.json` | here.now proxy routes; `${DUBDECK_BACKEND_KEY}` is filled in server-side by here.now | becomes `dist/.herenow/proxy.json` at build time |
 | `config/allowed-emails.json` | the allowlist | synced to here.now by a GitHub Action; also read by the backend |
 
+## Hexdrift (game)
+
+Hexdrift is a time-trial racer at `#/hexdrift`. Its code is in `web/src/hexdrift/`.
+
+- **Physics** is deterministic: 60 steps a second, one input byte per step. A run is just its bytes. The same bytes replay identically, which powers ghosts, restoring a run after a reload, and server checks.
+- **Records on this device** are kept in IndexedDB and work offline.
+- **Online records** use Chat's sign-in, so they appear once Chat is set up:
+  - Runs go to the `hexdrift-v<physics version>` Supabase function.
+  - The function re-drives every run with the game's own physics (copied from the game by `node scripts/hexdrift-share.mjs`) and saves it only if the time matches.
+  - Players can read the `hexdrift_records` table but never write it.
+  - The "Set up Chat" and publish workflows deploy the function.
+- **When the physics change**, bump `PHYSICS_V` in `web/src/hexdrift/sim/race.ts` and run `node scripts/hexdrift-share.mjs`. Old times then drop off the boards.
+- **Checks**:
+  - `npm run check:hexdrift` (from `web/`).
+  - `node ../supabase/tests/hexdrift.test.mjs` against a local Supabase.
+  - `CHAT_E2E=1 npx playwright test e2e/hexdrift-online.spec.ts`.
+
 ## Security model (three locks)
 
 1. **here.now restricted access.** Visitors see here.now's invite-only gate and verify with **Google or an emailed magic link**. Only emails or domains in `config/allowed-emails.json` get in.

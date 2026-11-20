@@ -70,10 +70,14 @@ export class Game {
   private botAt = { i: 0 };
   private ratio: number;
   private maxRatio: number;
+  private minRatio: number;
   private frameMs = 16;
   private resAt = 0;
   private hudCache = { time: "", speed: "", cps: "", count: "", split: "" };
+  /** Your best run (splits are against this one). */
   private ghost: Ghost | null = null;
+  /** The world record, in gold (only when someone else holds it). */
+  private wr: Ghost | null = null;
   private ghostShown = true;
   private splitText = "";
   private splitClass = "";
@@ -103,9 +107,14 @@ export class Game {
     this.camYaw = this.race.car.yaw;
     this.cam = camMode;
 
-    this.maxRatio = Math.min(window.devicePixelRatio || 1, 1.5);
+    // Sharp on every screen: smoothed edges always, and the resolution never
+    // drops below one pixel per screen point (it only trims the extra detail
+    // of high-density screens when frames get slow).
+    const dpr = window.devicePixelRatio || 1;
+    this.maxRatio = Math.min(dpr, 2);
+    this.minRatio = Math.min(dpr, 1);
     this.ratio = this.maxRatio;
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: this.maxRatio < 1.5, powerPreference: "high-performance" });
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
     this.renderer.setPixelRatio(this.ratio);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.camera = new THREE.PerspectiveCamera(CAMS[this.cam].fov, 1, 0.5, 2600);
@@ -163,23 +172,38 @@ export class Game {
    * longer finishes in the same time (physics changed), there's no ghost.
    */
   setGhost(inputs: Uint8Array | null, ticks = 0): boolean {
-    if (this.ghost) { this.scene.remove(this.ghost.model.root); this.ghost.model.dispose(); this.ghost = null; }
-    if (!inputs) return false;
+    this.drop(this.ghost);
+    this.ghost = inputs ? this.makeGhost(inputs, ticks, "pb") : null;
+    return this.ghost !== null;
+  }
+
+  /** The world-record ghost: gold, with a crown and "name · time" above it. */
+  setRecordGhost(inputs: Uint8Array | null, ticks = 0, name = ""): boolean {
+    this.drop(this.wr);
+    this.wr = inputs ? this.makeGhost(inputs, ticks, "wr", `👑 ${name} · ${formatTime(ticks)}`) : null;
+    return this.wr !== null;
+  }
+
+  private drop(g: Ghost | null) {
+    if (g) { this.scene.remove(g.model.root); g.model.dispose(); }
+  }
+
+  private makeGhost(inputs: Uint8Array, ticks: number, kind: "pb" | "wr", label = ""): Ghost | null {
     const check = newRace(this.race.track);
     while (check.phase === "countdown") step(check, 0);
     for (const b of inputs) { step(check, b); if (check.phase === "finished") break; }
-    if (check.phase !== "finished" || check.finishTicks !== ticks) return false;
-    const model = buildCar("#ffffff", "#ffffff", true);
+    if (check.phase !== "finished" || check.finishTicks !== ticks) return null;
+    const model = buildCar("#ffffff", "#ffffff", kind, label);
     model.root.visible = false;
     this.scene.add(model.root);
     const race = newRace(this.race.track);
-    this.ghost = { inputs, race, splits: check.splits.slice(), finish: check.finishTicks, model, prev: snap(race), cur: snap(race), n: new THREE.Vector3(0, 1, 0) };
+    const g: Ghost = { inputs, race, splits: check.splits.slice(), finish: check.finishTicks, model, prev: snap(race), cur: snap(race), n: new THREE.Vector3(0, 1, 0) };
     // Catch up with the race if it has already started.
-    for (let i = 0; i < this.race.tick; i++) this.stepGhost();
-    return true;
+    for (let i = 0; i < this.race.tick; i++) this.stepGhost(g);
+    return g;
   }
 
-  get hasGhost() { return this.ghost !== null; }
+  get hasGhost() { return this.ghost !== null || this.wr !== null; }
 
   toggleGhost() {
     this.ghostShown = !this.ghostShown;
@@ -199,8 +223,7 @@ export class Game {
     this.camInit = false;
   }
 
-  private stepGhost() {
-    const g = this.ghost;
+  private stepGhost(g: Ghost | null) {
     if (!g) return;
     g.prev = g.cur;
     const r = g.race;
@@ -214,7 +237,8 @@ export class Game {
     const before = this.race.splits.length;
     step(this.race, byte);
     this.cur = snap(this.race);
-    this.stepGhost();
+    this.stepGhost(this.ghost);
+    this.stepGhost(this.wr);
     const g = this.ghost;
     if (g && this.race.splits.length > before) {
       const i = this.race.splits.length - 1;
@@ -237,8 +261,8 @@ export class Game {
   /** Back to the start line (keeps the world, so it's instant). */
   restart() {
     this.race = newRace(this.race.track);
-    if (this.ghost) {
-      const g = this.ghost;
+    for (const g of [this.ghost, this.wr]) {
+      if (!g) continue;
       g.race = newRace(this.race.track);
       g.prev = g.cur = snap(g.race);
     }
@@ -313,9 +337,9 @@ export class Game {
     this.car.update(car.speed, steer, dt);
     this.car.setBoost(car.boosting > 0);
 
-    // The ghost.
-    const gh = this.ghost;
-    if (gh) {
+    // The ghosts.
+    for (const gh of [this.ghost, this.wr]) {
+      if (!gh) continue;
       const show = this.ghostShown && gh.race.phase === "running";
       gh.model.root.visible = show;
       if (show) {
@@ -415,7 +439,7 @@ export class Game {
     if (now - this.resAt < 1000) return;
     this.resAt = now;
     let r = this.ratio;
-    if (this.frameMs > 21 && r > 0.6) r = Math.max(0.6, r - 0.15);
+    if (this.frameMs > 21 && r > this.minRatio) r = Math.max(this.minRatio, r - 0.15);
     else if (this.frameMs < 14 && r < this.maxRatio) r = Math.min(this.maxRatio, r + 0.1);
     if (r !== this.ratio) {
       this.ratio = r;
@@ -431,6 +455,7 @@ export class Game {
     this.world.dispose();
     this.car.dispose();
     this.setGhost(null);
+    this.setRecordGhost(null);
     this.shadow.dispose();
     this.renderer.dispose();
     this.renderer.forceContextLoss();

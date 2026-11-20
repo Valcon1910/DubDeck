@@ -75,6 +75,12 @@ jobs:
       - name: Deploy the sign-in bridge
         run: npx -y supabase@2.122.1 functions deploy vortex-login --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt --use-api
 
+      - name: Deploy the Hexdrift record checker
+        run: |
+          V=$(node -e "console.log(require('fs').readFileSync('web/src/hexdrift/sim/race.ts','utf8').match(/PHYSICS_V = (\d+)/)[1])")
+          cp -r supabase/functions/hexdrift-submit "supabase/functions/hexdrift-v$V"
+          npx -y supabase@2.122.1 functions deploy "hexdrift-v$V" --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt --use-api
+
       - name: Check the sign-in bridge
         run: |
           F="https://$SUPABASE_PROJECT_REF.supabase.co/functions/v1/vortex-login"

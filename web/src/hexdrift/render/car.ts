@@ -38,14 +38,21 @@ function wedge(): THREE.BufferGeometry {
   return g;
 }
 
-export function buildCar(color: string, accent: string, ghost = false): CarModel {
+/**
+ * ghost: false for your car, "pb" for the see-through ghost of your best run,
+ * "wr" for the world record's gold ghost (with a crown and the holder's name).
+ */
+export function buildCar(color: string, accent: string, ghost: false | "pb" | "wr" = false, label = ""): CarModel {
   const root = new THREE.Group();
   const geos: THREE.BufferGeometry[] = [];
   const mats: THREE.Material[] = [];
+  const disposers: (() => void)[] = [];
   const mat = (c: string, emissive = "#000000") => {
-    const m = ghost
+    const m = ghost === "pb"
       ? new THREE.MeshLambertMaterial({ color: "#ffffff", emissive: "#8a93a8", transparent: true, opacity: 0.32, depthWrite: false, flatShading: true })
-      : new THREE.MeshLambertMaterial({ color: c, emissive, flatShading: true, side: THREE.DoubleSide });
+      : ghost === "wr"
+        ? new THREE.MeshLambertMaterial({ color: "#ffd34d", emissive: "#7a4d00", transparent: true, opacity: 0.6, depthWrite: false, flatShading: true })
+        : new THREE.MeshLambertMaterial({ color: c, emissive, flatShading: true, side: THREE.DoubleSide });
     mats.push(m);
     return m;
   };
@@ -99,6 +106,26 @@ export function buildCar(color: string, accent: string, ghost = false): CarModel
     wheels.push({ pivot, spin, front: z > 0 });
   }
 
+  if (ghost === "wr") {
+    // A crown floating over the cockpit: a band with five points.
+    const crownM = new THREE.MeshBasicMaterial({ color: "#ffcf3a" }); mats.push(crownM);
+    const band = new THREE.CylinderGeometry(0.5, 0.45, 0.28, 10, 1, true); band.translate(0, 2.05, -0.3); geos.push(band);
+    root.add(new THREE.Mesh(band, crownM));
+    const tip = new THREE.ConeGeometry(0.13, 0.38, 4); geos.push(tip);
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2;
+      const m = new THREE.Mesh(tip, crownM);
+      m.position.set(Math.sin(a) * 0.46, 2.36, -0.3 + Math.cos(a) * 0.46);
+      root.add(m);
+    }
+    if (label) {
+      const sprite = nameTag(label);
+      sprite.position.set(0, 3.1, -0.3);
+      root.add(sprite);
+      disposers.push(() => { (sprite.material as THREE.SpriteMaterial).map?.dispose(); sprite.material.dispose(); });
+    }
+  }
+
   let roll = 0, steerAngle = 0;
   return {
     root,
@@ -118,8 +145,30 @@ export function buildCar(color: string, accent: string, ghost = false): CarModel
     dispose() {
       for (const g of geos) g.dispose();
       for (const m of mats) m.dispose();
+      for (const d of disposers) d();
     },
   };
+}
+
+/** "👑 Name · 1:02.345" on a gold pill, always facing the camera. */
+function nameTag(text: string): THREE.Sprite {
+  const c = document.createElement("canvas");
+  const x = c.getContext("2d")!;
+  const font = "600 30px system-ui, sans-serif";
+  x.font = font;
+  const w = Math.min(512, Math.ceil(x.measureText(text).width) + 36);
+  c.width = w; c.height = 48;
+  x.font = font;
+  x.fillStyle = "rgba(40,28,0,0.78)";
+  x.beginPath(); x.roundRect(0, 0, w, 48, 24); x.fill();
+  x.fillStyle = "#ffd34d";
+  x.textBaseline = "middle"; x.textAlign = "center";
+  x.fillText(text, w / 2, 25, w - 24);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  s.scale.set((w / 48) * 0.9, 0.9, 1);
+  return s;
 }
 
 /** A soft round shadow under the car (a canvas texture, no shadow maps). */

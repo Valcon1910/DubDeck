@@ -5,6 +5,12 @@
 import { clamp, dcos, dsin } from "./math.ts";
 import { CELL, DIRV, groundAt, HALF_W, local, CURVE_IN, CURVE_OUT, LEVEL, yawOf, type Piece, type Track } from "./track.ts";
 
+/**
+ * Bump whenever the handling or track physics change: runs from older
+ * physics can't be replayed exactly, so their records and ghosts are dropped.
+ */
+export const PHYSICS_V = 3;
+
 export const HZ = 60;
 const DT = 1 / HZ;
 export const COUNTDOWN = 3 * HZ;

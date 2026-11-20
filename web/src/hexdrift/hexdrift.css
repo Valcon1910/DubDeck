@@ -79,14 +79,15 @@
 .hx-touch button { pointer-events: auto; touch-action: none; border: 0; border-radius: 18px; background: rgba(255, 255, 255, 0.16); backdrop-filter: blur(2px);
   font-weight: 800; font-size: 22px; color: #fff; }
 .hx-touch button:active { background: rgba(255, 255, 255, 0.32); }
-.hx-touch-l { display: flex; gap: 12px; }
-.hx-touch-l button { width: 78px; height: 78px; }
-.hx-touch-r { display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto; gap: 10px; align-items: end; margin-bottom: 44px; }
-.hx-t-gas { width: 82px; height: 96px; grid-column: 2; grid-row: 1 / span 2; background: rgba(109, 255, 179, 0.28) !important; }
-.hx-t-brake { width: 64px; height: 52px; grid-column: 1; grid-row: 2; }
-.hx-t-drift { width: 64px; height: 40px; font-size: 12px !important; grid-column: 1; grid-row: 1; }
-.hx-t-small { position: absolute; right: 14px; bottom: calc(max(14px, env(safe-area-inset-bottom)) + 160px); width: 44px; height: 44px; font-size: 18px !important; }
-.hx-play:has(.hx-touch) .hx-speed { right: auto; left: 18px; bottom: calc(max(14px, env(safe-area-inset-bottom)) + 92px); font-size: 28px; }
+/* Left thumb: gas (top) and brake. Right thumb: steer left / right, drift above. */
+.hx-touch-l { display: flex; flex-direction: column; gap: 10px; }
+.hx-t-gas { width: 84px; height: 96px; background: rgba(109, 255, 179, 0.28) !important; }
+.hx-t-brake { width: 84px; height: 60px; }
+.hx-touch-r { display: grid; grid-template-columns: auto auto; gap: 10px 12px; }
+.hx-touch-r .hx-t-steer { width: 78px; height: 78px; grid-row: 2; }
+.hx-t-drift { grid-column: 1 / span 2; grid-row: 1; height: 42px; font-size: 13px !important; }
+.hx-t-small { position: absolute; right: 14px; bottom: calc(max(14px, env(safe-area-inset-bottom)) + 150px); width: 44px; height: 44px; font-size: 18px !important; }
+.hx-play:has(.hx-touch) .hx-speed { right: auto; left: 50%; transform: translateX(-50%); bottom: max(14px, env(safe-area-inset-bottom)); font-size: 26px; text-align: center; }
 
 /* ── Step 2: ghost splits, Gaming Mode, offline ── */
 .hx-small { font-size: 13px; }
@@ -109,3 +110,41 @@
   display: flex; gap: 12px; align-items: center; padding: 12px 14px; border-radius: 14px; background: rgba(20, 17, 46, 0.95); border: 1px solid rgba(255, 255, 255, 0.15); font-size: 14px; }
 .hx-tip p { margin: 0; }
 .hx-tip { pointer-events: auto; }
+@media (max-width: 560px) {
+  .hx-play:has(.hx-touch) .hx-speed { bottom: calc(max(14px, env(safe-area-inset-bottom)) + 200px); }
+}
+
+/* ── Step 3: online records ── */
+.hx-row-tight { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+a.hx-gaming { text-decoration: none; display: inline-flex; align-items: center; }
+.hx-map-li { position: relative; }
+.hx-map-wr { display: block; margin-top: 2px; font-size: 13px; color: #ffd34d; font-variant-numeric: tabular-nums; }
+.hx-map-board { position: absolute; top: 10px; right: 10px; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 12px;
+  background: rgba(0, 0, 0, 0.35); text-decoration: none; font-size: 18px; }
+.hx-map-board:hover, .hx-map-board:focus-visible { background: rgba(255, 211, 77, 0.3); }
+.hx-wr-chip { color: #ffd34d; }
+.hx-toast { position: absolute; left: 50%; top: max(16px, env(safe-area-inset-top)); transform: translateX(-50%); z-index: 30; max-width: calc(100% - 32px);
+  padding: 10px 16px; border-radius: 14px; background: rgba(40, 28, 0, 0.92); color: #ffd34d; font-weight: 700; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4); }
+.hx-online { margin: 6px 0; font-size: 15px; }
+.hx-online a { color: inherit; font-weight: 700; }
+.hx-online-wr { color: #ffd34d; font-weight: 800; font-size: 18px; }
+.hx-page > * { max-width: 760px; margin-left: auto; margin-right: auto; }
+.hx-page-title { margin: 18px 0 10px; font-size: 26px; }
+.hx-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 8px 0 16px; }
+.hx-card { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-radius: 14px; background: rgba(255, 255, 255, 0.07); }
+.hx-card strong { font-size: 24px; font-variant-numeric: tabular-nums; }
+.hx-card a { color: inherit; }
+.hx-card-wr { background: rgba(255, 211, 77, 0.14); }
+.hx-card-wr strong { color: #ffd34d; }
+.hx-board { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.hx-board li { display: grid; grid-template-columns: 40px 1fr auto auto 80px; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 12px; background: rgba(255, 255, 255, 0.05); }
+.hx-board li.me { background: rgba(122, 247, 255, 0.14); }
+.hx-board-rank { text-align: center; font-weight: 800; font-variant-numeric: tabular-nums; }
+.hx-board-who { display: flex; align-items: center; gap: 8px; min-width: 0; color: inherit; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hx-board-who:hover { text-decoration: underline; }
+.hx-board-time { font-weight: 700; font-variant-numeric: tabular-nums; }
+.hx-board-gap { font-size: 13px; text-align: right; font-variant-numeric: tabular-nums; }
+.hx-av { flex: none; border-radius: 50%; object-fit: cover; display: inline-grid; place-items: center; background: rgba(255, 255, 255, 0.15); font-weight: 800; }
+.hx-player { display: flex; align-items: center; gap: 14px; margin-top: 12px; }
+.hx-player .hx-page-title { margin: 0; }
+@media (max-width: 520px) { .hx-board li { grid-template-columns: 30px 1fr auto auto; } .hx-board-gap { display: none; } }

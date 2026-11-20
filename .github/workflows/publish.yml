@@ -99,6 +99,16 @@ jobs:
         if: env.SUPABASE_ACCESS_TOKEN != '' && env.SUPABASE_PROJECT_REF != ''
         run: node scripts/chat-sync.mjs --schema
 
+      # The Hexdrift record checker, deployed per physics version (hexdrift-v3, …)
+      # so the test site's newer physics never rejects the real site's runs.
+      - name: Update the Hexdrift record checker
+        if: env.SUPABASE_ACCESS_TOKEN != '' && env.SUPABASE_PROJECT_REF != ''
+        run: |
+          node scripts/hexdrift-share.mjs --check
+          V=$(node -e "console.log(require('fs').readFileSync('web/src/hexdrift/sim/race.ts','utf8').match(/PHYSICS_V = (\d+)/)[1])")
+          cp -r supabase/functions/hexdrift-submit "supabase/functions/hexdrift-v$V"
+          npx -y supabase@2.122.1 functions deploy "hexdrift-v$V" --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt --use-api
+
       - name: Install
         working-directory: web
         run: npm ci
