@@ -11,7 +11,7 @@ export interface Item { id: string; name: string; need: number; color?: string }
 
 /** The cars. Each has its own model (render/car.ts) and factory colours. */
 export const BODIES: BodyDef[] = [
-  { id: "coupe", name: "Grand Coupe", need: 0, blurb: "Long-hood luxury coupe", paint: "#9c0f1e", accent: "#c8102e" },
+  { id: "coupe", name: "Grand Coupe", need: 0, blurb: "Long-hood luxury coupe", paint: "#1f3d78", accent: "#c9d3e2" },
   { id: "furia", name: "Furia", need: 0, blurb: "Cab-forward supercar", paint: "#d70f14", accent: "#ffcf1a" },
   { id: "rig", name: "Cyber Rig", need: 0, blurb: "Steel-panelled electric truck", paint: "#b4b8bd", accent: "#1c1d21" },
   { id: "zenith", name: "Zenith", need: 6, blurb: "Mid-engine track car, big wing", paint: "#ffcc12", accent: "#15161a" },
@@ -24,14 +24,14 @@ export const PAINTS: Item[] = [
   { id: "ember", name: "Ember", need: 0, color: "#ff5a3c" },
   { id: "lime", name: "Lime", need: 0, color: "#8cff5a" },
   { id: "ocean", name: "Ocean", need: 0, color: "#2f7bff" },
-  { id: "midnight", name: "Midnight", need: 0, color: "#262c45" },
-  { id: "sun", name: "Sun", need: 0, color: "#ffc53d" },
+  { id: "racing", name: "Racing green", need: 0, color: "#0f5a3a" },
+  { id: "sun", name: "Sun", need: 0, color: "#ffe14d" },
   { id: "rose", name: "Rose", need: 2, color: "#ff6fb5" },
   { id: "mint", name: "Mint", need: 4, color: "#5fffd2" },
   { id: "violet", name: "Violet", need: 5, color: "#8f5bff" },
   { id: "copper", name: "Copper", need: 8, color: "#c8763f" },
-  { id: "chrome", name: "Chrome", need: 12, color: "#d4dceb" },
-  { id: "obsidian", name: "Obsidian", need: 16, color: "#101018" },
+  { id: "chrome", name: "Chrome", need: 12, color: "#a9b2c0" },
+  { id: "obsidian", name: "Obsidian", need: 16, color: "#1a1030" },
 ];
 
 /** Wing, caliper and trim colour. */

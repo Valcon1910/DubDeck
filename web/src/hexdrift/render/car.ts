@@ -7,7 +7,7 @@
 // Fast to draw: everything fixed is merged into one mesh per material, and
 // wheels share geometry (about 25 draw calls a car).
 import * as THREE from "three";
-import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { mergeGeometries, toCreasedNormals } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { DEFAULT_LOOK, itemOf, type BodyDef, type Item, type Look } from "../garage.ts";
 
 export interface CarModel {
@@ -91,8 +91,12 @@ function merge(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
     if (n !== g) g.dispose();
     return n;
   });
-  const out = clean.length === 1 ? clean[0] : mergeGeometries(clean, false)!;
+  const merged = clean.length === 1 ? clean[0] : mergeGeometries(clean, false)!;
   if (clean.length > 1) for (const g of clean) g.dispose();
+  // Smooth across gentle bends, sharp at real creases: clean highlights
+  // instead of every facet catching the light.
+  const out = toCreasedNormals(merged, 0.6);
+  if (out !== merged) merged.dispose();
   return out;
 }
 
@@ -173,6 +177,31 @@ function loft(k: Kit, list: St[], o: { lower?: Part; upper?: Part; bottom?: Part
       k.tri(o.cap ?? upper, [0, cy, s.z], [r[j][0], r[j][1], s.z], [r[j2][0], r[j2][1], s.z]);
     }
   }
+}
+
+/** The body's half-width at height y in a section. */
+function surfX(s: St, y: number) {
+  if (y <= s.y1) return s.w1;
+  if (y <= s.y2) return s.w1 + (s.w2 - s.w1) * ((y - s.y1) / (s.y2 - s.y1 || 1));
+  return s.w2 + (s.w3 - s.w2) * Math.min(1, (y - s.y2) / (s.y3 - s.y2 || 1));
+}
+
+/** A flat shape (z, y outline, convex) laid on both sides of the body. */
+function onBody(k: Kit, part: Part, list: St[], pts: [number, number][], lift = 0.012) {
+  k.both((sd) => {
+    const v = pts.map(([z, y]): V => [sd * (surfX(lerpSt(list, z), y) + lift), y, z]);
+    for (let i = 1; i < v.length - 1; i++) k.tri(part, v[0], v[i], v[i + 1]);
+  });
+}
+
+/** Door mirrors on stalks, placed on the body's shoulder at z. */
+function mirrors(k: Kit, list: St[], z: number) {
+  const s0 = lerpSt(list, z);
+  k.both((sd) => {
+    k.box("trim", 0.14, 0.035, 0.05, sd * (s0.w2 + 0.06), s0.y2 + 0.05, z);
+    k.box("paint", 0.15, 0.1, 0.2, sd * (s0.w2 + 0.17), s0.y2 + 0.09, z - 0.03);
+    k.box("glass", 0.02, 0.08, 0.16, sd * (s0.w2 + 0.25), s0.y2 + 0.09, z - 0.03);
+  });
 }
 
 // ── Wheels ──────────────────────────────────────────────────────────────────
@@ -258,7 +287,7 @@ function coupe(k: Kit): Spec {
     { x: 0.94, z: 1.5, r: 0.42, w: 0.3, front: true }, { x: -0.94, z: 1.5, r: 0.42, w: 0.3, front: true },
     { x: 0.95, z: -1.45, r: 0.43, w: 0.32, front: false }, { x: -0.95, z: -1.45, r: 0.43, w: 0.32, front: false },
   ];
-  loft(k, arches([
+  const body = arches([
     st(-2.38, 0.34, 0.46, 0.88, 0.76, 0.84, 0.78, 0.74),
     st(-2.15, 0.28, 0.42, 0.97, 0.86, 0.94, 0.88, 0.84),
     st(-1.6, 0.26, 0.42, 1.0, 0.9, 0.96, 0.92, 0.84, "paint", "glass"),
@@ -270,7 +299,8 @@ function coupe(k: Kit): Spec {
     st(1.6, 0.27, 0.42, 0.99, 0.83, 0.94, 0.85, 0.82),
     st(2.22, 0.3, 0.42, 0.95, 0.74, 0.88, 0.76, 0.78),
     st(2.45, 0.34, 0.44, 0.86, 0.62, 0.78, 0.63, 0.7),
-  ], wheels), { cap: "paint" });
+  ], wheels);
+  loft(k, body, { cap: "paint" });
   // Big grille with vertical chrome slats, lower intakes, splitter.
   k.box("trim", 0.82, 0.32, 0.06, 0, 0.5, 2.44);
   for (let i = -4; i <= 4; i++) k.box("chrome", 0.025, 0.3, 0.08, i * 0.088, 0.5, 2.46);
@@ -287,11 +317,9 @@ function coupe(k: Kit): Spec {
   k.box("tail", 0.6, 0.025, 0.05, 0, 0.72, -2.37);
   k.box("paint", 1.5, 0.04, 0.16, 0, 0.9, -2.08, 0.2);
   k.box("trim", 1.4, 0.12, 0.2, 0, 0.32, -2.32);
-  k.both((s) => {
-    k.box("trim", 0.06, 0.04, 0.22, s * 0.99, 1.0, 0.65);
-    k.box("paint", 0.18, 0.12, 0.2, s * 1.08, 1.03, 0.6);
-    k.box("chrome", 0.02, 0.025, 2.1, s * 0.955, 0.95, -0.35);
-  });
+  mirrors(k, body, 0.5);
+  // Chrome line under the side windows.
+  for (let z = -1.3; z < 0.3; z += 0.2) onBody(k, "chrome", body, [[z, 0.88], [z + 0.2, 0.88], [z + 0.2, 0.91], [z, 0.91]]);
   return { wheels, rim: "multi", tyre: "road", wing: { z: -2.05, y: 0.92, w: 0.95 }, roof: { z: -0.3, y: 1.36 }, exhausts: [[-0.55, 0.32, -2.4], [-0.38, 0.32, -2.4], [0.38, 0.32, -2.4], [0.55, 0.32, -2.4]] };
 }
 
@@ -300,7 +328,7 @@ function furia(k: Kit): Spec {
     { x: 0.94, z: 1.5, r: 0.39, w: 0.3, front: true }, { x: -0.94, z: 1.5, r: 0.39, w: 0.3, front: true },
     { x: 0.96, z: -1.4, r: 0.44, w: 0.36, front: false }, { x: -0.96, z: -1.4, r: 0.44, w: 0.36, front: false },
   ];
-  loft(k, arches([
+  const body = arches([
     st(-2.3, 0.3, 0.44, 0.9, 0.76, 0.86, 0.78, 0.78),
     st(-1.95, 0.26, 0.4, 1.04, 0.9, 1.0, 0.93, 0.88),
     st(-1.0, 0.25, 0.4, 1.06, 0.88, 1.0, 0.92, 0.66, "paint", "gloss"),
@@ -309,12 +337,10 @@ function furia(k: Kit): Spec {
     st(1.2, 0.25, 0.4, 1.0, 0.76, 0.92, 0.78, 0.84),
     st(1.95, 0.25, 0.38, 0.98, 0.68, 0.9, 0.7, 0.8),
     st(2.5, 0.28, 0.36, 0.9, 0.52, 0.82, 0.54, 0.72),
-  ], wheels, "round", 0.06), { cap: "paint" });
+  ], wheels, "round", 0.06);
+  loft(k, body, { cap: "paint" });
   // Big side intakes ahead of the rear wheels.
-  k.both((s) => {
-    k.plate("trim", [[-0.55, 0.45], [-0.05, 0.58], [-0.15, 0.86], [-0.62, 0.82]], 0.06, s * 1.02);
-    k.box("trim", 0.25, 0.3, 0.4, s * 0.88, 0.66, -0.4);
-  });
+  onBody(k, "trim", body, [[-0.8, 0.44], [-0.2, 0.46], [-0.32, 0.76], [-0.8, 0.8]]);
   // Front: wide black intake, splitter, slim LED headlights, hood vents.
   k.box("trim", 1.4, 0.16, 0.06, 0, 0.36, 2.48);
   k.box("trim", 1.8, 0.04, 0.35, 0, 0.26, 2.4);
@@ -327,10 +353,7 @@ function furia(k: Kit): Spec {
   k.both((s) => k.box("tail", 0.38, 0.04, 0.05, s * 0.55, 0.74, -2.31));
   k.box("trim", 1.5, 0.22, 0.32, 0, 0.36, -2.18);
   for (let i = -3; i <= 3; i++) k.box("trim", 0.03, 0.26, 0.4, i * 0.2, 0.34, -2.25);
-  k.both((s) => {
-    k.box("trim", 0.22, 0.03, 0.05, s * 0.86, 0.86, 0.75, 0, 0, s * 0.3);
-    k.box("paint", 0.2, 0.11, 0.22, s * 1.0, 0.9, 0.7);
-  });
+  mirrors(k, body, 0.6);
   k.box("gloss", 1.2, 0.03, 0.28, 0, 0.86, -2.15, 0.25); // ducktail
   return { wheels, rim: "multi", tyre: "road", wing: { z: -2.05, y: 0.88, w: 0.95 }, roof: { z: 0.1, y: 1.16 }, exhausts: [[-0.3, 0.62, -2.32], [0.3, 0.62, -2.32]] };
 }
@@ -367,8 +390,11 @@ function rig(k: Kit): Spec {
   k.box("tail", 2.0, 0.045, 0.04, 0, 1.2, -2.62);
   // One big wiper, small mirrors.
   k.box("trim", 1.2, 0.02, 0.05, 0, 1.63, 0.97, 0, 0.25);
-  k.both((s) => k.box("trim", 0.16, 0.12, 0.18, s * 1.15, 1.42, 0.85));
-  return { wheels, rim: "aero", tyre: "off", wing: null, roof: { z: -0.45, y: 1.86 }, exhausts: [] };
+  k.both((s) => {
+    k.box("trim", 0.12, 0.04, 0.05, s * 1.13, 1.3, 0.9);
+    k.box("trim", 0.12, 0.13, 0.2, s * 1.22, 1.36, 0.88);
+  });
+  return { wheels, rim: "aero", tyre: "off", wing: { z: -2.42, y: 1.3, w: 0.95 }, roof: { z: -0.45, y: 1.86 }, exhausts: [] };
 }
 
 function zenith(k: Kit): Spec {
@@ -376,7 +402,7 @@ function zenith(k: Kit): Spec {
     { x: 0.94, z: 1.45, r: 0.39, w: 0.32, front: true }, { x: -0.94, z: 1.45, r: 0.39, w: 0.32, front: true },
     { x: 0.96, z: -1.4, r: 0.44, w: 0.38, front: false }, { x: -0.96, z: -1.4, r: 0.44, w: 0.38, front: false },
   ];
-  loft(k, arches([
+  const body = arches([
     st(-2.25, 0.32, 0.46, 0.95, 0.84, 0.9, 0.86, 0.84),
     st(-1.85, 0.27, 0.42, 1.05, 0.95, 1.0, 0.97, 0.9),
     st(-0.95, 0.26, 0.42, 1.05, 0.92, 0.98, 1.0, 0.72, "paint", "glass"),
@@ -385,11 +411,12 @@ function zenith(k: Kit): Spec {
     st(1.12, 0.26, 0.42, 1.0, 0.8, 0.95, 0.82, 0.86),
     st(1.95, 0.26, 0.4, 0.98, 0.68, 0.92, 0.7, 0.82),
     st(2.42, 0.3, 0.38, 0.9, 0.5, 0.82, 0.52, 0.74),
-  ], wheels, "round", 0.05), { cap: "paint" });
+  ], wheels, "round", 0.05);
+  loft(k, body, { cap: "paint" });
+  onBody(k, "trim", body, [[-0.82, 0.44], [-0.3, 0.47], [-0.36, 0.8], [-0.82, 0.84]]);
+  onBody(k, "accent", body, [[-0.3, 0.47], [-0.2, 0.48], [-0.27, 0.8], [-0.36, 0.8]], 0.016);
   // Big side scoops, hood vent, angular headlights, wide grille, dive planes.
   k.both((s) => {
-    k.plate("trim", [[-0.95, 0.42], [-0.3, 0.5], [-0.38, 0.88], [-0.9, 0.9]], 0.08, s * 1.04);
-    k.plate("accent", [[-0.32, 0.5], [-0.2, 0.52], [-0.28, 0.9], [-0.38, 0.88]], 0.09, s * 1.05);
     k.box("trim", 0.42, 0.1, 0.2, s * 0.6, 0.58, 2.22, -0.2, s * 0.45);
     k.box("lamp", 0.36, 0.035, 0.2, s * 0.6, 0.62, 2.23, -0.2, s * 0.45);
     k.box("trim", 0.3, 0.03, 0.22, s * 0.92, 0.42, 2.3, 0, s * 0.4, s * 0.25);
@@ -401,14 +428,11 @@ function zenith(k: Kit): Spec {
   k.both((s) => k.box("tail", 0.42, 0.06, 0.05, s * 0.58, 0.78, -2.26, 0, 0, s * 0.18));
   k.box("trim", 1.55, 0.24, 0.3, 0, 0.36, -2.15);
   for (let i = -2; i <= 2; i++) k.box("trim", 0.03, 0.28, 0.36, i * 0.25, 0.34, -2.2);
-  k.both((s) => {
-    k.box("trim", 0.06, 0.04, 0.22, s * 0.99, 0.92, 0.6);
-    k.box("paint", 0.18, 0.1, 0.18, s * 1.08, 0.95, 0.55);
-  });
+  mirrors(k, body, 0.5);
   return { wheels, rim: "y5", tyre: "road", wing: { z: -2.0, y: 0.95, w: 1.0 }, roof: { z: 0.0, y: 1.18 }, exhausts: [[-0.16, 0.5, -2.3], [0.16, 0.5, -2.3], [-0.16, 0.36, -2.3], [0.16, 0.36, -2.3]] };
 }
 
-function formula(k: Kit): Spec {
+function formula(k: Kit, look: Look): Spec {
   const wheels: Wheel[] = [
     { x: 1.02, z: 1.95, r: 0.4, w: 0.36, front: true }, { x: -1.02, z: 1.95, r: 0.4, w: 0.36, front: true },
     { x: 0.98, z: -1.5, r: 0.44, w: 0.5, front: false }, { x: -0.98, z: -1.5, r: 0.44, w: 0.5, front: false },
@@ -446,12 +470,14 @@ function formula(k: Kit): Spec {
   k.box("paint", 2.15, 0.03, 0.2, 0, 0.23, 2.5, -0.35);
   k.box("paint", 1.95, 0.03, 0.16, 0, 0.3, 2.42, -0.55);
   k.both((s) => k.box("accent", 0.03, 0.26, 0.55, s * 1.16, 0.24, 2.58));
-  // Rear wing with flap, beam wing, end plates and rain light.
-  k.box("accent", 1.5, 0.05, 0.38, 0, 0.98, -2.35, 0.1);
-  k.box("paint", 1.5, 0.04, 0.24, 0, 1.1, -2.45, 0.4);
+  // Rear wing with flap, beam wing, end plates (the garage can swap it).
+  if (look.wing === "stock") {
+    k.box("accent", 1.5, 0.05, 0.38, 0, 0.98, -2.35, 0.1);
+    k.box("paint", 1.5, 0.04, 0.24, 0, 1.1, -2.45, 0.4);
+    k.both((s) => k.plate("paint", [[-2.75, 0.55], [-1.95, 0.6], [-2.0, 1.2], [-2.7, 1.25]], 0.04, s * 0.77));
+    k.box("accent", 0.06, 0.45, 0.18, 0, 0.72, -2.2);
+  }
   k.box("accent", 1.0, 0.04, 0.25, 0, 0.46, -2.35);
-  k.both((s) => k.plate("paint", [[-2.75, 0.55], [-1.95, 0.6], [-2.0, 1.2], [-2.7, 1.25]], 0.04, s * 0.77));
-  k.box("accent", 0.06, 0.45, 0.18, 0, 0.72, -2.2);
   k.box("tail", 0.14, 0.08, 0.04, 0, 0.55, -2.5);
   // Suspension arms out to the wheels.
   for (const w of wheels) {
@@ -460,10 +486,10 @@ function formula(k: Kit): Spec {
     k.rod("trim", [s * inner, 0.3, w.z - 0.15], [s * (Math.abs(w.x) - 0.2), w.r - 0.12, w.z], 0.022);
     k.rod("trim", [s * inner, 0.42, w.z - 0.2], [s * (Math.abs(w.x) - 0.2), w.r + 0.08, w.z], 0.018);
   }
-  return { wheels, rim: "covered", tyre: "slick", wing: null, roof: null, exhausts: [[0, 0.56, -2.28]] };
+  return { wheels, rim: "covered", tyre: "slick", wing: { z: -2.3, y: 0.55, w: 0.68 }, roof: { z: -0.45, y: 1.04 }, exhausts: [[0, 0.56, -2.28]] };
 }
 
-const BUILDERS: Record<string, (k: Kit) => Spec> = { coupe, furia, rig, zenith, formula };
+const BUILDERS: Record<string, (k: Kit, look: Look) => Spec> = { coupe, furia, rig, zenith, formula };
 
 /** Wing options from the garage (cars with their own wings keep them). */
 function addWing(k: Kit, kind: string, wing: { z: number; y: number; w: number }) {
@@ -526,7 +552,7 @@ export function buildCar(opts: CarOptions = {}): CarModel {
   const trail = look.trail === "rainbow" ? null : colorOf("trail", look.trail) ?? "#7af7ff";
 
   const k = new Kit();
-  const spec = build(k);
+  const spec = build(k, look);
   if (spec.wing && look.wing !== "none") addWing(k, look.wing === "stock" ? (def.id === "zenith" ? "high" : "none") : look.wing, spec.wing);
   if (spec.roof && look.extra !== "none") addExtra(k, look.extra, spec.roof);
   for (const [x, y, z] of spec.exhausts) {
@@ -547,21 +573,23 @@ export function buildCar(opts: CarOptions = {}): CarModel {
       : null;
   const steel = def.id === "rig" && look.paint === "factory";
   const chromePaint = look.paint === "chrome", obsidian = look.paint === "obsidian";
+  const D = { polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 };
   const phong = (c: string, spec: string, shin: number, extra: THREE.MeshPhongMaterialParameters = {}) =>
-    keep(new THREE.MeshPhongMaterial({ color: c, specular: spec, shininess: shin, flatShading: true, side: THREE.DoubleSide, ...extra }));
+    keep(new THREE.MeshPhongMaterial({ color: c, specular: spec, shininess: shin, side: THREE.DoubleSide, ...extra }));
   const M: Record<Part, THREE.Material> = ghostM
     ? { paint: ghostM, accent: ghostM, trim: ghostM, gloss: ghostM, glass: ghostM, lamp: ghostM, tail: ghostM, metal: ghostM, chrome: ghostM, white: ghostM }
     : {
-      paint: phong(color, steel || chromePaint ? "#ffffff" : "#8a8a8a", steel ? 40 : chromePaint ? 140 : 90, { emissive: obsidian ? "#0b0820" : "#000000" }),
-      accent: phong(accent, "#555555", 50),
-      trim: phong("#17181d", "#222222", 10),
-      gloss: phong("#0c0d10", "#9aa3b5", 110),
-      glass: phong("#0b1222", "#d8e8ff", 130, { emissive: "#04060c" }),
-      lamp: keep(new THREE.MeshBasicMaterial({ color: "#f4f8ff", side: THREE.DoubleSide })),
-      tail: keep(new THREE.MeshBasicMaterial({ color: "#8a1020", side: THREE.DoubleSide })),
-      metal: phong("#8d94a3", "#ffffff", 90),
-      chrome: phong("#d9dee8", "#ffffff", 160),
-      white: phong("#f2f4f8", "#ffffff", 80),
+      paint: phong(chromePaint ? "#a9b2c0" : color, steel || chromePaint ? "#ffffff" : "#5c5c5c", steel ? 30 : chromePaint ? 120 : 50, { emissive: obsidian ? "#0b0820" : "#000000" }),
+      // Details sit on the paint: drawn a hair in front so they never flicker.
+      accent: phong(accent, "#555555", 40, D),
+      trim: phong("#17181d", "#222222", 10, D),
+      gloss: phong("#0c0d10", "#7a8295", 80, D),
+      glass: phong("#0b1222", "#b8c8e0", 90, { emissive: "#04060c", ...D }),
+      lamp: keep(new THREE.MeshBasicMaterial({ color: "#f4f8ff", side: THREE.DoubleSide, ...D })),
+      tail: keep(new THREE.MeshBasicMaterial({ color: "#8a1020", side: THREE.DoubleSide, ...D })),
+      metal: phong("#8d94a3", "#ffffff", 70, D),
+      chrome: phong("#d9dee8", "#ffffff", 120, D),
+      white: phong("#f2f4f8", "#ffffff", 60, D),
     };
   for (const [p, g] of k.build()) {
     geos.push(g);
