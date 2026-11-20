@@ -123,14 +123,14 @@ test("garage: free parts equip and stay, locked parts preview only, and the car 
   await expect(page.getByRole("button", { name: /^Ocean/ })).toHaveAttribute("aria-pressed", "true");
   // A locked car can be looked at but not equipped.
   await page.getByRole("tab", { name: "Car" }).click();
-  await page.getByRole("button", { name: /^Apex/ }).click();
-  await expect(page.locator(".hx-preview-lock")).toContainText("Apex: unlocks at 18 medal points");
-  await expect(page.getByRole("button", { name: /^Viper/ })).toHaveAttribute("aria-pressed", "true");
-  await page.getByRole("button", { name: /^Bolt/ }).click();
+  await page.getByRole("button", { name: /^Formula X/ }).click();
+  await expect(page.locator(".hx-preview-lock")).toContainText("Formula X: unlocks at 12 medal points");
+  await expect(page.getByRole("button", { name: /^Grand Coupe/ })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: /^Cyber Rig/ }).click();
   await page.reload();
   await page.getByRole("tab", { name: "Paint" }).click();
   await expect(page.getByRole("button", { name: /^Ocean/ })).toHaveAttribute("aria-pressed", "true");
-  expect(JSON.parse(await page.evaluate(() => localStorage.getItem("hexdrift.look") ?? "{}"))).toMatchObject({ body: "bolt", paint: "ocean" });
+  expect(JSON.parse(await page.evaluate(() => localStorage.getItem("hexdrift.look") ?? "{}"))).toMatchObject({ body: "rig", paint: "ocean" });
   // The game still starts with the new car.
   await page.goto("/#/hexdrift/neon-downtown");
   await expect(page.locator(".hx-time")).toBeVisible();

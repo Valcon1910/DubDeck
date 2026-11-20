@@ -129,7 +129,7 @@ a.hx-gaming { text-decoration: none; display: inline-flex; align-items: center; 
 .hx-online a { color: inherit; font-weight: 700; }
 .hx-online-wr { color: #ffd34d; font-weight: 800; font-size: 18px; }
 .hx-page > * { max-width: 760px; margin-left: auto; margin-right: auto; }
-.hx-page-title { margin: 18px 0 10px; font-size: 26px; }
+.hx-page-title { margin: 18px auto 10px; font-size: 26px; }
 .hx-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 8px 0 16px; }
 .hx-card { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-radius: 14px; background: rgba(255, 255, 255, 0.07); }
 .hx-card strong { font-size: 24px; font-variant-numeric: tabular-nums; }
@@ -161,7 +161,7 @@ a.hx-gaming { text-decoration: none; display: inline-flex; align-items: center; 
 .hx-tabs { display: flex; gap: 6px; overflow-x: auto; padding: 4px 0 10px; scrollbar-width: none; }
 .hx-tabs button { flex: none; border: 0; border-radius: 999px; padding: 8px 14px; background: rgba(255, 255, 255, 0.08); color: inherit; font-weight: 700; }
 .hx-tabs button.on { background: #7a5cff; }
-.hx-parts { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+.hx-parts { list-style: none; margin: 0 auto; padding: 0; width: 100%; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
 .hx-part { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 10px 12px; border-radius: 14px; border: 2px solid transparent;
   background: rgba(255, 255, 255, 0.07); color: inherit; text-align: left; cursor: pointer; }
 .hx-part:hover { background: rgba(255, 255, 255, 0.12); }
@@ -170,5 +170,6 @@ a.hx-gaming { text-decoration: none; display: inline-flex; align-items: center; 
 .hx-part.locked .hx-part-name { opacity: 0.6; }
 .hx-part-name { font-weight: 700; }
 .hx-part-tag { font-size: 12px; opacity: 0.75; }
+.hx-part-blurb { font-size: 12px; opacity: 0.6; line-height: 1.25; }
 .hx-swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.4); }
 .hx-rainbow { background: conic-gradient(#ff5a3c, #ffc53d, #8cff5a, #5fffd2, #2f7bff, #8f5bff, #ff6fb5, #ff5a3c); }
