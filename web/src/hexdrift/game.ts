@@ -7,9 +7,11 @@ import { botInput } from "./sim/bot.ts";
 import { COUNTDOWN, formatTime, HZ, newRace, pack, raceTicks, step, type Race } from "./sim/race.ts";
 import { groundAt } from "./sim/track.ts";
 import { buildWorld, type World } from "./render/world.ts";
+import { NO_GROUND, terrainAt } from "./sim/terrain.ts";
 import { blobShadow, buildCar, type CarModel } from "./render/car.ts";
 import type { Controls } from "./input.ts";
-import { DEFAULT_LOOK, type Look } from "./garage.ts";
+import { DEFAULT_LOOK, itemOf, type Item, type Look } from "./garage.ts";
+import { FinishFx, Trail, trailDef, type FinishKind } from "./render/fx.ts";
 
 export interface HudRefs {
   time: HTMLElement | null;
@@ -55,6 +57,9 @@ export class Game {
   private world: World;
   private car: CarModel;
   private shadow = blobShadow();
+  private trail: Trail;
+  private fx = new FinishFx();
+  private trailOn = 0;
   private raf = 0;
   private last = 0;
   private acc = 0;
@@ -80,7 +85,6 @@ export class Game {
   private ghost: Ghost | null = null;
   /** The world record, in gold (only when someone else holds it). */
   private wr: Ghost | null = null;
-  private ghostShown = true;
   private splitText = "";
   private splitClass = "";
   private splitUntil = 0;
@@ -134,6 +138,9 @@ export class Game {
     this.car = buildCar({ look, mapAccent: biome.accent });
     this.scene.add(this.car.root);
     this.scene.add(this.shadow.mesh);
+    this.trail = new Trail(trailDef(itemOf("trail", look.trail) as Item));
+    this.scene.add(this.trail.mesh);
+    this.scene.add(this.fx.group);
 
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(canvas);
@@ -208,10 +215,6 @@ export class Game {
 
   get hasGhost() { return this.ghost !== null || this.wr !== null; }
 
-  toggleGhost() {
-    this.ghostShown = !this.ghostShown;
-    return this.ghostShown;
-  }
 
   /**
    * Rebuilds a run from its inputs (after a reload). Same inputs, same
@@ -250,6 +253,8 @@ export class Game {
     if (this.race.phase === "finished" && !this.finished) {
       this.finished = true;
       if (g) this.showSplit(this.race.finishTicks - g.finish);
+      const c = this.race.car;
+      this.fx.start(itemOf("finish", this.look.finish).id as FinishKind, c.x, c.y, c.z);
       this.events.onFinish(this.race.finishTicks, this.race.inputs.slice(), this.race.splits.slice());
     }
   }
@@ -271,6 +276,8 @@ export class Game {
     }
     this.splitText = "";
     this.splitUntil = 0;
+    this.trail.reset();
+    this.fx.stop();
     this.prev = this.cur = snap(this.race);
     this.camYaw = this.race.car.yaw;
     this.camInit = false;
@@ -343,10 +350,18 @@ export class Game {
     this.car.update(car.speed, steer, dt, (lastIn & 32) !== 0);
     this.car.setBoost(car.boosting > 0);
 
+    // The trail: bright while boosting, softer while drifting or flying.
+    const glow = car.boosting > 0 ? 1 : Math.abs(car.slip) > 4 && car.grounded ? 0.55 : !car.grounded && Math.abs(car.speed) > 20 ? 0.35 : 0;
+    this.trailOn += (glow - this.trailOn) * Math.min(1, dt * (glow > this.trailOn ? 12 : 4));
+    if (jump) this.trail.reset();
+    const sy = Math.sin(yaw), cy = Math.cos(yaw);
+    this.trail.update(x - sy * 2.3, y + 0.32, z - cy * 2.3, cy, -sy, this.trailOn, dt);
+    this.fx.update(dt);
+
     // The ghosts.
     for (const gh of [this.ghost, this.wr]) {
       if (!gh) continue;
-      const show = this.ghostShown && gh.race.phase === "running";
+      const show = gh.race.phase === "running";
       gh.model.root.visible = show;
       if (show) {
         const p = gh.prev, q = gh.cur;
@@ -362,15 +377,17 @@ export class Game {
       }
     }
 
-    // Shadow on the road below.
-    const g = groundAt(this.race.track, x, y + 0.5, z, 0.5);
-    if (g && y - g.h < 25) {
+    // Shadow on the road or the ground below.
+    const road = groundAt(this.race.track, x, y + 0.5, z, 0.5);
+    const ter = terrainAt(this.race.track, x, z).h;
+    const gh = Math.max(road ? road.h : NO_GROUND, ter <= y + 0.5 ? ter : NO_GROUND);
+    if (gh > NO_GROUND && y - gh < 25) {
       this.shadow.mesh.visible = true;
-      this.shadow.mesh.position.set(x, g.h + 0.06, z);
+      this.shadow.mesh.position.set(x, gh + 0.09, z);
       this.shadow.mesh.rotation.y = yaw;
-      const s = 1 + (y - g.h) * 0.06;
+      const s = 1 + (y - gh) * 0.06;
       this.shadow.mesh.scale.set(s, 1, s);
-      (this.shadow.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 1 - (y - g.h) / 25);
+      (this.shadow.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 1 - (y - gh) / 25);
     } else this.shadow.mesh.visible = false;
 
     // Chase camera.
@@ -464,6 +481,8 @@ export class Game {
     this.setGhost(null);
     this.setRecordGhost(null);
     this.shadow.dispose();
+    this.trail.dispose();
+    this.fx.dispose();
     this.renderer.dispose();
     this.renderer.forceContextLoss();
     this.canvas.remove();

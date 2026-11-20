@@ -2,7 +2,8 @@
 // turns slowly on its own. Draws only while the garage is open and visible.
 import * as THREE from "three";
 import { buildCar, type CarModel } from "./car.ts";
-import type { Look } from "../garage.ts";
+import { itemOf, type Item, type Look } from "../garage.ts";
+import { FinishFx, Trail, trailDef, type FinishKind } from "./fx.ts";
 
 export class Preview {
   private renderer: THREE.WebGLRenderer;
@@ -18,6 +19,8 @@ export class Preview {
   private spinV = 0.25;
   private drag: { x: number; t: number } | null = null;
   private boostUntil = 0;
+  private trail: Trail | null = null;
+  private fx = new FinishFx();
   private last = performance.now();
 
   constructor(host: HTMLElement) {
@@ -37,6 +40,7 @@ export class Preview {
     this.ring = new THREE.Mesh(new THREE.RingGeometry(4.1, 4.25, 64).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: "#7a5cff" }));
     this.ring.position.y = 0.01;
     this.scene.add(this.ring);
+    this.scene.add(this.fx.group);
     this.camera.position.set(0, 2.6, 8.2);
     this.camera.lookAt(0, 0.65, 0);
 
@@ -76,10 +80,16 @@ export class Preview {
     if (this.car) { this.scene.remove(this.car.root); this.car.dispose(); }
     this.car = buildCar({ look, mapAccent });
     this.scene.add(this.car.root);
+    this.trail?.dispose();
+    this.trail = new Trail(trailDef(itemOf("trail", look.trail) as Item));
+    this.car.root.add(this.trail.mesh);
   }
 
-  /** Shows the boost flame for a moment (when picking a trail). */
-  boost() { this.boostUntil = performance.now() + 1500; }
+  /** Shows the boost flame and trail for a moment (when picking a trail). */
+  boost() { this.boostUntil = performance.now() + 2200; }
+
+  /** Plays a finish effect around the car. */
+  celebrate(kind: string) { this.fx.start(kind as FinishKind, 0, 0, 0, 0.32); }
 
   private frame(now: number) {
     const dt = Math.min(0.1, (now - this.last) / 1000);
@@ -92,8 +102,15 @@ export class Preview {
     if (this.car) {
       this.car.root.rotation.y = this.yaw;
       this.car.update(0, Math.sin(now / 900) * 0.6, dt);
-      this.car.setBoost(now < this.boostUntil);
+      const on = now < this.boostUntil;
+      this.car.setBoost(on);
+      if (this.trail) {
+        // In the car's own space: the road "moves" backwards under it.
+        this.trail.shift(0, -14 * dt);
+        this.trail.update(0, 0.32, -2.3, 1, 0, on ? 1 : 0, dt);
+      }
     }
+    this.fx.update(dt);
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -104,6 +121,8 @@ export class Preview {
     window.removeEventListener("pointerup", this.up);
     this.ro.disconnect();
     this.car?.dispose();
+    this.trail?.dispose();
+    this.fx.dispose();
     for (const m of [this.stage, this.ring]) { m.geometry.dispose(); (m.material as THREE.Material).dispose(); }
     this.renderer.dispose();
     this.renderer.forceContextLoss();

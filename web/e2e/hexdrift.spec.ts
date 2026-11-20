@@ -53,7 +53,6 @@ test("a finished run is saved, then raced as a ghost with live splits", async ({
   // The new best becomes the ghost; the same drive again matches it exactly.
   await expect.poll(async () => (await hook(page))?.ghost).toBe(true);
   await page.getByRole("button", { name: "Restart", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Ghosts (G)" })).toBeVisible();
   await autopilot(page);
   await expect(page.locator(".hx-split")).toHaveText("±0.000", { timeout: 60_000 });
   await expect(page.locator(".hx-final")).toHaveText(final, { timeout: 90_000 });

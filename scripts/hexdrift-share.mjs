@@ -12,6 +12,7 @@ const files = {
   "math.ts": "sim/math.ts",
   "track.ts": "sim/track.ts",
   "race.ts": "sim/race.ts",
+  "terrain.ts": "sim/terrain.ts",
   "maps.ts": "maps.ts",
 };
 const head = "// Copied from web/src/hexdrift by scripts/hexdrift-share.mjs. Don't edit here.\n";
