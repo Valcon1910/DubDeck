@@ -14,7 +14,7 @@ const HOST_RE = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,
  * - injects a Content-Security-Policy: the Site itself, YouTube thumbnails, and
  *   YouTube's video hosts (for saving files).
  */
-function herenow(apiHost: string | null, isBuild: boolean): Plugin {
+function herenow(apiHost: string | null, isBuild: boolean, chatRef: string | null): Plugin {
   const yt = "https://*.googlevideo.com";
   const csp = [
     "default-src 'self'",
@@ -22,9 +22,9 @@ function herenow(apiHost: string | null, isBuild: boolean): Plugin {
     "script-src 'self' 'wasm-unsafe-eval' blob:",
     "worker-src 'self' blob:",
     "style-src 'self' 'unsafe-inline'",
-    `connect-src 'self' ${yt} https://*.savenow.to https://api.github.com${isBuild ? "" : " ws: http://localhost:* http://127.0.0.1:*"}`,
+    `connect-src 'self' ${yt} https://*.savenow.to https://api.github.com https://*.supabase.co wss://*.supabase.co${isBuild ? "" : " ws: http://localhost:* http://127.0.0.1:*"}`,
     "img-src 'self' data: blob: https:",
-    `media-src 'self' blob: ${yt}`,
+    `media-src 'self' blob: ${yt} https://*.supabase.co`,
     "font-src 'self'",
     "object-src 'none'",
     "base-uri 'none'",
@@ -50,6 +50,15 @@ function herenow(apiHost: string | null, isBuild: boolean): Plugin {
         manifest.proxies["/api/*"] = { upstream: `https://${apiHost}/api`, headers, rateLimit: "1000/hour/ip" };
         manifest.proxies["/events"] = { upstream: `https://${apiHost}/api/events`, method: "GET", headers, rateLimit: "600/hour/ip" };
       }
+      // Chat: here.now adds the visitor's verified email and the shared secret.
+      if (chatRef) {
+        manifest.proxies["/chat-login"] = {
+          upstream: `https://${chatRef}.supabase.co/functions/v1/vortex-login`,
+          method: "POST",
+          headers: { "X-Vortex-Email": "${HERENOW_VISITOR_EMAIL}", "X-Vortex-Secret": "${VORTEX_CHAT_SECRET}" },
+          rateLimit: "120/hour/ip",
+        };
+      }
       const out = path.resolve(__dirname, "dist/.herenow/proxy.json");
       fs.mkdirSync(path.dirname(out), { recursive: true });
       fs.writeFileSync(out, JSON.stringify(manifest, null, 2) + "\n");
@@ -63,6 +72,11 @@ export default defineConfig(({ command, mode }) => {
   const apiHost = (env.DUBDECK_API_HOST || "").trim().toLowerCase() || null;
   if (apiHost && !HOST_RE.test(apiHost)) {
     throw new Error(`DUBDECK_API_HOST must be a bare hostname like api.example.com, got "${apiHost}"`);
+  }
+  // Chat's Supabase project (the SUPABASE_PROJECT_REF secret). Without it, Chat shows "Coming soon".
+  const chatRef = (env.SUPABASE_PROJECT_REF || "").trim().toLowerCase() || null;
+  if (chatRef && !/^[a-z0-9]{20}$/.test(chatRef)) {
+    throw new Error("SUPABASE_PROJECT_REF must be the 20-letter project id from the Supabase address");
   }
   // In dev, Vite plays the role of the here.now proxy: it adds the key server-side.
   // Set RAPIDAPI_KEY in web/.env.local (never commit it) to try real lookups locally.
@@ -78,10 +92,11 @@ export default defineConfig(({ command, mode }) => {
   };
 
   return {
-    plugins: [react(), herenow(apiHost, isBuild)],
+    plugins: [react(), herenow(apiHost, isBuild, chatRef)],
     // The repository the admin editor saves to (set automatically in GitHub Actions).
     define: {
       __VORTEX_REPO__: JSON.stringify(env.GITHUB_REPOSITORY || "Valcon1910/DubDeck"),
+      __VORTEX_CHAT__: JSON.stringify(isBuild ? !!chatRef : env.VORTEX_CHAT === "1"),
       __VORTEX_BRANCH__: JSON.stringify(env.VORTEX_BRANCH || "main"),
       // People with Admin (Editor) rights besides the owners (config/roles.json).
       __VORTEX_ADMINS__: JSON.stringify((() => {

@@ -4,6 +4,7 @@ import { Blocks, LinkButton, PictureButton, ResizeHandles } from "./Blocks";
 import { Editable, useEdit } from "./editable";
 import { UpdateLog } from "./UpdateLog";
 import { isOwner, useVisitorEmail } from "./admins";
+import { CHAT_ON, UnreadBadge, useChat } from "./chat/store";
 
 export interface Welcome { name: string; avatar: string }
 
@@ -11,12 +12,13 @@ export function HomePage({ welcome }: { welcome?: Welcome }) {
   const c = useContent();
   const edit = useEdit();
   const s = c.sections;
+  const unread = useChat()?.unread ?? 0;
   const tiles: { key: keyof Content["sections"]; href: string | null; external?: boolean; wide?: boolean }[] = [
     { key: "downloader", href: "#/downloader" },
     { key: "games", href: "#/games" },
     { key: "docs", href: null },
     { key: "slides", href: null },
-    { key: "chat", href: null, wide: true },
+    { key: "chat", href: CHAT_ON ? "#/chat" : null, wide: true },
     { key: "announcements", href: "#/announcements", wide: true },
   ];
   return (
@@ -30,8 +32,13 @@ export function HomePage({ welcome }: { welcome?: Welcome }) {
         {tiles.filter((t) => edit || s[t.key].visible).map((t) => {
           const body = (
             <>
-              <Editable as="span" className="vx-eyebrow" path={`sections.${t.key}.label`} placeholder="Label" />
-              <Editable as="strong" path={`sections.${t.key}.title`} placeholder="Title" />
+              {t.key === "chat" && CHAT_ON && !edit && /coming soon/i.test(s.chat.label ?? "")
+                ? <span className="vx-eyebrow">New</span>
+                : <Editable as="span" className="vx-eyebrow" path={`sections.${t.key}.label`} placeholder="Label" />}
+              <span className="vx-tile-title">
+                <Editable as="strong" path={`sections.${t.key}.title`} placeholder="Title" />
+                {t.key === "chat" && !edit && <UnreadBadge count={unread} label="unread messages" />}
+              </span>
               <Editable as="span" className="vx-muted" path={`sections.${t.key}.description`} placeholder="Description" multiline />
               {edit && (
                 <button type="button" className="vx-chip-btn" aria-pressed={s[t.key].visible}

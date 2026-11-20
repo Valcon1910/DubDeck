@@ -22,6 +22,27 @@
 
 **Limits:** combining needs the picture, the sound and the result in memory, so very long high-quality videos can be slow, and an iPad with little free memory may fail to combine them (the page then suggests a lower quality). Links expire after about 6 hours. The free RapidAPI plan has a monthly quota, and the page shows how many lookups are left. Links are generated for Colombia (`COUNTRY` in `web/src/vortex/youtube.ts`).
 
+### Set up Chat (once, free)
+
+Chat runs on a free Supabase project. Nobody signs in twice: here.now's
+sign-in gate already knows each visitor's email, and the site's `/chat-login`
+route passes it (with a shared secret) to a small Supabase function that
+opens a chat session for that email. Privacy is enforced by the database:
+people only read conversations they're in.
+
+1. Sign up at [supabase.com](https://supabase.com) (free plan, no card) and create a project.
+2. Account → Access Tokens → create a token.
+3. In GitHub: Settings → Secrets and variables → Actions → New repository secret:
+   `SUPABASE_ACCESS_TOKEN` (the token) and `SUPABASE_PROJECT_REF` (the 20-letter
+   id in your project's address, `https://<id>.supabase.co`).
+4. Right after that, Actions → **Set up Chat** → Run workflow. It builds the
+   database, adds everyone on the access lists, deploys the sign-in function,
+   checks it works and republishes the test site with Chat on.
+
+Free-plan notes: 500 MB database, 1 GB of files (25 MB per file), 200 people
+online at once. A project that nobody uses for 7 days is paused; open it in
+the Supabase dashboard to wake it. Test and real sites share the same chats.
+
 ### Admin editor
 
 Open the **Editor** button in the top bar. It is shown only to the emails in `web/src/vortex/admins.ts`; `#/admin` also works. The editor works like Google Sites: the real pages are shown, you click any text to change it, and a side panel holds Pages (show or hide sections), Theme and Access. It has undo and redo and a Preview mode. Use it to change texts, add or remove external games (with logos), choose who can open the site, and change the site name and color. A live preview shows changes as you type. **Publish** saves everything permanently as one commit to this repository (`web/content.json`, `config/allowed-emails.json`, and uploaded logos in `web/public/logos/`). GitHub then redeploys the site within about a minute, and the editor shows when it is live.
@@ -243,6 +264,12 @@ DUBDECK_BACKEND_KEY=<same key> npm run dev     # http://127.0.0.1:5173
 `DUBDECK_DEV_LOGIN=1` adds a "Developer sign-in" form that skips Google for allowlisted emails. **Never enable it in production.**
 
 ### Running the end-to-end tests
+
+Chat tests (`e2e/chat.spec.ts`, `supabase/tests/chat.test.mjs`) need a local Supabase:
+`npx supabase start`, `npx supabase functions serve --env-file <file with VORTEX_CHAT_SECRET=…>`,
+`CHAT_DB_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres node scripts/chat-sync.mjs --schema`,
+then the dev server with `VORTEX_CHAT=1` and `CHAT_E2E=1 npx playwright test e2e/chat.spec.ts`.
+
 
 With the backend (dev login on, `DUBDECK_ALLOW_PRIVATE_URLS=1`) and `npm run dev` running, plus a small test video served locally:
 

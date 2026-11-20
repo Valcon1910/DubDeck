@@ -1,19 +1,21 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { isEditor, isOwner, useVisitorEmail } from "./admins";
-import { isSignedOut, logout, nameFromEmail, signBackIn, useApplyAppearance, useGravatar, usePrefs } from "./account";
+import { isSignedOut, logout, nameFromEmail, signBackIn, useApplyAppearance, useGravatar, usePrefs, type Prefs } from "./account";
 import { Avatar, Icon, type IconName, Settings } from "./Settings";
 import { ContentContext, normalize, PUBLISHED } from "./content";
 import { Downloader } from "./Downloader";
 import { GamesPage, HomePage, NotFound, SignedOut } from "./pages";
 import { AnnouncementsPage } from "./Announcements";
+import { CHAT_ON, ChatProvider, UnreadBadge, useChat } from "./chat/store";
 import "@fontsource-variable/space-grotesk";
 import "./vortex.css";
 
 const Manage = lazy(() => import("./Manage").then((m) => ({ default: m.Manage })));
+const ChatPage = lazy(() => import("./chat/Chat").then((m) => ({ default: m.ChatPage })));
 const Admin = lazy(() => import("./Admin").then((m) => ({ default: m.Admin })));
 
-type Route = "home" | "games" | "downloader" | "announcements" | "admin" | "manage" | "notfound";
-const ROUTES: Route[] = ["games", "downloader", "announcements", "admin", "manage"];
+type Route = "home" | "games" | "downloader" | "announcements" | "chat" | "admin" | "manage" | "notfound";
+const ROUTES: Route[] = ["games", "downloader", "announcements", "chat", "admin", "manage"];
 
 function readRoute(): Route {
   const r = location.hash.replace(/^#\/?/, "").split(/[/?]/)[0] as Route;
@@ -31,15 +33,26 @@ const OTHER_SITE = IS_TEST
   : { label: "Test site", url: __VORTEX_SITES__.test };
 
 export function VortexApp() {
-  const [route, setRoute] = useState<Route>(readRoute);
   const email = useVisitorEmail();
-  const editor = isEditor(email);
   const [prefs, setPrefs] = usePrefs(email);
+  const gravatar = useGravatar(email);
+  return (
+    <ChatProvider email={isSignedOut() ? null : email} owner={isOwner(email ?? "")}
+      name={prefs.name.trim() || nameFromEmail(email)} avatar={prefs.avatar || gravatar || ""}>
+      <Shell email={email} prefs={prefs} setPrefs={setPrefs} gravatar={gravatar} />
+    </ChatProvider>
+  );
+}
+
+function Shell({ email, prefs, setPrefs, gravatar }: { email: string | null; prefs: Prefs; setPrefs: (p: Partial<Prefs>) => void; gravatar: string | null }) {
+  const [route, setRoute] = useState<Route>(readRoute);
+  const editor = isEditor(email);
+  const chat = useChat();
+  const unread = chat?.unread ?? 0;
   useApplyAppearance(prefs);
   const [menu, setMenu] = useState(false);
   const [settings, setSettings] = useState(false);
   const [drawer, setDrawer] = useState(false);
-  const gravatar = useGravatar(email);
   const [sideHidden, setSideHidden] = useState(() => { try { return localStorage.getItem("vortex.sideHidden") === "1"; } catch { return false; } });
   const toggleSide = (hide: boolean) => {
     setSideHidden(hide);
@@ -52,10 +65,12 @@ export function VortexApp() {
     return () => window.removeEventListener("hashchange", on);
   }, []);
 
+  const s0 = content.sections;
   useEffect(() => {
-    const page = { home: "", games: content.games.title, downloader: content.downloader.title, announcements: content.announcements.title, admin: "Editor", manage: "Admin", notfound: "Page not found" }[route];
-    document.title = page ? `${page} · ${content.site.name}` : content.site.name;
-  }, [route]);
+    const page = { home: "", games: content.games.title, downloader: content.downloader.title, announcements: content.announcements.title, chat: s0.chat.title, admin: "Editor", manage: "Admin", notfound: "Page not found" }[route];
+    const base = page ? `${page} · ${content.site.name}` : content.site.name;
+    document.title = unread > 0 ? `(${unread}) ${base}` : base;
+  }, [route, unread]);
 
   const s = content.sections;
   const nav: { r: Route; label: string; icon: IconName; show: boolean }[] = [
@@ -63,6 +78,7 @@ export function VortexApp() {
     { r: "games", label: s.games.title, icon: "games", show: s.games.visible },
     { r: "downloader", label: s.downloader.title, icon: "download", show: s.downloader.visible },
     { r: "announcements", label: s.announcements.title, icon: "megaphone", show: s.announcements.visible },
+    { r: "chat", label: s.chat.title, icon: "chat", show: CHAT_ON && s.chat.visible },
   ];
   const name = prefs.name.trim() || nameFromEmail(email);
   const accent = prefs.accent || content.site.accent;
@@ -92,7 +108,7 @@ export function VortexApp() {
             <p className="vx-side-label">Browse</p>
             {nav.filter((n) => n.show).map((n) => (
               <a key={n.r} href={n.r === "home" ? "#/" : `#/${n.r}`} aria-current={route === n.r ? "page" : undefined}>
-                <Icon name={n.icon} />{n.label}
+                <Icon name={n.icon} />{n.label}{n.r === "chat" && <UnreadBadge count={unread} label="unread messages" />}
               </a>
             ))}
             {OTHER_SITE.url && (
@@ -121,7 +137,7 @@ export function VortexApp() {
                   <Icon name="chevron-right" />
                 </button>
                 {nav.filter((n) => n.show).map((n) => (
-                  <a key={n.r} href={n.r === "home" ? "#/" : `#/${n.r}`} aria-current={route === n.r ? "page" : undefined}>{n.label}</a>
+                  <a key={n.r} href={n.r === "home" ? "#/" : `#/${n.r}`} aria-current={route === n.r ? "page" : undefined}>{n.label}{n.r === "chat" && <UnreadBadge count={unread} label="unread messages" />}</a>
                 ))}
                 {OTHER_SITE.url && <a href={OTHER_SITE.url} className="vx-site-switch">{OTHER_SITE.label}</a>}
                 {(editor || route === "manage" || route === "admin") && (
@@ -153,12 +169,15 @@ export function VortexApp() {
             </div>
           </header>
 
-          <main className={`vx-main ${route === "admin" ? "vx-main-wide" : ""}`}>
+          <main className={`vx-main ${route === "admin" ? "vx-main-wide" : ""} ${route === "chat" ? "vx-main-chat" : ""}`}>
             {route === "home" && <HomePage welcome={{ name, avatar }} />}
             {route === "notfound" && <NotFound />}
             {route === "games" && <GamesPage />}
             {route === "downloader" && <Downloader />}
             {route === "announcements" && <AnnouncementsPage editor={isOwner(email ?? "")} />}
+            {route === "chat" && (
+              <Suspense fallback={<div className="vx-card vx-skeleton" aria-hidden="true" />}><ChatPage /></Suspense>
+            )}
             {route === "manage" && (
               <Suspense fallback={<div className="vx-card vx-skeleton" aria-hidden="true" />}><Manage /></Suspense>
             )}
