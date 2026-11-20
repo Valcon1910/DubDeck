@@ -50,6 +50,12 @@ test("two people chat live: DM, unread badge, reply, edit, delete, files and see
 
   // Ann sees "Seen"; Bob replies with a file.
   await expect(ann.locator(".vx-msg-seen")).toHaveText("Seen");
+
+  // Typing shows bouncing dots on the other side, and they go when the text is cleared.
+  await bob.getByLabel("Message", { exact: true }).pressSequentially("typ");
+  await expect(ann.locator(".vx-typing")).toBeVisible();
+  await bob.getByLabel("Message", { exact: true }).fill("");
+  await expect(ann.locator(".vx-typing")).toHaveCount(0);
   await bob.locator(".vx-msg", { hasText: word }).hover();
   await bob.locator(".vx-msg", { hasText: word }).getByRole("button", { name: "Reply" }).click();
   await expect(bob.locator(".vx-composer-bar")).toContainText("Replying to");
