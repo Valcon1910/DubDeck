@@ -13,9 +13,10 @@ import "./vortex.css";
 const Manage = lazy(() => import("./Manage").then((m) => ({ default: m.Manage })));
 const ChatPage = lazy(() => import("./chat/Chat").then((m) => ({ default: m.ChatPage })));
 const Admin = lazy(() => import("./Admin").then((m) => ({ default: m.Admin })));
+const Hexdrift = lazy(() => import("../hexdrift/Hexdrift").then((m) => ({ default: m.Hexdrift })));
 
-type Route = "home" | "games" | "downloader" | "announcements" | "chat" | "admin" | "manage" | "notfound";
-const ROUTES: Route[] = ["games", "downloader", "announcements", "chat", "admin", "manage"];
+type Route = "home" | "games" | "downloader" | "announcements" | "chat" | "admin" | "manage" | "hexdrift" | "notfound";
+const ROUTES: Route[] = ["games", "downloader", "announcements", "chat", "admin", "manage", "hexdrift"];
 
 function readRoute(): Route {
   const r = location.hash.replace(/^#\/?/, "").split(/[/?]/)[0] as Route;
@@ -60,14 +61,18 @@ function Shell({ email, prefs, setPrefs, gravatar }: { email: string | null; pre
   };
 
   useEffect(() => {
-    const on = () => { setRoute(readRoute()); setDrawer(false); window.scrollTo(0, 0); };
+    const on = () => {
+      const next = readRoute();
+      setRoute((was) => { if (was !== next) window.scrollTo(0, 0); return next; });
+      setDrawer(false);
+    };
     window.addEventListener("hashchange", on);
     return () => window.removeEventListener("hashchange", on);
   }, []);
 
   const s0 = content.sections;
   useEffect(() => {
-    const page = { home: "", games: content.games.title, downloader: content.downloader.title, announcements: content.announcements.title, chat: s0.chat.title, admin: "Editor", manage: "Admin", notfound: "Page not found" }[route];
+    const page = { home: "", games: content.games.title, downloader: content.downloader.title, announcements: content.announcements.title, chat: s0.chat.title, admin: "Editor", manage: "Admin", hexdrift: "Hexdrift", notfound: "Page not found" }[route];
     const base = page ? `${page} · ${content.site.name}` : content.site.name;
     document.title = unread > 0 ? `(${unread}) ${base}` : base;
   }, [route, unread]);
@@ -191,6 +196,9 @@ function Shell({ email, prefs, setPrefs, gravatar }: { email: string | null; pre
             )}
           </main>
         </div>
+        {route === "hexdrift" && (
+          <Suspense fallback={<div className="vx-game-loading" role="status">Loading Hexdrift…</div>}><Hexdrift /></Suspense>
+        )}
         {settings && <Settings prefs={prefs} update={setPrefs} email={email} gravatar={gravatar} siteAccent={content.site.accent} onClose={() => setSettings(false)} />}
       </div>
     </ContentContext.Provider>

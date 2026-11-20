@@ -13,7 +13,8 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "types": ["node"],
-    "noEmit": true
+    "noEmit": true,
+    "allowImportingTsExtensions": true
   },
   "include": ["src", "vite.config.ts", "e2e", "playwright.config.ts"]
 }

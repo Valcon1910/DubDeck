@@ -127,6 +127,28 @@ code { font-family: var(--font-mono); font-size: 0.92em; background: var(--surfa
 }
 .vx-logo img { width: 100%; height: 100%; object-fit: contain; }
 
+.vx-featured {
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 16px; padding: 14px; margin: 4px 0 18px;
+  border-radius: 16px; text-decoration: none; color: #f2f3ff; overflow: hidden;
+  background: radial-gradient(500px 200px at 85% 0%, #3a1f8a, transparent 70%), linear-gradient(120deg, #120f2e, #1b1440);
+  border: 1px solid rgb(255 255 255 / 0.08); transition: transform 0.15s var(--ease), box-shadow 0.15s;
+}
+.vx-featured:hover { transform: translateY(-1px); box-shadow: 0 10px 28px rgb(35 229 255 / 0.18); }
+.vx-featured-art { position: relative; width: 96px; height: 72px; border-radius: 12px; overflow: hidden; background: linear-gradient(180deg, #7cc7ff, #2a1d5c); }
+.vx-featured-art span { position: absolute; left: 50%; bottom: -18px; width: 62%; height: 64px; transform: translateX(-50%) perspective(90px) rotateX(55deg);
+  background: repeating-linear-gradient(0deg, #3b3a52 0 10px, #34334a 10px 20px); border-left: 3px solid #ff3df2; border-right: 3px solid #23e5ff; }
+.vx-featured-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.vx-featured-text strong { font-size: 20px; font-style: italic; letter-spacing: 0.03em; }
+.vx-featured-text .vx-muted { color: rgb(242 243 255 / 0.72); }
+.vx-featured-text .vx-eyebrow { color: #23e5ff; }
+.vx-featured-go { padding: 9px 18px; border-radius: 99px; font-weight: 700; background: linear-gradient(90deg, #23b8ff, #b33dff); }
+@media (max-width: 560px) {
+  .vx-featured { grid-template-columns: auto 1fr; }
+  .vx-featured-go { grid-column: 1 / -1; text-align: center; }
+  .vx-featured-art { width: 72px; height: 56px; }
+}
+.vx-game-loading { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; background: #0d0b1f; color: #f2f3ff; }
+
 /* ---------- admin ---------- */
 .vx-admin { display: flex; flex-direction: column; gap: 14px; }
 .vx-admin-bar {
