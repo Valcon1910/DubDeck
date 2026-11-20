@@ -143,6 +143,13 @@ grant update (body, attachments, edited_at, deleted) on public.messages to authe
 
 revoke all on all tables in schema public from anon;
 
+-- Newer Supabase projects don't grant new tables to the API roles on their
+-- own, so say it explicitly (row-level security above still decides rows).
+grant usage on schema public to authenticated, service_role;
+grant all on all tables in schema public to service_role;
+grant all on all sequences in schema public to service_role;
+grant select on public.chat_owners, public.conversations, public.participants to authenticated;
+
 -- ── Triggers ───────────────────────────────────────────────────────────────
 
 -- Messages are stamped server-side (sender, time) and bump the conversation.
