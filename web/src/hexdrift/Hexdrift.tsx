@@ -11,7 +11,7 @@ import { canFullscreen, disableGaming, enableGaming, enterFullscreen, isFullscre
 import { board, playerRecords, rankFor, recordRun, syncPending, worldRecords, type Entry, type Submitted } from "./online.ts";
 import { CHAT_ON, displayName, useChat, type Profile } from "../vortex/chat/store";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { MAX_POINTS, medalPoints, readLook, saveLook, SLOTS, type BodyDef, type Item, type Look, type Slot } from "./garage.ts";
+import { itemOf, MAX_POINTS, medalPoints, readLook, saveLook, SLOTS, type BodyDef, type Item, type Look, type Slot } from "./garage.ts";
 import { Preview } from "./render/preview.ts";
 import "./hexdrift.css";
 
@@ -731,13 +731,18 @@ function Garage() {
         {slot.items.map((it) => {
           const lock = it.need > have;
           const on = look[tab] === it.id;
-          const color = (it as Item).color;
+          // Cars show their factory paint; "Factory" paint and accent show the current car's.
+          const car = itemOf("body", shown.body) as BodyDef;
+          const color = tab === "body" ? (it as BodyDef).paint
+            : it.id === "factory" && tab === "paint" ? car.paint
+              : it.id === "factory" && tab === "accent" ? car.accent : (it as Item).color;
           return (
             <li key={it.id}>
               <button type="button" className={`hx-part ${on ? "on" : ""} ${lock ? "locked" : ""} ${trying?.[tab] === it.id ? "trying" : ""}`}
                 aria-pressed={on} onClick={() => pick(it)}>
                 {color ? <span className="hx-swatch" style={{ background: color }} /> : it.id === "rainbow" ? <span className="hx-swatch hx-rainbow" /> : null}
                 <span className="hx-part-name">{it.name}</span>
+                {tab === "body" && <span className="hx-part-blurb">{(it as BodyDef).blurb}</span>}
                 <span className="hx-part-tag">{on ? "Equipped" : lock ? `🔒 ${it.need} pts` : it.need === 0 ? "Free" : "Unlocked"}</span>
               </button>
             </li>

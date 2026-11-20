@@ -1,27 +1,25 @@
-// The garage: what your car looks like. Every car drives exactly the same
+// The garage: what your car looks like. The cars are low-poly lookalikes in
+// the spirit of real ones, with their own names and no badges. Every car drives exactly the same
 // (same size, same physics), so records stay fair; looks are just for fun.
 // Some parts are free; the rest unlock with medal points, earned by your best
 // medal on each map (bronze 1, silver 2, gold 3, Vortex 4).
 import { MAPS, medalFor, type Medal } from "./maps.ts";
 import type { Run } from "./records.ts";
 
-export type Profile2D = [number, number][];
-export interface BodyDef { id: string; name: string; need: number; w: number; pts: Profile2D; cab: { y: number; z: number; s: number } | null }
+export interface BodyDef { id: string; name: string; need: number; blurb: string; paint: string; accent: string }
 export interface Item { id: string; name: string; need: number; color?: string }
 
-/** Side outlines (z forward, y up). The wheels and hitbox are the same for all. */
+/** The cars. Each has its own model (render/car.ts) and factory colours. */
 export const BODIES: BodyDef[] = [
-  { id: "viper", name: "Viper", need: 0, w: 1.05, pts: [[-2.1, 0.35], [2.25, 0.3], [2.3, 0.55], [0.7, 0.85], [-1.6, 0.95], [-2.15, 0.85]], cab: { y: 1.15, z: -0.45, s: 1 } },
-  { id: "bolt", name: "Bolt", need: 0, w: 1.0, pts: [[-2.2, 0.3], [2.4, 0.28], [2.45, 0.45], [1.0, 0.7], [-1.2, 0.8], [-2.2, 0.75]], cab: { y: 0.98, z: -0.2, s: 0.9 } },
-  { id: "brick", name: "Brick", need: 0, w: 1.12, pts: [[-2.1, 0.35], [2.1, 0.35], [2.15, 0.75], [1.3, 0.95], [-1.9, 1.1], [-2.15, 1.0]], cab: { y: 1.32, z: -0.4, s: 1.1 } },
-  { id: "stinger", name: "Stinger", need: 3, w: 1.0, pts: [[-2.2, 0.3], [2.5, 0.25], [2.5, 0.38], [0.3, 0.7], [-1.8, 0.78], [-2.25, 0.6]], cab: { y: 0.92, z: -0.6, s: 0.85 } },
-  { id: "hauler", name: "Hauler", need: 6, w: 1.15, pts: [[-2.15, 0.4], [2.1, 0.4], [2.2, 0.9], [1.2, 1.0], [0.9, 1.55], [-2.1, 1.55]], cab: null },
-  { id: "phantom", name: "Phantom", need: 9, w: 1.05, pts: [[-2.3, 0.32], [2.35, 0.3], [2.4, 0.5], [1.4, 0.62], [-0.6, 1.0], [-2.3, 0.9]], cab: { y: 1.2, z: -0.9, s: 0.95 } },
-  { id: "nova", name: "Nova", need: 13, w: 1.08, pts: [[-2.1, 0.35], [2.3, 0.3], [2.2, 0.62], [0.2, 1.0], [-1.0, 1.0], [-2.15, 0.7]], cab: { y: 1.22, z: -0.4, s: 0.8 } },
-  { id: "apex", name: "Apex", need: 18, w: 1.0, pts: [[-2.3, 0.28], [2.6, 0.24], [2.6, 0.4], [0.8, 0.62], [-1.4, 0.85], [-2.35, 0.95]], cab: { y: 1.02, z: -0.5, s: 0.85 } },
+  { id: "coupe", name: "Grand Coupe", need: 0, blurb: "Long-hood luxury coupe", paint: "#9c0f1e", accent: "#c8102e" },
+  { id: "furia", name: "Furia", need: 0, blurb: "Cab-forward supercar", paint: "#d70f14", accent: "#ffcf1a" },
+  { id: "rig", name: "Cyber Rig", need: 0, blurb: "Steel-panelled electric truck", paint: "#b4b8bd", accent: "#1c1d21" },
+  { id: "zenith", name: "Zenith", need: 6, blurb: "Mid-engine track car, big wing", paint: "#ffcc12", accent: "#15161a" },
+  { id: "formula", name: "Formula X", need: 12, blurb: "Open-wheel single-seater", paint: "#ff8a1f", accent: "#15161a" },
 ];
 
 export const PAINTS: Item[] = [
+  { id: "factory", name: "Factory", need: 0 },
   { id: "frost", name: "Frost", need: 0, color: "#e8edf7" },
   { id: "ember", name: "Ember", need: 0, color: "#ff5a3c" },
   { id: "lime", name: "Lime", need: 0, color: "#8cff5a" },
@@ -36,18 +34,20 @@ export const PAINTS: Item[] = [
   { id: "obsidian", name: "Obsidian", need: 16, color: "#101018" },
 ];
 
-/** Wing, stripe and caliper colour. "Map" follows each map's own colour. */
-export const ACCENTS: Item[] = [{ id: "map", name: "Map colour", need: 0 }, ...PAINTS];
+/** Wing, caliper and trim colour. */
+export const ACCENTS: Item[] = [{ id: "factory", name: "Factory", need: 0 }, { id: "map", name: "Map colour", need: 0 }, ...PAINTS.slice(1)];
 
 export const WINGS: Item[] = [
-  { id: "high", name: "High wing", need: 0 },
+  { id: "stock", name: "Factory", need: 0 },
   { id: "none", name: "No wing", need: 0 },
+  { id: "high", name: "High wing", need: 0 },
   { id: "low", name: "Lip", need: 0 },
   { id: "twin", name: "Twin deck", need: 5 },
   { id: "swan", name: "Swan neck", need: 11 },
 ];
 
 export const RIMS: Item[] = [
+  { id: "stock", name: "Factory", need: 0 },
   { id: "accent", name: "Match accent", need: 0 },
   { id: "dark", name: "Dark", need: 0, color: "#2a2d38" },
   { id: "chrome", name: "Chrome", need: 0, color: "#cfd6e4" },
@@ -85,7 +85,7 @@ export const SLOTS: { slot: Slot; label: string; items: (Item | BodyDef)[] }[] =
   { slot: "trail", label: "Boost trail", items: TRAILS },
 ];
 
-export const DEFAULT_LOOK: Look = { body: "viper", paint: "frost", accent: "map", wing: "high", rims: "accent", extra: "none", trail: "cyan" };
+export const DEFAULT_LOOK: Look = { body: "coupe", paint: "factory", accent: "factory", wing: "stock", rims: "stock", extra: "none", trail: "cyan" };
 
 export const MEDAL_POINTS: Record<Exclude<Medal, null>, number> = { bronze: 1, silver: 2, gold: 3, vortex: 4 };
 export const MAX_POINTS = MAPS.length * 4;

@@ -170,5 +170,6 @@ a.hx-gaming { text-decoration: none; display: inline-flex; align-items: center; 
 .hx-part.locked .hx-part-name { opacity: 0.6; }
 .hx-part-name { font-weight: 700; }
 .hx-part-tag { font-size: 12px; opacity: 0.75; }
+.hx-part-blurb { font-size: 12px; opacity: 0.6; line-height: 1.25; }
 .hx-swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.4); }
 .hx-rainbow { background: conic-gradient(#ff5a3c, #ffc53d, #8cff5a, #5fffd2, #2f7bff, #8f5bff, #ff6fb5, #ff5a3c); }
