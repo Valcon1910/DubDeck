@@ -69,16 +69,7 @@
   "announcements": {
     "title": "Announcements",
     "subtitle": "News and updates from Vortex.",
-    "items": [
-      {
-        "id": "7d303791-c609-48eb-87f6-27ba9927897e",
-        "title": "Announcements Update Log",
-        "text": "- Fixed off centered profile pic\n- Added announcements",
-        "image": "",
-        "date": "2026-11-19T18:23:37.481Z",
-        "files": []
-      }
-    ]
+    "items": []
   },
   "games": {
     "title": "Games",
