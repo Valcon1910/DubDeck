@@ -188,7 +188,6 @@ function Menu() {
         <span><kbd>Enter</kbd> back to checkpoint</span>
         <span><kbd>R</kbd> restart</span>
         <span><kbd>C</kbd> camera</span>
-        <span><kbd>G</kbd> ghost on/off</span>
         <span>Gamepads and touch work too</span>
       </p>
     </div>
@@ -279,8 +278,6 @@ function Play({ map }: { map: MapDef }) {
   overRef.current = over;
   const [touch, setTouch] = useState(() => typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches);
   const [best, setBest] = useState<Run | null>(() => bestNow(map.id));
-  const [ghost, setGhost] = useState(() => pref("hexdrift.ghost", "1") === "1");
-  const [hasGhost, setHasGhost] = useState(false);
   const [error, setError] = useState("");
   const gaming = useGaming();
   const { sb, me, profiles, sync } = useOnlineRecords();
@@ -290,7 +287,6 @@ function Play({ map }: { map: MapDef }) {
 
   const loadGhost = useCallback((run: Run | null) => {
     game.current?.setGhost(run ? run.inputs : null, run?.t ?? 0);
-    setHasGhost(game.current?.hasGhost ?? false);
   }, []);
 
   const restart = useCallback(() => {
@@ -305,17 +301,11 @@ function Play({ map }: { map: MapDef }) {
     g.setPaused(p);
     setOver(p ? "pause" : null);
   }, []);
-  const toggleGhost = useCallback(() => {
-    const on = game.current?.toggleGhost() ?? true;
-    setGhost(on);
-    setPref("hexdrift.ghost", on ? "1" : "0");
-  }, []);
 
   useEffect(() => {
     const c = new Controls((cmd) => {
       if (cmd === "restart") restart();
       else if (cmd === "camera") setPref("hexdrift.cam", String(game.current?.cycleCamera() ?? 0));
-      else if (cmd === "ghost") toggleGhost();
       else if (cmd === "pause") {
         const o = overRef.current;
         if (o === "pause" || o === "restored") pause(false);
@@ -340,7 +330,7 @@ function Play({ map }: { map: MapDef }) {
             // Send it to the online records (or keep it for later when offline).
             setOver((o) => o && typeof o === "object" && o.ticks === ticks ? { ...o, online: navigator.onLine ? "sending" : "waiting" } : o);
             const res = (await syncRef.current()).get(map.id);
-            if (res?.worldRecord) { game.current?.setRecordGhost(null); setWrName(""); setHasGhost(game.current?.hasGhost ?? false); }
+            if (res?.worldRecord) { game.current?.setRecordGhost(null); setWrName(""); }
             setOver((o) => o && typeof o === "object" && o.ticks === ticks ? { ...o, online: res ?? "waiting" } : o);
           });
         },
@@ -351,7 +341,6 @@ function Play({ map }: { map: MapDef }) {
       return () => c.dispose();
     }
     game.current = g;
-    if (pref("hexdrift.ghost", "1") !== "1") g.toggleGhost();
     void allBests().then(() => {
       if (game.current !== g) return;
       const b = bestNow(map.id);
@@ -385,7 +374,7 @@ function Play({ map }: { map: MapDef }) {
       c.dispose();
       game.current = null;
     };
-  }, [map, pause, restart, toggleGhost, loadGhost]);
+  }, [map, pause, restart, loadGhost]);
 
   // The world record's gold ghost (unless it's yours).
   useEffect(() => {
@@ -395,7 +384,7 @@ function Play({ map }: { map: MapDef }) {
       const g = game.current;
       if (!alive || !g || !r || r.email === me) return;
       const name = nameOf(profiles, r.email);
-      if (g.setRecordGhost(r.inputs, r.ticks, name)) { setWrName(name); setHasGhost(true); }
+      if (g.setRecordGhost(r.inputs, r.ticks, name)) setWrName(name);
     }).catch(() => {});
     return () => { alive = false; };
     // Profiles arriving later only changes the label; not worth a rebuild.
@@ -422,9 +411,6 @@ function Play({ map }: { map: MapDef }) {
           <span className="hx-hud-btns">
             <button type="button" className="hx-icon" aria-label="Restart (R)" title="Restart (R)" onClick={restart}>↺</button>
             <button type="button" className="hx-icon" aria-label="Camera (C)" title="Camera (C)" onClick={() => setPref("hexdrift.cam", String(game.current?.cycleCamera() ?? 0))}>◉</button>
-            {hasGhost && (
-              <button type="button" className={`hx-icon ${ghost ? "" : "off"}`} aria-pressed={ghost} aria-label="Ghosts (G)" title="Ghosts: your best run and the world record (G)" onClick={toggleGhost}>👻</button>
-            )}
             <GamingButton compact />
             <button type="button" className="hx-icon" aria-label="Pause (Esc)" title="Pause (Esc)" onClick={() => pause(true)}>II</button>
           </span>

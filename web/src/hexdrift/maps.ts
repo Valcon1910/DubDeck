@@ -60,7 +60,7 @@ export const MAPS: MapDef[] = [
 const built = new Map<string, Track>();
 export function trackOf(m: MapDef): Track {
   let t = built.get(m.id);
-  if (!t) { t = buildTrack(m.recipe); built.set(m.id, t); }
+  if (!t) { t = buildTrack(m.recipe, { sky: m.biome === "sky" }); built.set(m.id, t); }
   return t;
 }
 

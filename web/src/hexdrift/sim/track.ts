@@ -11,6 +11,9 @@ export const LEVEL = 4; // height of one slope
 export const RAMP_RISE = 3; // how high a jump ramp lifts the car
 export const CURVE_IN = 3; // inner and outer radius of a curve's road
 export const CURVE_OUT = 17;
+export const THICK = 1.4; // road slab thickness (solid)
+export const WALL_H = 1.3; // wall height above the road
+export const WALL_T = 0.5; // wall thickness, outside the road edge
 
 export type PieceType = "start" | "straight" | "checkpoint" | "finish" | "boost" | "curveL" | "curveR" | "up" | "down" | "ramp";
 export type Dir = 0 | 1 | 2 | 3;
@@ -24,6 +27,9 @@ export interface Piece {
   wall?: boolean;
   ice?: boolean;
   cp?: number; // checkpoint number
+  /** The road ends here (start, finish, or next to a gap): the slab's end face is solid. */
+  endIn?: boolean;
+  endOut?: boolean;
 }
 
 /** Unit vectors (x, z) of the four directions. Right of d is d + 1. */
@@ -38,9 +44,13 @@ export interface Track {
   start: Piece;
   /** Points along the middle of the road, in order, about 5 units apart. */
   line: { x: number; y: number; z: number }[];
+  /** Empty cells jumped over (G), for the ravines under them. */
+  gaps: { x: number; z: number; y: number; d: Dir }[];
+  /** Floating roads over open sky (no ground below). */
+  sky?: boolean;
 }
 
-const key = (x: number, z: number) => (x + 2048) * 4096 + (z + 2048);
+export const key = (x: number, z: number) => (x + 2048) * 4096 + (z + 2048);
 
 /** Where a point sits in a piece's own frame: u to the right, w forward. */
 export function local(p: Piece, px: number, pz: number) {
@@ -63,6 +73,16 @@ export function surface(p: Piece, u: number, w: number): number {
   }
   if (u < -HALF_W || u > HALF_W) return NaN;
   const t = (w + CELL / 2) / CELL;
+  if (p.t === "up") return base + t * LEVEL;
+  if (p.t === "down") return base - t * LEVEL;
+  if (p.t === "ramp") return base + t * RAMP_RISE;
+  return base;
+}
+
+/** Road height along a piece's length, whatever the sideways position. */
+export function heightAlong(p: Piece, w: number): number {
+  const base = p.y * LEVEL;
+  const t = Math.max(0, Math.min(1, (w + CELL / 2) / CELL));
   if (p.t === "up") return base + t * LEVEL;
   if (p.t === "down") return base - t * LEVEL;
   if (p.t === "ramp") return base + t * RAMP_RISE;
@@ -101,8 +121,10 @@ export function groundAt(track: Track, px: number, py: number, pz: number, reach
 //   W+ / W- walls on / off   I+ / I- ice on / off
 // A number repeats the token: "S3" = three straights.
 
-export function buildTrack(recipe: string): Track {
+export function buildTrack(recipe: string, opts: { sky?: boolean } = {}): Track {
   const pieces: Piece[] = [];
+  const gaps: Track["gaps"] = [];
+  let gapped = true; // the start has an open end behind it
   let x = 0, z = 0, y = 0;
   let d: Dir = 0;
   let wall = false, ice = false, cp = 0;
@@ -112,6 +134,8 @@ export function buildTrack(recipe: string): Track {
     if (wall) p.wall = true;
     if (ice) p.ice = true;
     if (t === "checkpoint") p.cp = cp++;
+    if (gapped) { p.endIn = true; if (pieces.length) pieces[pieces.length - 1].endOut = true; }
+    gapped = false;
     pieces.push(p);
     return p;
   };
@@ -130,6 +154,8 @@ export function buildTrack(recipe: string): Track {
       const t = ({ S: "straight", B: "boost", C: "checkpoint", F: "finish", L: "curveL", R: "curveR", U: "up", D: "down", J: "ramp" } as Record<string, PieceType>)[c];
       if (c === "G") {
         line.push(...gapLine(x, z, y, d));
+        gaps.push({ x, z, y, d });
+        gapped = true;
         step();
         continue;
       }
@@ -143,13 +169,14 @@ export function buildTrack(recipe: string): Track {
       step();
     }
   }
+  pieces[pieces.length - 1].endOut = true;
   const cells = new Map<number, Piece[]>();
   for (const p of pieces) {
     const k = key(p.x, p.z);
     cells.set(k, [...(cells.get(k) ?? []), p]);
   }
   return {
-    pieces, cells, checkpoints: cp, start: pieces[0], line,
+    pieces, cells, checkpoints: cp, start: pieces[0], line, gaps, sky: opts.sky,
     minY: Math.min(...pieces.map((p) => p.y * LEVEL - (p.t === "down" ? LEVEL : 0))),
   };
 }

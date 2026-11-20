@@ -80,7 +80,6 @@ export class Game {
   private ghost: Ghost | null = null;
   /** The world record, in gold (only when someone else holds it). */
   private wr: Ghost | null = null;
-  private ghostShown = true;
   private splitText = "";
   private splitClass = "";
   private splitUntil = 0;
@@ -208,10 +207,6 @@ export class Game {
 
   get hasGhost() { return this.ghost !== null || this.wr !== null; }
 
-  toggleGhost() {
-    this.ghostShown = !this.ghostShown;
-    return this.ghostShown;
-  }
 
   /**
    * Rebuilds a run from its inputs (after a reload). Same inputs, same
@@ -346,7 +341,7 @@ export class Game {
     // The ghosts.
     for (const gh of [this.ghost, this.wr]) {
       if (!gh) continue;
-      const show = this.ghostShown && gh.race.phase === "running";
+      const show = gh.race.phase === "running";
       gh.model.root.visible = show;
       if (show) {
         const p = gh.prev, q = gh.cur;
