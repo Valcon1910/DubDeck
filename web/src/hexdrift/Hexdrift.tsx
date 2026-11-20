@@ -1,31 +1,14 @@
 // Hexdrift: a fast time-trial racer built into Vortex. This file is the menu,
-// the HUD and the finish screen; the game itself is in game.ts. Loaded only
-// when someone opens it, so it adds nothing to the rest of the site.
+// the HUD, the finish screen and Gaming Mode; the game itself is in game.ts.
+// Loaded only when someone opens it, so it adds nothing to the rest of the site.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MAPS, BIOMES, medalFor, type MapDef, type Medal } from "./maps.ts";
 import { formatTime } from "./sim/race.ts";
 import { Controls, type Action } from "./input.ts";
 import { Game } from "./game.ts";
+import { allBests, bestNow, clearBest, clearLive, offerBest, readLive, saveLive, type Run } from "./records.ts";
+import { canFullscreen, disableGaming, enableGaming, enterFullscreen, isFullscreen, isGaming, isStandalone, onGaming } from "./gaming.ts";
 import "./hexdrift.css";
-
-// ── Saved best times (on this device) ───────────────────────────────────────
-interface Best { t: number; i: string; at: number }
-
-function loadBest(id: string): Best | null {
-  try {
-    const v = JSON.parse(localStorage.getItem(`hexdrift.best.${id}`) ?? "null");
-    return v && typeof v.t === "number" ? v : null;
-  } catch { return null; }
-}
-
-function saveBest(id: string, ticks: number, inputs: number[]) {
-  try {
-    // The input bytes are the whole drive: kept for ghosts and record checks.
-    let bin = "";
-    for (const b of inputs) bin += String.fromCharCode(b);
-    localStorage.setItem(`hexdrift.best.${id}`, JSON.stringify({ t: ticks, i: btoa(bin), at: Date.now() }));
-  } catch { /* storage full or blocked: still playable */ }
-}
 
 const MEDAL_NAME: Record<Exclude<Medal, null>, string> = { vortex: "Vortex", gold: "Gold", silver: "Silver", bronze: "Bronze" };
 
@@ -38,6 +21,12 @@ function readMap(): MapDef | null {
   const id = location.hash.replace(/^#\/?/, "").split("/")[1];
   return MAPS.find((m) => m.id === id) ?? null;
 }
+
+// A run that was in progress when the page was reloaded (read once per page load).
+let bootLive = readLive();
+
+function pref(key: string, fallback: string) { try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; } }
+function setPref(key: string, v: string) { try { localStorage.setItem(key, v); } catch { /* */ } }
 
 export function Hexdrift() {
   const [map, setMap] = useState<MapDef | null>(readMap);
@@ -53,17 +42,48 @@ export function Hexdrift() {
   );
 }
 
+function useGaming() {
+  const [on, setOn] = useState(isGaming);
+  useEffect(() => onGaming(setOn), []);
+  return on;
+}
+
+function useOnline() {
+  const [online, setOnline] = useState(() => navigator.onLine);
+  useEffect(() => {
+    const up = () => setOnline(true), down = () => setOnline(false);
+    window.addEventListener("online", up); window.addEventListener("offline", down);
+    return () => { window.removeEventListener("online", up); window.removeEventListener("offline", down); };
+  }, []);
+  return online;
+}
+
 function Menu() {
+  const [bests, setBests] = useState<Map<string, Run> | null>(null);
+  const gaming = useGaming();
+  const online = useOnline();
+  useEffect(() => {
+    // Back at the menu: the unfinished run is over.
+    clearLive();
+    bootLive = null;
+    let alive = true;
+    void allBests().then((m) => { if (alive) setBests(new Map(m)); });
+    return () => { alive = false; };
+  }, []);
   return (
     <div className="hx-menu">
       <header className="hx-menu-head">
-        <a className="hx-back" href="#/games" aria-label="Back to Vortex">‹ Vortex</a>
+        <div className="hx-menu-bar">
+          {gaming ? <span className="hx-back hx-dim">Gaming Mode is on</span> : <a className="hx-back" href="#/games" aria-label="Back to Vortex">‹ Vortex</a>}
+          <GamingButton />
+        </div>
         <h1 className="hx-logo">HEX<span>DRIFT</span></h1>
-        <p className="hx-sub">Time trial · beat the medals</p>
+        <p className="hx-sub">Time trial · beat the medals · race your ghost</p>
+        {!online && <p className="hx-offline">You're offline. Everything still works, and your records are saved on this device.</p>}
       </header>
       <ul className="hx-maps">
         {MAPS.map((m) => {
-          const best = loadBest(m.id);
+          const best = bests?.get(m.id) ?? null;
           const medal = best ? medalFor(m, best.t) : null;
           const b = BIOMES[m.biome];
           return (
@@ -74,7 +94,7 @@ function Menu() {
                   <strong>{m.name}</strong>
                   <span className="hx-map-tags"><em>{b.name}</em><em>{m.difficulty}</em></span>
                   <span className="hx-map-best">
-                    {best ? <><MedalIcon m={medal} />{formatTime(best.t)}</> : <span className="hx-dim">No time yet</span>}
+                    {best ? <><MedalIcon m={medal} />{formatTime(best.t)}</> : <span className="hx-dim">{bests ? "No time yet" : "…"}</span>}
                   </span>
                 </span>
               </a>
@@ -88,13 +108,82 @@ function Menu() {
         <span><kbd>Enter</kbd> back to checkpoint</span>
         <span><kbd>R</kbd> restart</span>
         <span><kbd>C</kbd> camera</span>
+        <span><kbd>G</kbd> ghost on/off</span>
         <span>Gamepads and touch work too</span>
       </p>
     </div>
   );
 }
 
-type Over = null | "pause" | { ticks: number; best: Best | null; isBest: boolean };
+/** One tap turns Gaming Mode on; holding for 3 seconds turns it off. */
+function GamingButton({ compact = false }: { compact?: boolean }) {
+  const on = useGaming();
+  const [holding, setHolding] = useState(false);
+  const [fs, setFs] = useState(isFullscreen);
+  const timer = useRef(0);
+  useEffect(() => {
+    const f = () => setFs(isFullscreen());
+    document.addEventListener("fullscreenchange", f);
+    document.addEventListener("webkitfullscreenchange", f);
+    return () => { document.removeEventListener("fullscreenchange", f); document.removeEventListener("webkitfullscreenchange", f); };
+  }, []);
+  const start = () => {
+    if (!on) return;
+    setHolding(true);
+    clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => { setHolding(false); disableGaming(); }, 3000);
+  };
+  const cancel = () => { clearTimeout(timer.current); setHolding(false); };
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  if (!on) {
+    return (
+      <button type="button" className={`hx-gaming ${compact ? "hx-icon" : ""}`} title="Gaming Mode: full screen, and Back or reload can't end your run"
+        aria-label="Turn on Gaming Mode"
+        onClick={enableGaming}>
+        {compact ? "⛶" : <>⛶ Gaming Mode</>}
+      </button>
+    );
+  }
+  return (
+    <>
+      {canFullscreen() && !fs && (
+        <button type="button" className={`hx-gaming ${compact ? "hx-icon" : ""}`} aria-label="Back to full screen" title="Back to full screen" onClick={() => void enterFullscreen()}>
+          {compact ? "⤢" : "⤢ Full screen"}
+        </button>
+      )}
+      <button type="button" className={`hx-gaming on ${holding ? "holding" : ""} ${compact ? "hx-icon" : ""}`}
+        aria-label="Gaming Mode is on. Hold for 3 seconds to turn it off"
+        title="Hold for 3 seconds to turn off"
+        onPointerDown={(e) => { e.preventDefault(); start(); }} onPointerUp={cancel} onPointerLeave={cancel} onPointerCancel={cancel}
+        onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && !e.repeat) { e.preventDefault(); e.stopPropagation(); start(); } }}
+        onKeyUp={(e) => { if (e.key === "Enter" || e.key === " ") cancel(); }}
+        onContextMenu={(e) => e.preventDefault()}>
+        <svg className="hx-ring" viewBox="0 0 36 36" aria-hidden="true">
+          <circle cx="18" cy="18" r="15" />
+          <circle className="hx-ring-fill" cx="18" cy="18" r="15" />
+        </svg>
+        {compact ? null : <span>{holding ? "Keep holding…" : "Gaming Mode on"}</span>}
+      </button>
+      <IphoneTip />
+    </>
+  );
+}
+
+/** iPhones can't go full screen from a website; the home-screen app can. */
+function IphoneTip() {
+  const [shown, setShown] = useState(() => !canFullscreen() && !isStandalone() && pref("hexdrift.iphoneTip", "") !== "1");
+  if (!shown) return null;
+  return (
+    <div className="hx-tip" role="note">
+      <p><strong>No full screen on iPhone websites.</strong> For no address bar, tap <b>Share</b> then <b>Add to Home Screen</b>, and open Vortex from there. Gaming Mode still stops Back from leaving your run.</p>
+      <button type="button" className="hx-btn" onClick={() => { setPref("hexdrift.iphoneTip", "1"); setShown(false); }}>OK</button>
+    </div>
+  );
+}
+
+interface Result { ticks: number; best: Run | null; isBest: boolean }
+type Over = null | "pause" | "restored" | Result;
 
 function Play({ map }: { map: MapDef }) {
   const host = useRef<HTMLDivElement>(null);
@@ -102,64 +191,112 @@ function Play({ map }: { map: MapDef }) {
   const speed = useRef<HTMLSpanElement>(null);
   const cps = useRef<HTMLSpanElement>(null);
   const count = useRef<HTMLDivElement>(null);
+  const split = useRef<HTMLDivElement>(null);
   const game = useRef<Game | null>(null);
   const controls = useRef<Controls | null>(null);
   const [over, setOver] = useState<Over>(null);
   const overRef = useRef<Over>(null);
   overRef.current = over;
   const [touch, setTouch] = useState(() => typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches);
-  const [best, setBest] = useState(() => loadBest(map.id));
+  const [best, setBest] = useState<Run | null>(() => bestNow(map.id));
+  const [ghost, setGhost] = useState(() => pref("hexdrift.ghost", "1") === "1");
+  const [hasGhost, setHasGhost] = useState(false);
   const [error, setError] = useState("");
+  const gaming = useGaming();
 
-  const restart = useCallback(() => { setOver(null); game.current?.restart(); }, []);
+  const loadGhost = useCallback((run: Run | null) => {
+    const ok = game.current?.setGhost(run ? run.inputs : null, run?.t ?? 0) ?? false;
+    setHasGhost(ok);
+  }, []);
+
+  const restart = useCallback(() => {
+    setOver(null);
+    clearLive();
+    bootLive = null;
+    game.current?.restart();
+  }, []);
   const pause = useCallback((p: boolean) => {
     const g = game.current;
     if (!g || g.race.phase === "finished") return;
     g.setPaused(p);
     setOver(p ? "pause" : null);
   }, []);
+  const toggleGhost = useCallback(() => {
+    const on = game.current?.toggleGhost() ?? true;
+    setGhost(on);
+    setPref("hexdrift.ghost", on ? "1" : "0");
+  }, []);
 
   useEffect(() => {
     const c = new Controls((cmd) => {
       if (cmd === "restart") restart();
-      else if (cmd === "camera") { const n = game.current?.cycleCamera(); try { localStorage.setItem("hexdrift.cam", String(n)); } catch { /* */ } }
+      else if (cmd === "camera") setPref("hexdrift.cam", String(game.current?.cycleCamera() ?? 0));
+      else if (cmd === "ghost") toggleGhost();
       else if (cmd === "pause") {
-        if (overRef.current === "pause") pause(false);
-        else if (overRef.current === null) pause(true);
+        const o = overRef.current;
+        if (o === "pause" || o === "restored") pause(false);
+        else if (o === null) pause(true);
       }
     });
     controls.current = c;
     let g: Game;
     try {
-      let cam = 0;
-      try { cam = Number(localStorage.getItem("hexdrift.cam")) || 0; } catch { /* */ }
-      g = new Game(host.current!, map, { time: time.current, speed: speed.current, cps: cps.current, count: count.current }, {
+      g = new Game(host.current!, map, { time: time.current, speed: speed.current, cps: cps.current, count: count.current, split: split.current }, {
         onFinish(ticks, inputs) {
-          const prev = loadBest(map.id);
+          clearLive();
+          bootLive = null;
+          const prev = bestNow(map.id);
           const isBest = !prev || ticks < prev.t;
-          if (isBest) saveBest(map.id, ticks, inputs);
-          const now = loadBest(map.id);
-          setBest(now);
           setOver({ ticks, best: prev, isBest });
+          void offerBest(map.id, ticks, inputs).then((saved) => {
+            if (!saved) return;
+            const now = bestNow(map.id);
+            setBest(now);
+            loadGhost(now); // race your new best next time
+          });
         },
         onHidden() { pause(true); },
-      }, c, cam % 3);
+      }, c, (Number(pref("hexdrift.cam", "0")) || 0) % 3);
     } catch (e) {
       setError(e instanceof Error ? e.message : "This device can't show 3D graphics.");
       return () => c.dispose();
     }
     game.current = g;
+    if (pref("hexdrift.ghost", "1") !== "1") g.toggleGhost();
+    void allBests().then(() => {
+      if (game.current !== g) return;
+      const b = bestNow(map.id);
+      setBest(b);
+      loadGhost(b);
+    });
+    // Carry on a run the page was reloaded in the middle of.
+    if (bootLive && bootLive.map === map.id && bootLive.inputs.length > 0) {
+      g.restore(bootLive.inputs);
+      g.setPaused(true);
+      setOver("restored");
+    }
     g.start();
-    if (import.meta.env.DEV) (window as unknown as { __hexdrift?: Game }).__hexdrift = g;
+    if (import.meta.env.DEV) Object.assign(window, { __hexdrift: g, __hexdriftClear: clearBest });
+
+    // Save the run in progress every 2 seconds and when the page is closing.
+    const keep = () => {
+      const r = g.race;
+      if (r.phase === "running" && r.inputs.length > 0 && !g.autopilot) saveLive(map.id, r.inputs);
+    };
+    const every = window.setInterval(keep, 2000);
+    window.addEventListener("pagehide", keep);
+
     const onTouch = () => setTouch(true);
     window.addEventListener("touchstart", onTouch, { once: true, passive: true });
     return () => {
+      clearInterval(every);
+      window.removeEventListener("pagehide", keep);
       window.removeEventListener("touchstart", onTouch);
       g.dispose();
       c.dispose();
       game.current = null;
     };
-  }, [map, pause, restart]);
+  }, [map, pause, restart, toggleGhost, loadGhost]);
 
   const idx = MAPS.findIndex((m) => m.id === map.id);
   const next = MAPS[(idx + 1) % MAPS.length];
@@ -180,7 +317,11 @@ function Play({ map }: { map: MapDef }) {
           <span className="hx-time" ref={time}>0:00.000</span>
           <span className="hx-hud-btns">
             <button type="button" className="hx-icon" aria-label="Restart (R)" title="Restart (R)" onClick={restart}>↺</button>
-            <button type="button" className="hx-icon" aria-label="Camera (C)" title="Camera (C)" onClick={() => game.current?.cycleCamera()}>◉</button>
+            <button type="button" className="hx-icon" aria-label="Camera (C)" title="Camera (C)" onClick={() => setPref("hexdrift.cam", String(game.current?.cycleCamera() ?? 0))}>◉</button>
+            {hasGhost && (
+              <button type="button" className={`hx-icon ${ghost ? "" : "off"}`} aria-pressed={ghost} aria-label="Ghost (G)" title="Ghost of your best run (G)" onClick={toggleGhost}>👻</button>
+            )}
+            <GamingButton compact />
             <button type="button" className="hx-icon" aria-label="Pause (Esc)" title="Pause (Esc)" onClick={() => pause(true)}>II</button>
           </span>
         </div>
@@ -188,29 +329,31 @@ function Play({ map }: { map: MapDef }) {
           {best && <span><MedalIcon m={medalFor(map, best.t)} size={12} />Best {formatTime(best.t)}</span>}
           <span><MedalIcon m="gold" size={12} />{formatTime(map.medals.gold)}</span>
         </div>
+        <div className="hx-split" ref={split} />
         <div className="hx-count" ref={count} />
         <div className="hx-speed"><span ref={speed}>0</span><em>km/h</em></div>
       </div>
 
       {touch && <TouchPad controls={controls} />}
 
-      {over === "pause" && (
+      {(over === "pause" || over === "restored") && (
         <div className="hx-over"><div className="hx-panel">
-          <h2>Paused</h2>
-          <p className="hx-dim">{map.name}</p>
+          <h2>{over === "restored" ? "Run restored" : "Paused"}</h2>
+          <p className="hx-dim">{over === "restored" ? "The page reloaded, so your run was rebuilt exactly where you left it." : map.name}</p>
           <div className="hx-row">
-            <button type="button" className="hx-btn hx-btn-main" onClick={() => pause(false)} autoFocus>Resume</button>
+            <button type="button" className="hx-btn hx-btn-main" onClick={() => pause(false)} autoFocus>{over === "restored" ? "Carry on" : "Resume"}</button>
             <button type="button" className="hx-btn" onClick={restart}>Restart</button>
             <a className="hx-btn" href="#/hexdrift">Maps</a>
           </div>
+          {gaming && <p className="hx-dim hx-small">Gaming Mode is on: hold its button for 3 seconds to turn it off.</p>}
         </div></div>
       )}
-      {over && over !== "pause" && <Finish map={map} result={over} next={next} onRestart={restart} />}
+      {over && typeof over === "object" && <Finish map={map} result={over} next={next} onRestart={restart} />}
     </div>
   );
 }
 
-function Finish({ map, result, next, onRestart }: { map: MapDef; result: { ticks: number; best: Best | null; isBest: boolean }; next: MapDef; onRestart: () => void }) {
+function Finish({ map, result, next, onRestart }: { map: MapDef; result: Result; next: MapDef; onRestart: () => void }) {
   const medal = medalFor(map, result.ticks);
   const order: Exclude<Medal, null>[] = ["vortex", "gold", "silver", "bronze"];
   return (

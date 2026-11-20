@@ -7,6 +7,7 @@ import { Downloader } from "./Downloader";
 import { GamesPage, HomePage, NotFound, SignedOut } from "./pages";
 import { AnnouncementsPage } from "./Announcements";
 import { CHAT_ON, ChatProvider, UnreadBadge, useChat } from "./chat/store";
+import { isGaming } from "../hexdrift/gaming";
 import "@fontsource-variable/space-grotesk";
 import "./vortex.css";
 
@@ -61,8 +62,12 @@ function Shell({ email, prefs, setPrefs, gravatar }: { email: string | null; pre
   };
 
   useEffect(() => {
+    let lastUrl = location.href;
     const on = () => {
       const next = readRoute();
+      // Gaming Mode: links and Back can't leave the game.
+      if (isGaming() && next !== "hexdrift") { history.replaceState(history.state, "", lastUrl); return; }
+      lastUrl = location.href;
       setRoute((was) => { if (was !== next) window.scrollTo(0, 0); return next; });
       setDrawer(false);
     };

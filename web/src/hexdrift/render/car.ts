@@ -38,12 +38,14 @@ function wedge(): THREE.BufferGeometry {
   return g;
 }
 
-export function buildCar(color: string, accent: string): CarModel {
+export function buildCar(color: string, accent: string, ghost = false): CarModel {
   const root = new THREE.Group();
   const geos: THREE.BufferGeometry[] = [];
   const mats: THREE.Material[] = [];
   const mat = (c: string, emissive = "#000000") => {
-    const m = new THREE.MeshLambertMaterial({ color: c, emissive, flatShading: true, side: THREE.DoubleSide });
+    const m = ghost
+      ? new THREE.MeshLambertMaterial({ color: "#ffffff", emissive: "#8a93a8", transparent: true, opacity: 0.32, depthWrite: false, flatShading: true })
+      : new THREE.MeshLambertMaterial({ color: c, emissive, flatShading: true, side: THREE.DoubleSide });
     mats.push(m);
     return m;
   };
@@ -77,6 +79,7 @@ export function buildCar(color: string, accent: string): CarModel {
   const flameG = new THREE.ConeGeometry(0.28, 1.6, 6); flameG.rotateX(-Math.PI / 2); flameG.translate(0, 0.55, -2.95); geos.push(flameG);
   const flameM = new THREE.MeshBasicMaterial({ color: "#7af7ff", transparent: true, opacity: 0.85 }); mats.push(flameM);
   const flame = new THREE.Mesh(flameG, flameM);
+  if (ghost) { glowM.transparent = true; glowM.opacity = 0.3; flameM.opacity = 0.3; }
   flame.visible = false;
   root.add(flame);
 

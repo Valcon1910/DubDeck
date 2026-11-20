@@ -15,6 +15,8 @@ export interface HudRefs {
   speed: HTMLElement | null;
   cps: HTMLElement | null;
   count: HTMLElement | null;
+  /** "+0.42" / "−0.18" against the ghost at each checkpoint. */
+  split: HTMLElement | null;
 }
 
 export interface GameEvents {
@@ -29,6 +31,18 @@ const CAMS = [
 ];
 
 interface Snap { x: number; y: number; z: number; yaw: number; nx: number; ny: number; nz: number }
+/** The best run replayed next to you: see-through, no collisions. */
+interface Ghost {
+  inputs: Uint8Array;
+  race: Race;
+  splits: number[];
+  finish: number;
+  model: CarModel;
+  prev: Snap;
+  cur: Snap;
+  n: THREE.Vector3;
+}
+
 const snap = (r: Race): Snap => ({ x: r.car.x, y: r.car.y, z: r.car.z, yaw: r.car.yaw, nx: r.car.nx, ny: r.car.ny, nz: r.car.nz });
 
 export class Game {
@@ -58,7 +72,12 @@ export class Game {
   private maxRatio: number;
   private frameMs = 16;
   private resAt = 0;
-  private hudCache = { time: "", speed: "", cps: "", count: "" };
+  private hudCache = { time: "", speed: "", cps: "", count: "", split: "" };
+  private ghost: Ghost | null = null;
+  private ghostShown = true;
+  private splitText = "";
+  private splitClass = "";
+  private splitUntil = 0;
   private onVis = () => { if (document.hidden && !this.paused && !this.finished) this.events.onHidden(); };
   private ro: ResizeObserver;
 
@@ -139,9 +158,92 @@ export class Game {
     this.acc = 0;
   }
 
+  /**
+   * Shows a ghost replaying these inputs. Replays it once first: if it no
+   * longer finishes in the same time (physics changed), there's no ghost.
+   */
+  setGhost(inputs: Uint8Array | null, ticks = 0): boolean {
+    if (this.ghost) { this.scene.remove(this.ghost.model.root); this.ghost.model.dispose(); this.ghost = null; }
+    if (!inputs) return false;
+    const check = newRace(this.race.track);
+    while (check.phase === "countdown") step(check, 0);
+    for (const b of inputs) { step(check, b); if (check.phase === "finished") break; }
+    if (check.phase !== "finished" || check.finishTicks !== ticks) return false;
+    const model = buildCar("#ffffff", "#ffffff", true);
+    model.root.visible = false;
+    this.scene.add(model.root);
+    const race = newRace(this.race.track);
+    this.ghost = { inputs, race, splits: check.splits.slice(), finish: check.finishTicks, model, prev: snap(race), cur: snap(race), n: new THREE.Vector3(0, 1, 0) };
+    // Catch up with the race if it has already started.
+    for (let i = 0; i < this.race.tick; i++) this.stepGhost();
+    return true;
+  }
+
+  get hasGhost() { return this.ghost !== null; }
+
+  toggleGhost() {
+    this.ghostShown = !this.ghostShown;
+    return this.ghostShown;
+  }
+
+  /**
+   * Rebuilds a run from its inputs (after a reload). Same inputs, same
+   * physics: the car ends up exactly where it was.
+   */
+  restore(inputs: Uint8Array) {
+    this.restart();
+    while (this.race.phase === "countdown") this.tick(0);
+    for (const b of inputs) { this.tick(b); if (this.race.phase !== "running") break; }
+    this.prev = this.cur;
+    this.camYaw = this.race.car.yaw;
+    this.camInit = false;
+  }
+
+  private stepGhost() {
+    const g = this.ghost;
+    if (!g) return;
+    g.prev = g.cur;
+    const r = g.race;
+    step(r, r.phase === "running" ? g.inputs[r.inputs.length] ?? 0 : 0);
+    g.cur = snap(r);
+  }
+
+  /** One simulation step for the race (and the ghost alongside it). */
+  private tick(byte: number) {
+    this.prev = this.cur;
+    const before = this.race.splits.length;
+    step(this.race, byte);
+    this.cur = snap(this.race);
+    this.stepGhost();
+    const g = this.ghost;
+    if (g && this.race.splits.length > before) {
+      const i = this.race.splits.length - 1;
+      if (g.splits[i] !== undefined) this.showSplit(this.race.splits[i] - g.splits[i]);
+    }
+    if (this.race.phase === "finished" && !this.finished) {
+      this.finished = true;
+      if (g) this.showSplit(this.race.finishTicks - g.finish);
+      this.events.onFinish(this.race.finishTicks, this.race.inputs.slice(), this.race.splits.slice());
+    }
+  }
+
+  private showSplit(d: number) {
+    const sign = d < 0 ? "−" : d > 0 ? "+" : "±";
+    this.splitText = `${sign}${(Math.abs(d) / HZ).toFixed(3)}`;
+    this.splitClass = d < 0 ? "ahead" : d > 0 ? "behind" : "";
+    this.splitUntil = this.race.tick + HZ * 2.5;
+  }
+
   /** Back to the start line (keeps the world, so it's instant). */
   restart() {
     this.race = newRace(this.race.track);
+    if (this.ghost) {
+      const g = this.ghost;
+      g.race = newRace(this.race.track);
+      g.prev = g.cur = snap(g.race);
+    }
+    this.splitText = "";
+    this.splitUntil = 0;
     this.prev = this.cur = snap(this.race);
     this.camYaw = this.race.car.yaw;
     this.camInit = false;
@@ -171,13 +273,7 @@ export class Game {
       while (this.acc >= 1 / HZ && n < 6) {
         this.acc -= 1 / HZ;
         n++;
-        this.prev = this.cur;
-        step(this.race, this.input());
-        this.cur = snap(this.race);
-        if (this.race.phase === "finished" && !this.finished) {
-          this.finished = true;
-          this.events.onFinish(this.race.finishTicks, this.race.inputs.slice(), this.race.splits.slice());
-        }
+        this.tick(this.input());
       }
       if (n === 6) this.acc = 0; // way behind (tab was busy): don't spiral
     }
@@ -212,20 +308,29 @@ export class Game {
     const yaw = a.yaw + dyaw * t;
     const car = this.race.car;
 
-    // Car orientation: forward along yaw, up along the (smoothed) road normal.
-    this.smoothN.lerp(this.vy.set(b.nx, b.ny, b.nz), Math.min(1, dt * 10)).normalize();
-    if (jump) this.smoothN.set(b.nx, b.ny, b.nz);
-    const up = this.smoothN;
-    this.vz.set(Math.sin(yaw), 0, Math.cos(yaw));
-    this.vx.crossVectors(up, this.vz).normalize();
-    this.vz.crossVectors(this.vx, up).normalize();
-    this.tmpM.makeBasis(this.vx, up, this.vz).setPosition(x, y, z);
-    this.car.root.matrixAutoUpdate = false;
-    this.car.root.matrix.copy(this.tmpM);
-    this.car.root.matrixWorldNeedsUpdate = true;
+    this.pose(this.car, this.smoothN, b, jump, x, y, z, yaw, dt);
     const steer = this.race.inputs.length ? ((this.race.inputs[this.race.inputs.length - 1] & 15) - 7) / 7 : 0;
     this.car.update(car.speed, steer, dt);
     this.car.setBoost(car.boosting > 0);
+
+    // The ghost.
+    const gh = this.ghost;
+    if (gh) {
+      const show = this.ghostShown && gh.race.phase === "running";
+      gh.model.root.visible = show;
+      if (show) {
+        const p = gh.prev, q = gh.cur;
+        const gj = (p.x - q.x) ** 2 + (p.z - q.z) ** 2 > 400;
+        const tt = gj ? 1 : t;
+        let gy = q.yaw - p.yaw;
+        if (gy > Math.PI) gy -= Math.PI * 2;
+        if (gy < -Math.PI) gy += Math.PI * 2;
+        this.pose(gh.model, gh.n, q, gj, p.x + (q.x - p.x) * tt, p.y + (q.y - p.y) * tt, p.z + (q.z - p.z) * tt, p.yaw + gy * tt, dt);
+        const gi = gh.race.inputs;
+        gh.model.update(gh.race.car.speed, gi.length ? ((gi[gi.length - 1] & 15) - 7) / 7 : 0, dt);
+        gh.model.setBoost(gh.race.car.boosting > 0);
+      }
+    }
 
     // Shadow on the road below.
     const g = groundAt(this.race.track, x, y + 0.5, z, 0.5);
@@ -275,6 +380,19 @@ export class Game {
     this.updateHud();
   }
 
+  /** Places a car model: forward along yaw, up along the (smoothed) road normal. */
+  private pose(model: CarModel, n: THREE.Vector3, b: Snap, jump: boolean, x: number, y: number, z: number, yaw: number, dt: number) {
+    n.lerp(this.vy.set(b.nx, b.ny, b.nz), Math.min(1, dt * 10)).normalize();
+    if (jump) n.set(b.nx, b.ny, b.nz);
+    this.vz.set(Math.sin(yaw), 0, Math.cos(yaw));
+    this.vx.crossVectors(n, this.vz).normalize();
+    this.vz.crossVectors(this.vx, n).normalize();
+    this.tmpM.makeBasis(this.vx, n, this.vz).setPosition(x, y, z);
+    model.root.matrixAutoUpdate = false;
+    model.root.matrix.copy(this.tmpM);
+    model.root.matrixWorldNeedsUpdate = true;
+  }
+
   private updateHud() {
     const r = this.race, h = this.hud, cache = this.hudCache;
     const set = (k: keyof typeof cache, el: HTMLElement | null, v: string) => {
@@ -287,6 +405,9 @@ export class Game {
     if (r.phase === "countdown") count = String(Math.ceil((COUNTDOWN - r.tick) / HZ));
     else if (r.phase === "running" && r.tick - COUNTDOWN < 40) count = "GO!";
     set("count", h.count, count);
+    const split = r.tick < this.splitUntil ? this.splitText : "";
+    set("split", h.split, split);
+    if (h.split && h.split.dataset.kind !== this.splitClass) h.split.dataset.kind = this.splitClass;
   }
 
   /** Lowers or raises the render resolution to keep frames fast. */
@@ -309,6 +430,7 @@ export class Game {
     document.removeEventListener("visibilitychange", this.onVis);
     this.world.dispose();
     this.car.dispose();
+    this.setGhost(null);
     this.shadow.dispose();
     this.renderer.dispose();
     this.renderer.forceContextLoss();

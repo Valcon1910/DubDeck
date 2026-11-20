@@ -33,27 +33,27 @@ export const MAPS: MapDef[] = [
   {
     id: "neon-downtown", name: "Neon Downtown", biome: "city", difficulty: "Beginner",
     recipe: "W+ S3 C R S2 B S2 R S C S3 L S2 R S2 C S2 R S4 B F",
-    medals: { vortex: 773, gold: 845, silver: 972, bronze: 1196 },
+    medals: { vortex: 934, gold: 1021, silver: 1175, bronze: 1445 },
   },
   {
     id: "canyon-rush", name: "Canyon Rush", biome: "canyon", difficulty: "Medium",
     recipe: "S2 U S C L S2 D S B J G S2 C R S3 U U S L S2 C D D S2 R S J G S F",
-    medals: { vortex: 878, gold: 959, silver: 1104, bronze: 1358 },
+    medals: { vortex: 1011, gold: 1105, silver: 1271, bronze: 1563 },
   },
   {
     id: "glacier-run", name: "Glacier Run", biome: "glacier", difficulty: "Medium",
     recipe: "W+ S2 I+ S2 I- C R S2 I+ L S L I- S2 C R S3 I+ S2 I- B S F",
-    medals: { vortex: 606, gold: 663, silver: 763, bronze: 938 },
+    medals: { vortex: 695, gold: 759, silver: 874, bronze: 1074 },
   },
   {
     id: "cloud-kingdom", name: "Cloud Kingdom", biome: "sky", difficulty: "Hard",
     recipe: "S2 B J G S C U U S R S2 B J G S2 C L D S J G S C S R B S2 F",
-    medals: { vortex: 704, gold: 770, silver: 886, bronze: 1089 },
+    medals: { vortex: 786, gold: 859, silver: 988, bronze: 1215 },
   },
   {
     id: "desert-mirage", name: "Desert Mirage", biome: "desert", difficulty: "Medium",
     recipe: "S2 B S3 C R S4 B S4 R S C S2 L S3 B S4 R S2 D S2 F",
-    medals: { vortex: 845, gold: 923, silver: 1063, bronze: 1307 },
+    medals: { vortex: 1122, gold: 1226, silver: 1412, bronze: 1736 },
   },
 ];
 

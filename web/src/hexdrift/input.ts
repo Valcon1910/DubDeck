@@ -2,7 +2,7 @@
 import type { Input } from "./sim/race.ts";
 
 export type Action = "left" | "right" | "gas" | "brake" | "drift" | "respawn";
-export type Command = "restart" | "camera" | "pause";
+export type Command = "restart" | "camera" | "pause" | "ghost";
 
 const KEYS: Record<string, Action | Command> = {
   ArrowLeft: "left", KeyA: "left",
@@ -11,7 +11,7 @@ const KEYS: Record<string, Action | Command> = {
   ArrowDown: "brake", KeyS: "brake",
   Space: "drift", ShiftLeft: "drift", ShiftRight: "drift",
   Enter: "respawn", KeyE: "respawn", Backspace: "respawn",
-  KeyR: "restart", KeyC: "camera", Escape: "pause", KeyP: "pause",
+  KeyR: "restart", KeyC: "camera", KeyG: "ghost", Escape: "pause", KeyP: "pause",
 };
 
 export class Controls {
@@ -27,7 +27,7 @@ export class Controls {
       if (!a) return;
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       e.preventDefault();
-      if (a === "restart" || a === "camera" || a === "pause") { if (!e.repeat) onCommand(a); return; }
+      if (a === "restart" || a === "camera" || a === "pause" || a === "ghost") { if (!e.repeat) onCommand(a); return; }
       this.held.add(a);
     };
     const up = (e: KeyboardEvent) => { const a = KEYS[e.code]; if (a) this.held.delete(a as Action); };
