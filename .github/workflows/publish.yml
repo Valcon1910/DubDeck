@@ -10,6 +10,13 @@ on:
       site:
         type: string
         required: true
+      # Merged in first, on the same machine (one machine per publish is faster):
+      #   "code:<branch>" → main, then that code branch, into test
+      #   "test"          → test into main (+ an Update log entry)
+      #   "main"          → main into test
+      merge:
+        type: string
+        default: ""
 
 jobs:
   publish:
@@ -31,12 +38,41 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.site == 'test' && 'test' || 'main' }}
+          fetch-depth: ${{ inputs.merge != '' && '0' || '1' }}
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
+
+      - name: Merge changes in
+        if: inputs.merge != ''
+        env:
+          MERGE: ${{ inputs.merge }}
+          TARGET: ${{ inputs.site == 'test' && 'test' || 'main' }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config merge.vortexjson.driver "node scripts/merge-json.mjs %O %A %B"
+          conflict() { echo "::error::$1 changed the same lines. Ask Claude to resolve the conflict."; exit 1; }
+          case "$MERGE" in
+            code:*)
+              CODE="${MERGE#code:}"
+              git fetch -q origin main "$CODE"
+              VORTEX_MAIN=theirs git merge --no-edit origin/main || conflict "main and test"
+              VORTEX_MAIN=ours git merge --no-edit "origin/$CODE" || conflict "$CODE and test" ;;
+            test)
+              git fetch -q origin test
+              VORTEX_MAIN=ours git merge --no-edit origin/test || conflict "test and main"
+              # A dated entry in the home page's Update log for this publish.
+              node scripts/add-update.mjs && git commit -qam "Update log: publish of $(date -u +%Y-%m-%d)" ;;
+            main)
+              git fetch -q origin main
+              VORTEX_MAIN=theirs git merge --no-edit origin/main || conflict "main and test" ;;
+            *) echo "::error::Unknown merge: $MERGE"; exit 1 ;;
+          esac
+          git push origin "HEAD:$TARGET"
 
       - name: Check configuration
         run: |
