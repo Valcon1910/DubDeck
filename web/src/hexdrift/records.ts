@@ -4,7 +4,7 @@
 // Falls back to localStorage if IndexedDB isn't available.
 
 /** Bump when the physics change: older runs can't be replayed exactly. */
-export const PHYSICS_V = 2;
+export const PHYSICS_V = 3;
 
 export interface Run {
   map: string;

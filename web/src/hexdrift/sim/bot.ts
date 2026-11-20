@@ -37,7 +37,7 @@ export function botInput(r: Race, at: { i: number }, tune: BotTuning = DEFAULT_B
   const ahead = (fx * dx + fz * dz) / len;
   const steer = ahead < 0 ? (cross > 0 ? -1 : 1) : clamp(-cross * tune.gain, -1, 1);
   // Slow for sharp turns further ahead.
-  const far = line[Math.min(line.length - 1, best + 7)];
+  const far = line[Math.min(line.length - 1, best + 6 + Math.round(sp / 5))];
   const ex = far.x - car.x, ez = far.z - car.z, el = Math.sqrt(ex * ex + ez * ez) || 1;
   const bend = 1 - Math.abs(fx * ex + fz * ez) / el;
   const limit = tune.corner + 34 * (1 - Math.min(1, bend * 3));
