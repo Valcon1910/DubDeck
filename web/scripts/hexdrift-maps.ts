@@ -18,9 +18,9 @@ for (const m of MAPS) {
   const t0 = performance.now();
   // Try a few driving styles and keep the fastest (the author time).
   let run: ReturnType<typeof botRun> = null;
-  for (const corner of [12, 15, 18, 22]) for (const look of [2, 3, 4]) for (const gain of [2.4, 3.5]) {
+  for (const corner of [6, 9, 12, 15, 18]) for (const look of [2, 3, 4]) for (const gain of [2.4, 3.5]) {
     const tune: BotTuning = { corner, look, gain };
-    const r = botRun(t, tune, 90);
+    const r = botRun(t, tune, 120);
     if (r && (!run || r.ticks < run.ticks)) run = r;
   }
   const ms = (performance.now() - t0).toFixed(0);
