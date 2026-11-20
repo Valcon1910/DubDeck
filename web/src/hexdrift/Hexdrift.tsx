@@ -462,7 +462,7 @@ function Finish({ map, result, next, onRestart, signedIn }: { map: MapDef; resul
   const medal = medalFor(map, result.ticks);
   const order: Exclude<Medal, null>[] = ["vortex", "gold", "silver", "bronze"];
   return (
-    <div className="hx-over"><div className="hx-panel hx-finish">
+    <div className="hx-over hx-over-late"><div className="hx-panel hx-finish">
       <p className="hx-dim">{map.name}</p>
       <h2 className="hx-final">{formatTime(result.ticks)}</h2>
       {result.isBest
@@ -679,6 +679,7 @@ function Garage() {
   const pick = (it: Item | BodyDef) => {
     const next = { ...look, [tab]: it.id };
     if (tab === "trail") preview.current?.boost();
+    if (tab === "finish") preview.current?.celebrate(it.id);
     if (it.need > have) { setTrying(next); return; }
     setTrying(null);
     setLook(next);

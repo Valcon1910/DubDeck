@@ -7,7 +7,7 @@ import { MAPS, medalFor, type Medal } from "./maps.ts";
 import type { Run } from "./records.ts";
 
 export interface BodyDef { id: string; name: string; need: number; blurb: string; paint: string; accent: string }
-export interface Item { id: string; name: string; need: number; color?: string }
+export interface Item { id: string; name: string; need: number; color?: string; color2?: string; style?: string }
 
 /** The cars. Each has its own model (render/car.ts) and factory colours. */
 export const BODIES: BodyDef[] = [
@@ -64,15 +64,26 @@ export const EXTRAS: Item[] = [
 ];
 
 export const TRAILS: Item[] = [
-  { id: "cyan", name: "Cyan", need: 0, color: "#7af7ff" },
-  { id: "flame", name: "Flame", need: 0, color: "#ff9a3d" },
-  { id: "pink", name: "Pink", need: 3, color: "#ff5fd2" },
-  { id: "green", name: "Toxic", need: 6, color: "#8cff5a" },
-  { id: "white", name: "White hot", need: 10, color: "#ffffff" },
-  { id: "rainbow", name: "Rainbow", need: 20 },
+  { id: "cyan", name: "Cyan ribbon", need: 0, color: "#7af7ff", color2: "#3d6bff", style: "ribbon" },
+  { id: "flame", name: "Flame", need: 0, color: "#ffd23d", color2: "#ff3d1a", style: "flame" },
+  { id: "pink", name: "Twin streaks", need: 3, color: "#ff5fd2", color2: "#7a3dff", style: "twin" },
+  { id: "green", name: "Toxic", need: 6, color: "#8cff5a", color2: "#1aa84a", style: "ribbon" },
+  { id: "lightning", name: "Lightning", need: 8, color: "#d8f0ff", color2: "#5f9bff", style: "lightning" },
+  { id: "white", name: "White hot", need: 10, color: "#ffffff", color2: "#ffb03d", style: "flame" },
+  { id: "galaxy", name: "Galaxy", need: 14, color: "#a46bff", color2: "#3dd6ff", style: "galaxy" },
+  { id: "rainbow", name: "Rainbow", need: 20, style: "rainbow" },
 ];
 
-export interface Look { body: string; paint: string; accent: string; wing: string; rims: string; extra: string; trail: string }
+export const FINISHES: Item[] = [
+  { id: "confetti", name: "Confetti", need: 0, color: "#ffd23d" },
+  { id: "sparkles", name: "Sparkles", need: 0, color: "#ffe9a0" },
+  { id: "shockwave", name: "Shockwave", need: 4, color: "#7af7ff" },
+  { id: "fireworks", name: "Fireworks", need: 8, color: "#ff5a3c" },
+  { id: "lightning", name: "Thunder", need: 12, color: "#8fd4ff" },
+  { id: "vortex", name: "Vortex", need: 16, color: "#a46bff" },
+];
+
+export interface Look { body: string; paint: string; accent: string; wing: string; rims: string; extra: string; trail: string; finish: string }
 export type Slot = keyof Look;
 
 export const SLOTS: { slot: Slot; label: string; items: (Item | BodyDef)[] }[] = [
@@ -82,10 +93,11 @@ export const SLOTS: { slot: Slot; label: string; items: (Item | BodyDef)[] }[] =
   { slot: "wing", label: "Wing", items: WINGS },
   { slot: "rims", label: "Rims", items: RIMS },
   { slot: "extra", label: "Roof", items: EXTRAS },
-  { slot: "trail", label: "Boost trail", items: TRAILS },
+  { slot: "trail", label: "Trail", items: TRAILS },
+  { slot: "finish", label: "Finish", items: FINISHES },
 ];
 
-export const DEFAULT_LOOK: Look = { body: "coupe", paint: "factory", accent: "factory", wing: "stock", rims: "stock", extra: "none", trail: "cyan" };
+export const DEFAULT_LOOK: Look = { body: "coupe", paint: "factory", accent: "factory", wing: "stock", rims: "stock", extra: "none", trail: "cyan", finish: "confetti" };
 
 export const MEDAL_POINTS: Record<Exclude<Medal, null>, number> = { bronze: 1, silver: 2, gold: 3, vortex: 4 };
 export const MAX_POINTS = MAPS.length * 4;

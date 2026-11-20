@@ -10,7 +10,8 @@ import { buildWorld, type World } from "./render/world.ts";
 import { NO_GROUND, terrainAt } from "./sim/terrain.ts";
 import { blobShadow, buildCar, type CarModel } from "./render/car.ts";
 import type { Controls } from "./input.ts";
-import { DEFAULT_LOOK, type Look } from "./garage.ts";
+import { DEFAULT_LOOK, itemOf, type Item, type Look } from "./garage.ts";
+import { FinishFx, Trail, trailDef, type FinishKind } from "./render/fx.ts";
 
 export interface HudRefs {
   time: HTMLElement | null;
@@ -56,6 +57,9 @@ export class Game {
   private world: World;
   private car: CarModel;
   private shadow = blobShadow();
+  private trail: Trail;
+  private fx = new FinishFx();
+  private trailOn = 0;
   private raf = 0;
   private last = 0;
   private acc = 0;
@@ -134,6 +138,9 @@ export class Game {
     this.car = buildCar({ look, mapAccent: biome.accent });
     this.scene.add(this.car.root);
     this.scene.add(this.shadow.mesh);
+    this.trail = new Trail(trailDef(itemOf("trail", look.trail) as Item));
+    this.scene.add(this.trail.mesh);
+    this.scene.add(this.fx.group);
 
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(canvas);
@@ -246,6 +253,8 @@ export class Game {
     if (this.race.phase === "finished" && !this.finished) {
       this.finished = true;
       if (g) this.showSplit(this.race.finishTicks - g.finish);
+      const c = this.race.car;
+      this.fx.start(itemOf("finish", this.look.finish).id as FinishKind, c.x, c.y, c.z);
       this.events.onFinish(this.race.finishTicks, this.race.inputs.slice(), this.race.splits.slice());
     }
   }
@@ -267,6 +276,8 @@ export class Game {
     }
     this.splitText = "";
     this.splitUntil = 0;
+    this.trail.reset();
+    this.fx.stop();
     this.prev = this.cur = snap(this.race);
     this.camYaw = this.race.car.yaw;
     this.camInit = false;
@@ -338,6 +349,14 @@ export class Game {
     const lastIn = this.race.inputs[this.race.inputs.length - 1] ?? 0;
     this.car.update(car.speed, steer, dt, (lastIn & 32) !== 0);
     this.car.setBoost(car.boosting > 0);
+
+    // The trail: bright while boosting, softer while drifting or flying.
+    const glow = car.boosting > 0 ? 1 : Math.abs(car.slip) > 4 && car.grounded ? 0.55 : !car.grounded && Math.abs(car.speed) > 20 ? 0.35 : 0;
+    this.trailOn += (glow - this.trailOn) * Math.min(1, dt * (glow > this.trailOn ? 12 : 4));
+    if (jump) this.trail.reset();
+    const sy = Math.sin(yaw), cy = Math.cos(yaw);
+    this.trail.update(x - sy * 2.3, y + 0.32, z - cy * 2.3, cy, -sy, this.trailOn, dt);
+    this.fx.update(dt);
 
     // The ghosts.
     for (const gh of [this.ghost, this.wr]) {
@@ -462,6 +481,8 @@ export class Game {
     this.setGhost(null);
     this.setRecordGhost(null);
     this.shadow.dispose();
+    this.trail.dispose();
+    this.fx.dispose();
     this.renderer.dispose();
     this.renderer.forceContextLoss();
     this.canvas.remove();
