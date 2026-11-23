@@ -74,7 +74,16 @@
   "announcements": {
     "title": "Announcements",
     "subtitle": "News and updates from Vortex.",
-    "items": []
+    "items": [
+      {
+        "id": "c1d46e8c-70ee-41b2-aa1b-a006f27b4483",
+        "title": "Chat and Hexdrift!",
+        "text": "- New chat where you can talk to vortex members\n- New internal game called Hexdrift which is in beta 3/10 finished.",
+        "image": "",
+        "date": "2026-11-23T14:24:00.302Z",
+        "files": []
+      }
+    ]
   },
   "games": {
     "title": "Games",
