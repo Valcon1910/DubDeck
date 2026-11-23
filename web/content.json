@@ -56,6 +56,11 @@
   },
   "updates": [
     {
+      "id": "pub-20261123142253",
+      "date": "2026-11-23T14:22:53.825Z",
+      "text": ""
+    },
+    {
       "id": "pub-20261119195747",
       "date": "2026-11-19T19:57:47.289Z",
       "text": "- Fixes\n- Now only the owner can post announcements"
