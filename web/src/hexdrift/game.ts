@@ -12,6 +12,7 @@ import { blobShadow, buildCar, type CarModel } from "./render/car.ts";
 import type { Controls } from "./input.ts";
 import { DEFAULT_LOOK, itemOf, type Item, type Look } from "./garage.ts";
 import { FinishFx, Trail, trailDef, type FinishKind } from "./render/fx.ts";
+import { play } from "./ui/sound.ts";
 
 export interface HudRefs {
   time: HTMLElement | null;
@@ -25,7 +26,16 @@ export interface HudRefs {
 export interface GameEvents {
   onFinish(ticks: number, inputs: number[], splits: number[]): void;
   onHidden(): void;
+  /** The race-start cutscene: the flyover, the car reveal, then done. */
+  onIntro?(stage: IntroStage): void;
 }
+
+export type IntroStage = "fly" | "car" | "done";
+// The cutscene before the first countdown: a drone flyover of the route
+// (with the map's title), a cut to an orbit around your car, then a smooth
+// swing into the chase camera. Nothing is simulated meanwhile, so it can't
+// affect the run; any key or tap skips it.
+const FLY = 3.2, REVEAL = 1.7, BLEND = 0.9;
 
 const CAMS = [
   { dist: 9.5, height: 3.6, look: 1.3, fov: 68 },
@@ -88,6 +98,15 @@ export class Game {
   private splitText = "";
   private splitClass = "";
   private splitUntil = 0;
+  private introT = -1;
+  private finishAt = 0;
+  private introStage: IntroStage = "done";
+  private route: THREE.Vector3[] = [];
+  private skip = (e: Event) => {
+    if (this.introT < 0 || this.paused) return;
+    if (e instanceof KeyboardEvent && (e.repeat || e.key === "Escape")) return;
+    if (this.introT < FLY + REVEAL) this.introT = FLY + REVEAL;
+  };
   private onVis = () => { if (document.hidden && !this.paused && !this.finished) this.events.onHidden(); };
   private ro: ResizeObserver;
 
@@ -101,6 +120,7 @@ export class Game {
     private controls: Controls,
     camMode = 0,
     private look: Look = DEFAULT_LOOK,
+    intro = false,
   ) {
     const biome = BIOMES[map.biome];
     const track = trackOf(map);
@@ -146,7 +166,39 @@ export class Game {
     this.ro.observe(canvas);
     this.resize();
     document.addEventListener("visibilitychange", this.onVis);
+    // A smoothed copy of the route for the flyover.
+    const ln = track.line;
+    for (let i = 0; i < ln.length; i++) {
+      let x = 0, y = 0, z = 0, k = 0;
+      for (let j = Math.max(0, i - 4); j <= Math.min(ln.length - 1, i + 4); j++) { x += ln[j].x; y = Math.max(y || -1e9, ln[j].y); z += ln[j].z; k++; }
+      this.route.push(new THREE.Vector3(x / k, y, z / k));
+    }
+    if (intro && this.route.length > 20) {
+      this.introT = 0;
+      window.addEventListener("keydown", this.skip);
+      window.addEventListener("pointerdown", this.skip);
+    }
     this.updateHud();
+  }
+
+  /** True while the race-start cutscene is playing. */
+  get inIntro() { return this.introT >= 0; }
+
+  /** Ends the cutscene now (no blend). */
+  endIntro() {
+    if (this.introT < 0) return;
+    this.introT = -1;
+    this.camInit = false;
+    this.setIntroStage("done");
+    window.removeEventListener("keydown", this.skip);
+    window.removeEventListener("pointerdown", this.skip);
+  }
+
+  private setIntroStage(s: IntroStage) {
+    if (this.introStage === s) return;
+    this.introStage = s;
+    if (s === "car") play("reveal");
+    this.events.onIntro?.(s);
   }
 
   private resize() {
@@ -221,6 +273,7 @@ export class Game {
    * physics: the car ends up exactly where it was.
    */
   restore(inputs: Uint8Array) {
+    this.endIntro();
     this.restart();
     while (this.race.phase === "countdown") this.tick(0);
     for (const b of inputs) { this.tick(b); if (this.race.phase !== "running") break; }
@@ -268,6 +321,7 @@ export class Game {
 
   /** Back to the start line (keeps the world, so it's instant). */
   restart() {
+    this.endIntro();
     this.race = newRace(this.race.track);
     for (const g of [this.ghost, this.wr]) {
       if (!g) continue;
@@ -282,6 +336,7 @@ export class Game {
     this.camYaw = this.race.car.yaw;
     this.camInit = false;
     this.finished = false;
+    this.finishAt = 0;
     this.botAt = { i: 0 };
     this.acc = 0;
     this.last = performance.now();
@@ -296,12 +351,17 @@ export class Game {
   }
 
   private frame(now: number) {
-    const dt = Math.min(0.1, (now - this.last) / 1000);
+    const dt = Math.min(0.1, Math.max(0, (now - this.last) / 1000));
     this.last = now;
     this.frameMs += ((dt * 1000) - this.frameMs) * 0.05;
     this.controls.pollPad();
 
-    if (!this.paused) {
+    if (!this.paused && this.introT >= 0) {
+      if (this.introT === 0) this.setIntroStage("fly");
+      this.introT += dt;
+      if (this.introT >= FLY && this.introStage === "fly") this.setIntroStage("car");
+      if (this.introT >= FLY + REVEAL + BLEND) this.endIntro();
+    } else if (!this.paused) {
       this.acc += dt;
       let n = 0;
       while (this.acc >= 1 / HZ && n < 6) {
@@ -406,11 +466,17 @@ export class Game {
     if (this.cam === 2) this.camPos.copy(want);
     this.camLook.set(x + fx * 6, y + c.look, z + fz * 6);
     if (this.race.phase === "finished") {
-      // Slow orbit around the car at the finish.
-      const o = performance.now() / 4000;
-      this.camPos.set(x + Math.sin(o) * 12, y + 5, z + Math.cos(o) * 12);
-      this.camLook.set(x, y + 1, z);
+      // The finish shot: a low sweep beside the car that cranes up and out
+      // into a slow orbit while the celebration plays.
+      if (!this.finishAt) this.finishAt = performance.now();
+      const k = Math.min(1, (performance.now() - this.finishAt) / 2600);
+      const e = 1 - (1 - k) ** 3;
+      const o = yaw + Math.PI * 0.35 + (performance.now() - this.finishAt) / 4200;
+      const rr = 5.5 + 7 * e;
+      this.camPos.set(x + Math.sin(o) * rr, y + 2.1 + 3.4 * e, z + Math.cos(o) * rr);
+      this.camLook.set(x, y + 1 - 0.2 * e, z);
     }
+    if (this.introT >= 0) this.introCamera(x, y, z, yaw);
     this.camera.position.copy(this.camPos);
     this.camera.lookAt(this.camLook);
     // Tall (portrait) screens get a wider view so the road ahead stays visible.
@@ -425,6 +491,47 @@ export class Game {
 
     this.renderer.render(this.scene, this.camera);
     this.updateHud();
+  }
+
+  /**
+   * The cutscene camera. The flyover follows the road's own centre line well
+   * above the arches (scenery never stands within a cell of the road), so it
+   * can't pass through anything; the reveal orbits inside the road's width.
+   */
+  private introCamera(x: number, y: number, z: number, yaw: number) {
+    const t = this.introT;
+    const ease = (u: number) => u * u * (3 - 2 * u);
+    if (t < FLY) {
+      const n = this.route.length;
+      const u = ease(Math.min(1, t / FLY));
+      // From partway down the route back toward the start, looking the way it flies.
+      const s0 = Math.min(n - 10, Math.max(30, n * 0.45)), s1 = 6;
+      const s = s0 + (s1 - s0) * u;
+      const at = (q: number, out: THREE.Vector3) => {
+        const i = Math.max(0, Math.min(n - 2, Math.floor(q)));
+        return out.copy(this.route[i]).lerp(this.route[i + 1], Math.max(0, Math.min(1, q - i)));
+      };
+      at(s, this.camPos);
+      const h = 15 - 3 * u;
+      this.camPos.y += h;
+      const g = terrainAt(this.race.track, this.camPos.x, this.camPos.z).h;
+      if (this.camPos.y < g + 6) this.camPos.y = g + 6;
+      at(s - 8, this.camLook);
+      this.camLook.y += 2;
+      return;
+    }
+    // The reveal: a low orbit from the front corner round to behind the car.
+    const k = Math.min(1, (t - FLY) / (REVEAL + BLEND));
+    const a = yaw + Math.PI * 0.3 + Math.PI * 0.7 * ease(k);
+    const r = 6, hgt = 1.6 + 1.2 * k;
+    const ox = x + Math.sin(a) * r, oz = z + Math.cos(a) * r;
+    // this.vy still holds where the chase camera wants to be this frame.
+    const chaseX = this.vy.x, chaseY = this.vy.y, chaseZ = this.vy.z;
+    const lookX = this.camLook.x, lookY = this.camLook.y, lookZ = this.camLook.z;
+    // Then hand over smoothly to the chase camera (already worked out above).
+    const b = t > FLY + REVEAL ? ease(Math.min(1, (t - FLY - REVEAL) / BLEND)) : 0;
+    this.camPos.set(ox + (chaseX - ox) * b, y + hgt + (chaseY - y - hgt) * b, oz + (chaseZ - oz) * b);
+    this.camLook.set(x + (lookX - x) * b, y + 0.8 + (lookY - y - 0.8) * b, z + (lookZ - z) * b);
   }
 
   /** Places a car model: forward along yaw, up along the (smoothed) road normal. */
@@ -449,9 +556,12 @@ export class Game {
     set("speed", h.speed, String(Math.round(Math.abs(r.car.speed) * 3.6)));
     set("cps", h.cps, `${r.cps.size}/${r.track.checkpoints}`);
     let count = "";
-    if (r.phase === "countdown") count = String(Math.ceil((COUNTDOWN - r.tick) / HZ));
+    if (this.introT >= 0) count = "";
+    else if (r.phase === "countdown") count = String(Math.ceil((COUNTDOWN - r.tick) / HZ));
     else if (r.phase === "running" && r.tick - COUNTDOWN < 40) count = "GO!";
+    if (count !== cache.count && count && this.raf) play(count === "GO!" ? "go" : "count");
     set("count", h.count, count);
+    if (h.count && h.count.dataset.n !== count) { h.count.dataset.n = count; h.count.classList.remove("pop"); void h.count.offsetWidth; h.count.classList.add("pop"); }
     const split = r.tick < this.splitUntil ? this.splitText : "";
     set("split", h.split, split);
     if (h.split && h.split.dataset.kind !== this.splitClass) h.split.dataset.kind = this.splitClass;
@@ -473,6 +583,7 @@ export class Game {
   }
 
   dispose() {
+    this.endIntro();
     this.stop();
     this.ro.disconnect();
     document.removeEventListener("visibilitychange", this.onVis);

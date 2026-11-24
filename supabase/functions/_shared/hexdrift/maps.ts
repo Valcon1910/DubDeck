@@ -26,6 +26,8 @@ export interface MapDef {
   name: string;
   biome: BiomeId;
   difficulty: "Beginner" | "Medium" | "Hard" | "Expert";
+  /** One or two sentences for the map's page. */
+  blurb: string;
   recipe: string;
   medals: { vortex: number; gold: number; silver: number; bronze: number };
   /**
@@ -38,27 +40,27 @@ export interface MapDef {
 
 export const MAPS: MapDef[] = [
   {
-    id: "neon-downtown", name: "Neon Downtown", biome: "city", difficulty: "Beginner",
+    id: "neon-downtown", blurb: "Midnight in the glass canyons. Long neon straights, a boost through the plaza and three tight turns that reward a clean line.", name: "Neon Downtown", biome: "city", difficulty: "Beginner",
     recipe: "W+ S3 C R S2 B S2 R S C S3 L S2 R S2 C S2 R S4 B F",
     medals: { vortex: 1211, gold: 1323, silver: 1523, bronze: 1872 }, since: 3,
   },
   {
-    id: "canyon-rush", name: "Canyon Rush", biome: "canyon", difficulty: "Medium",
+    id: "canyon-rush", blurb: "Red rock, hot wind and a gap you have to jump. Climb out of the gorge, fly the ravine and keep your speed through the switchbacks.", name: "Canyon Rush", biome: "canyon", difficulty: "Medium",
     recipe: "S2 U S C L S2 D S B J G S2 C R S3 U U S L S2 C D D S2 R S B J G S F",
     medals: { vortex: 1278, gold: 1397, silver: 1608, bronze: 1977 }, since: 3,
   },
   {
-    id: "glacier-run", name: "Glacier Run", biome: "glacier", difficulty: "Medium",
+    id: "glacier-run", blurb: "Sheet ice between blue walls. Grip comes and goes: brake before the frozen corners, not on them.", name: "Glacier Run", biome: "glacier", difficulty: "Medium",
     recipe: "W+ S2 I+ S2 I- C R S2 I+ L S L I- S2 C R S3 I+ S2 I- B S F",
     medals: { vortex: 926, gold: 1012, silver: 1165, bronze: 1433 }, since: 3,
   },
   {
-    id: "cloud-kingdom", name: "Cloud Kingdom", biome: "sky", difficulty: "Hard",
+    id: "cloud-kingdom", blurb: "Roads hung between sky islands. Three jumps over open air, and nothing below to catch you if you miss.", name: "Cloud Kingdom", biome: "sky", difficulty: "Hard",
     recipe: "S2 B J G S C U U S R S2 B J G S2 C L D S J G S C S R B S2 F",
     medals: { vortex: 983, gold: 1074, silver: 1236, bronze: 1520 }, since: 3,
   },
   {
-    id: "desert-mirage", name: "Desert Mirage", biome: "desert", difficulty: "Medium",
+    id: "desert-mirage", blurb: "Endless dunes, shimmering heat. Fast sweepers and boost pads that pay back every bit of commitment.", name: "Desert Mirage", biome: "desert", difficulty: "Medium",
     recipe: "S2 B S3 C R S4 B S4 R S C S2 L S3 B S4 R S2 D S2 F",
     medals: { vortex: 1274, gold: 1392, silver: 1602, bronze: 1970 }, since: 3,
   },
