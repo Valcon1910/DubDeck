@@ -175,7 +175,7 @@ function Menu() {
             <GamingButton />
           </span>
         </div>
-        <h1 className="hx-logo">HEX<span>DRIFT</span></h1>
+        <h1 className="hx-logo" aria-label="HEXDRIFT">HEX<span aria-hidden="true">DRIFT</span></h1>
         <p className="hx-sub">Time trial · beat the medals · race your ghost</p>
         {!online && <p className="hx-offline">You're offline. Everything still works, and your records are saved on this device.</p>}
       </header>
