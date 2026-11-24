@@ -129,3 +129,79 @@ test("phone: list and conversation are separate screens", async ({ browser }) =>
   const width = await ann.evaluate(() => document.documentElement.scrollWidth);
   expect(width).toBeLessThanOrEqual(360);
 });
+
+// A 1×1 GIF.
+const GIF = Buffer.from("R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==", "base64");
+
+test("popups, media players, and swiping a chat away", async ({ browser }, info) => {
+  test.skip(info.project.name !== "desktop", "desktop only");
+  const own = await as(browser, "own@x.test");
+  const cy = await as(browser, "cy@x.test");
+  await cy.goto("/#/");
+  await own.goto("/#/chat");
+  await own.getByRole("button", { name: "New chat" }).click();
+  await own.getByRole("dialog").getByRole("button", { name: /Cy/ }).click();
+  await expect(own.locator(".vx-chat-head")).toContainText("Cy");
+
+  // A new message pops up in the top right on another page; tapping it opens the chat.
+  const word = `ping-${Date.now()}`;
+  await own.getByLabel("Message", { exact: true }).fill(word);
+  await own.keyboard.press("Enter");
+  const pop = cy.locator(".vx-pop", { hasText: word });
+  await expect(pop).toBeVisible();
+  await pop.locator(".vx-pop-main").click();
+  await expect(cy.locator(".vx-msg").last()).toContainText(word);
+  await expect(cy.locator(".vx-pop")).toHaveCount(0);
+
+  // A GIF (pausable) and a video (own player with a download link).
+  await own.locator('.vx-composer input[type="file"]').setInputFiles([
+    { name: "dance.gif", mimeType: "image/gif", buffer: GIF },
+    { name: "clip.mp4", mimeType: "video/mp4", buffer: Buffer.from("not really a video") },
+  ]);
+  await own.getByRole("button", { name: "Send" }).click();
+  const gif = cy.locator(".vx-gif").last();
+  await expect(gif.locator("img")).toBeVisible();
+  await gif.getByRole("button", { name: /GIF/ }).click();
+  await expect(gif.getByRole("button", { name: "Play GIF" })).toBeVisible();
+  const vp = cy.locator(".vx-vp").last();
+  await expect(vp.getByRole("button", { name: "Play clip.mp4" })).toBeVisible();
+  await expect(vp.getByRole("link", { name: "Download clip.mp4" })).toHaveAttribute("href", /download=clip\.mp4/);
+  // Pictures open full screen with a download button.
+  await gif.getByRole("button", { name: "Open dance.gif" }).click();
+  await expect(cy.locator(".vx-viewer").getByRole("link", { name: "Download" })).toBeVisible();
+  await cy.keyboard.press("Escape");
+  await expect(cy.locator(".vx-viewer")).toHaveCount(0);
+
+  // Gaming Mode on (kept through a reload): no popups.
+  await cy.goto("/#/");
+  await cy.evaluate(() => sessionStorage.setItem("vortex.gaming", "1"));
+  await cy.reload();
+  await own.getByLabel("Message", { exact: true }).fill(`quiet-${word}`);
+  await own.keyboard.press("Enter");
+  await expect(cy.locator(".vx-side-nav .vx-unread, .vx-tile .vx-unread").first()).toBeVisible();
+  await expect(cy.locator(".vx-pop")).toHaveCount(0);
+  await cy.evaluate(() => sessionStorage.removeItem("vortex.gaming"));
+
+  // Swipe the chat left, Delete, confirm: it leaves Cy's list (Own keeps it).
+  await cy.reload(); // Gaming Mode off (it keeps links inside the game while on)
+  await cy.goto("/#/chat");
+  const row = cy.locator(".vx-chat-item").filter({ has: cy.locator("strong", { hasText: /^Own/ }) });
+  const b = (await row.boundingBox())!;
+  await cy.mouse.move(b.x + b.width - 20, b.y + b.height / 2);
+  await cy.mouse.down();
+  for (let i = 1; i <= 8; i++) await cy.mouse.move(b.x + b.width - 20 - i * 25, b.y + b.height / 2);
+  await cy.mouse.up();
+  await cy.locator(".vx-swipe-open").getByRole("button", { name: "Delete" }).click();
+  await expect(cy.getByRole("dialog")).toContainText("keeps their copy");
+  await cy.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
+  await expect(row).toHaveCount(0);
+  await expect(own.locator(".vx-msg").first()).toBeVisible();
+
+  // A new message brings it back, without the old history.
+  await own.getByLabel("Message", { exact: true }).fill(`again-${word}`);
+  await own.keyboard.press("Enter");
+  await expect(row).toBeVisible();
+  await row.click();
+  await expect(cy.locator(".vx-msg").last()).toContainText(`again-${word}`);
+  await expect(cy.locator(".vx-msg", { hasText: word }).filter({ hasNotText: "again" })).toHaveCount(0);
+});
