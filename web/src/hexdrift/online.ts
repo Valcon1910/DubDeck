@@ -3,13 +3,42 @@
 // Uses Chat's sign-in, so it only works where Chat does; offline, runs wait on
 // this device and are sent the next time the game is opened online.
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { readLook, SLOTS, type Look } from "./garage.ts";
+import { MAPS, medalFor } from "./maps.ts";
+import { MEDAL_POINTS } from "./garage.ts";
 import { adoptRun, markSynced, PHYSICS_V, toB64, fromB64, unsynced, type Run } from "./records.ts";
 
 /** The checker is deployed once per physics version, so old and new games never mix. */
 const FN = `hexdrift-v${PHYSICS_V}`;
 const TABLE = "hexdrift_records";
 
-export interface Entry { email: string; ticks: number; set_at: string; map: string }
+export interface Entry { email: string; ticks: number; set_at: string; map: string; look?: Look | null }
+
+/** A stored look (JSON text) back into a Look, or null if it's missing or odd. */
+export function parseLook(v: unknown): Look | null {
+  if (typeof v !== "string" || !v) return null;
+  try {
+    const o = JSON.parse(v) as Record<string, unknown>;
+    const out = {} as Look;
+    for (const { slot, items } of SLOTS) {
+      const it = items.find((i) => i.id === o[slot]);
+      out[slot] = it ? it.id : items[0].id;
+    }
+    return out;
+  } catch { return null; }
+}
+
+/** Selects with the car look, falling back to without it until the column exists. */
+let hasLook = true;
+async function withLook<T>(run: (cols: string) => PromiseLike<{ data: T | null; error: unknown }>, base: string) {
+  if (hasLook) {
+    const r = await run(`${base},look`);
+    if (!r.error) return r;
+    hasLook = false;
+  }
+  return run(base);
+}
+const lookOf = (rows: Record<string, unknown>[] | null) => (rows ?? []).map((r) => ({ ...r, look: parseLook(r.look) }));
 export interface Submitted {
   accepted: true; improved: boolean; best: number; rank: number; players: number;
   worldRecord: boolean; beatWorldRecord: boolean;
@@ -17,7 +46,7 @@ export interface Submitted {
 export type SubmitResult = Submitted | { accepted: false; error: string; final: boolean };
 
 export async function submitRun(sb: SupabaseClient, run: Run): Promise<SubmitResult> {
-  const { data, error } = await sb.functions.invoke(FN, { body: { map: run.map, ticks: run.t, inputs: toB64(run.inputs), v: run.v } });
+  const { data, error } = await sb.functions.invoke(FN, { body: { map: run.map, ticks: run.t, inputs: toB64(run.inputs), v: run.v, look: JSON.stringify(readLook()) } });
   if (!error && data?.accepted) return data as Submitted;
   // A refused run (wrong time or old version) will never be accepted: stop retrying it.
   const status = (error as { context?: Response } | null)?.context?.status ?? 0;
@@ -64,13 +93,41 @@ export function syncAccount(sb: SupabaseClient, me: string) {
 }
 
 /** The top 50 and how many players have a time on this map. */
-export async function board(sb: SupabaseClient, map: string) {
+export async function board(sb: SupabaseClient, map: string, limit = 50) {
   const [top, count] = await Promise.all([
-    sb.from(TABLE).select("map,email,ticks,set_at").eq("map", map).eq("v", PHYSICS_V).order("ticks").order("set_at").limit(50),
+    withLook((cols) => sb.from(TABLE).select(cols).eq("map", map).eq("v", PHYSICS_V).order("ticks").order("set_at").limit(limit), "map,email,ticks,set_at"),
     sb.from(TABLE).select("email", { count: "exact", head: true }).eq("map", map).eq("v", PHYSICS_V),
   ]);
   if (top.error) throw top.error;
-  return { top: (top.data ?? []) as Entry[], players: count.count ?? (top.data?.length ?? 0) };
+  const rows = lookOf(top.data as unknown as Record<string, unknown>[]) as unknown as Entry[];
+  return { top: rows, players: count.count ?? rows.length };
+}
+
+export interface Leader { email: string; points: number; maps: number; wrs: number; look: Look | null }
+/**
+ * The medal table: every player's medal points across all maps (their best
+ * medal on each), most first. Ties go to more world records, then more maps.
+ */
+export async function medalLeaders(sb: SupabaseClient, limit = 5): Promise<Leader[]> {
+  const r = await withLook((cols) => sb.from(TABLE).select(cols).eq("v", PHYSICS_V).order("ticks").limit(5000), "map,email,ticks,set_at");
+  if (r.error) throw r.error;
+  const rows = lookOf(r.data as unknown as Record<string, unknown>[]) as unknown as Entry[];
+  const by = new Map<string, Leader & { at: string }>();
+  const firstOn = new Set<string>();
+  for (const e of rows) {
+    const m = MAPS.find((x) => x.id === e.map);
+    if (!m) continue;
+    let l = by.get(e.email);
+    if (!l) { l = { email: e.email, points: 0, maps: 0, wrs: 0, look: null, at: "" }; by.set(e.email, l); }
+    const medal = medalFor(m, e.ticks);
+    if (medal) l.points += MEDAL_POINTS[medal];
+    l.maps++;
+    // Rows come fastest first, so the first one per map is its world record.
+    if (!firstOn.has(e.map)) { firstOn.add(e.map); l.wrs++; }
+    if (e.set_at > l.at && e.look) { l.at = e.set_at; l.look = e.look; }
+  }
+  return [...by.values()].sort((a, b) => b.points - a.points || b.wrs - a.wrs || b.maps - a.maps).slice(0, limit)
+    .map(({ at: _at, ...l }) => l);
 }
 
 /** Where a time would rank (1 = world record). */

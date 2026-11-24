@@ -1,11 +1,16 @@
-// The garage's 3D turntable: one car on a lit stage. Drag to spin it; it
-// turns slowly on its own. Draws only while the garage is open and visible.
+// The 3D car viewer (garage and title screen): one car on a lit stage. Drag
+// to turn it any way you like, around any axis and as far as you like (it
+// keeps spinning with your flick, then settles into a slow turn). Draws only
+// while it's on screen.
 import * as THREE from "three";
 import { buildCar, type CarModel } from "./car.ts";
 import { itemOf, type Item, type Look } from "../garage.ts";
 import { FinishFx, Trail, trailDef, type FinishKind } from "./fx.ts";
 
+const Y = new THREE.Vector3(0, 1, 0), X = new THREE.Vector3(1, 0, 0);
+
 export class Preview {
+  private tmpV = new THREE.Vector3();
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
   private camera = new THREE.PerspectiveCamera(32, 1, 0.5, 100);
@@ -15,9 +20,14 @@ export class Preview {
   private canvas: HTMLCanvasElement;
   private ro: ResizeObserver;
   private raf = 0;
-  private yaw = 0.7;
-  private spinV = 0.25;
-  private drag: { x: number; t: number } | null = null;
+  /** The car's orientation, and its spin (radians/s around world Y and X). */
+  private q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), 0.7);
+  private wy = 0.25;
+  private wx = 0;
+  private drag: { x: number; y: number; t: number; id: number } | null = null;
+  private qa = new THREE.Quaternion();
+  private visible = true;
+  private io: IntersectionObserver | null = null;
   private boostUntil = 0;
   private trail: Trail | null = null;
   private fx = new FinishFx();
@@ -47,22 +57,39 @@ export class Preview {
     canvas.addEventListener("pointerdown", this.down);
     window.addEventListener("pointermove", this.move);
     window.addEventListener("pointerup", this.up);
+    window.addEventListener("pointercancel", this.up);
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(canvas);
+    if (typeof IntersectionObserver !== "undefined") {
+      this.io = new IntersectionObserver((es) => { this.visible = es[es.length - 1].isIntersecting; });
+      this.io.observe(canvas);
+    }
     this.resize();
-    const loop = (now: number) => { this.raf = requestAnimationFrame(loop); if (!document.hidden) this.frame(now); };
+    const loop = (now: number) => { this.raf = requestAnimationFrame(loop); if (!document.hidden && this.visible) this.frame(now); else this.last = now; };
     this.raf = requestAnimationFrame(loop);
   }
 
-  private down = (e: PointerEvent) => { this.drag = { x: e.clientX, t: performance.now() }; this.spinV = 0; };
-  private move = (e: PointerEvent) => {
-    if (!this.drag) return;
-    const dx = e.clientX - this.drag.x, now = performance.now();
-    this.yaw += dx * 0.01;
-    this.spinV = (dx * 0.01) / Math.max(0.016, (now - this.drag.t) / 1000);
-    this.drag = { x: e.clientX, t: now };
+  private down = (e: PointerEvent) => {
+    this.drag = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId };
+    this.wy = 0; this.wx = 0;
+    this.canvas.setPointerCapture?.(e.pointerId);
   };
-  private up = () => { this.drag = null; };
+  private move = (e: PointerEvent) => {
+    if (!this.drag || e.pointerId !== this.drag.id) return;
+    const dx = e.clientX - this.drag.x, dy = e.clientY - this.drag.y, now = performance.now();
+    this.turn(dx * 0.01, dy * 0.01);
+    const dt = Math.max(0.016, (now - this.drag.t) / 1000);
+    this.wy = (dx * 0.01) / dt; this.wx = (dy * 0.01) / dt;
+    this.drag = { ...this.drag, x: e.clientX, y: e.clientY, t: now };
+  };
+  private up = (e: PointerEvent) => { if (this.drag && e.pointerId === this.drag.id) this.drag = null; };
+
+  /** Turns the car around the screen's up axis and its sideways axis (trackball). */
+  private turn(ay: number, ax: number) {
+    if (ay) this.q.premultiply(this.qa.setFromAxisAngle(Y, ay));
+    if (ax) this.q.premultiply(this.qa.setFromAxisAngle(X, ax));
+    this.q.normalize();
+  }
 
   private resize() {
     const w = this.canvas.clientWidth || 1, h = this.canvas.clientHeight || 1;
@@ -95,12 +122,16 @@ export class Preview {
     const dt = Math.min(0.1, (now - this.last) / 1000);
     this.last = now;
     if (!this.drag) {
-      // Spin settles back to a slow turn.
-      this.spinV += (0.25 - this.spinV) * Math.min(1, dt * 1.5);
-      this.yaw += this.spinV * dt;
+      // The flick carries on, then settles into a slow turn.
+      const k = Math.min(1, dt * 1.2);
+      this.wy += (0.25 - this.wy) * k;
+      this.wx += (0 - this.wx) * k;
+      this.turn(this.wy * dt, this.wx * dt);
     }
     if (this.car) {
-      this.car.root.rotation.y = this.yaw;
+      // Turn around the car's middle (not its wheels) so flips look right.
+      this.car.root.quaternion.copy(this.q);
+      this.car.root.position.set(0, 0.7, 0).sub(this.tmpV.set(0, 0.7, 0).applyQuaternion(this.q));
       this.car.update(0, Math.sin(now / 900) * 0.6, dt);
       const on = now < this.boostUntil;
       this.car.setBoost(on);
@@ -119,7 +150,9 @@ export class Preview {
     this.canvas.removeEventListener("pointerdown", this.down);
     window.removeEventListener("pointermove", this.move);
     window.removeEventListener("pointerup", this.up);
+    window.removeEventListener("pointercancel", this.up);
     this.ro.disconnect();
+    this.io?.disconnect();
     this.car?.dispose();
     this.trail?.dispose();
     this.fx.dispose();

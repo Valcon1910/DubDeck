@@ -49,6 +49,21 @@ function replay(mapId: string, inputs: Uint8Array): number | null {
   return r.phase === "finished" ? r.finishTicks : null;
 }
 
+/** The car look: a small JSON object of part ids, or null if it's anything else. */
+function cleanLook(v: unknown): string | null {
+  if (typeof v !== "string" || v.length > 400) return null;
+  try {
+    const o = JSON.parse(v);
+    if (!o || typeof o !== "object" || Array.isArray(o)) return null;
+    const out: Record<string, string> = {};
+    for (const k of ["body", "paint", "accent", "wing", "rims", "extra", "trail", "finish"]) {
+      const x = o[k];
+      if (typeof x === "string" && /^[a-z0-9-]{1,24}$/.test(x)) out[k] = x;
+    }
+    return JSON.stringify(out);
+  } catch { return null; }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
   if (req.method !== "POST") return json({ error: "Use POST" }, 405);
@@ -62,7 +77,7 @@ Deno.serve(async (req) => {
   const member = await call(`/rest/v1/profiles?select=member&email=eq.${who}`);
   if (!member.ok || !member.data?.[0]?.member) return json({ error: "You're not on the Vortex access list" }, 403);
 
-  const body = await req.json().catch(() => null) as { map?: string; ticks?: number; inputs?: string; v?: number } | null;
+  const body = await req.json().catch(() => null) as { map?: string; ticks?: number; inputs?: string; v?: number; look?: string } | null;
   const map = String(body?.map ?? "");
   const ticks = Number(body?.ticks);
   if (body?.v !== PHYSICS_V) return json({ error: "This run is from an older version of the game", stale: true }, 409);
@@ -70,6 +85,7 @@ Deno.serve(async (req) => {
   const inputs = decode(String(body?.inputs ?? ""));
   if (!inputs || inputs.length !== ticks) return json({ error: "Bad run" }, 400);
 
+  const look = cleanLook(body?.look);
   const got = replay(map, inputs);
   if (got !== ticks) return json({ error: "That run doesn't finish in that time", rejected: true }, 422);
 
@@ -85,9 +101,12 @@ Deno.serve(async (req) => {
   if (better) {
     const saved = await call("/rest/v1/hexdrift_records?on_conflict=map,email", {
       method: "POST", prefer: "resolution=merge-duplicates,return=minimal",
-      body: { map, email, ticks, inputs: body!.inputs, v: PHYSICS_V, set_at: new Date().toISOString() },
+      body: { map, email, ticks, inputs: body!.inputs, v: PHYSICS_V, set_at: new Date().toISOString(), ...(look ? { look } : {}) },
     });
     if (!saved.ok) return json({ error: "Couldn't save the record" }, 500);
+  } else if (look) {
+    // Not faster, but show the car they drive now on their record.
+    await call(`/rest/v1/hexdrift_records?map=eq.${m}&email=eq.${who}`, { method: "PATCH", prefer: "return=minimal", body: { look } });
   }
   const best = better ? ticks : old.ticks;
   // Rank: everyone faster, plus one.
