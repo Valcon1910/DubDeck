@@ -160,6 +160,7 @@ class Stage {
     this.camera.lookAt(this.look);
     const sky = c.b.world.group.getObjectByName("sky");
     if (sky) sky.position.copy(this.pos);
+    c.b.world.update(dt);
     this.renderer.render(c.b.scene, this.camera);
   }
 

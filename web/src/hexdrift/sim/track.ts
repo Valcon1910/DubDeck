@@ -48,6 +48,8 @@ export interface Track {
   gaps: { x: number; z: number; y: number; d: Dir }[];
   /** Floating roads over open sky (no ground below). */
   sky?: boolean;
+  /** The map's setting (city, canyon...), which decides what stands beside the road. */
+  theme?: string;
 }
 
 export const key = (x: number, z: number) => (x + 2048) * 4096 + (z + 2048);
@@ -121,7 +123,7 @@ export function groundAt(track: Track, px: number, py: number, pz: number, reach
 //   W+ / W- walls on / off   I+ / I- ice on / off
 // A number repeats the token: "S3" = three straights.
 
-export function buildTrack(recipe: string, opts: { sky?: boolean } = {}): Track {
+export function buildTrack(recipe: string, opts: { sky?: boolean; theme?: string } = {}): Track {
   const pieces: Piece[] = [];
   const gaps: Track["gaps"] = [];
   let gapped = true; // the start has an open end behind it
@@ -176,7 +178,7 @@ export function buildTrack(recipe: string, opts: { sky?: boolean } = {}): Track 
     cells.set(k, [...(cells.get(k) ?? []), p]);
   }
   return {
-    pieces, cells, checkpoints: cp, start: pieces[0], line, gaps, sky: opts.sky,
+    pieces, cells, checkpoints: cp, start: pieces[0], line, gaps, sky: opts.sky, theme: opts.theme,
     minY: Math.min(...pieces.map((p) => p.y * LEVEL - (p.t === "down" ? LEVEL : 0))),
   };
 }

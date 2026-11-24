@@ -5,12 +5,13 @@
 import { clamp, dcos, dsin } from "./math.ts";
 import { CELL, DIRV, groundAt, HALF_W, heightAlong, key, local, CURVE_IN, CURVE_OUT, LEVEL, THICK, WALL_H, WALL_T, yawOf, type Piece, type Track } from "./track.ts";
 import { NO_GROUND, terrainAt } from "./terrain.ts";
+import { hitSolids } from "./props.ts";
 
 /**
  * Bump whenever the handling or track physics change: runs from older
  * physics can't be replayed exactly, so their records and ghosts are dropped.
  */
-export const PHYSICS_V = 5;
+export const PHYSICS_V = 6;
 
 export const HZ = 60;
 const DT = 1 / HZ;
@@ -48,6 +49,9 @@ export interface Car {
   boosting: number; // steps left of boost glow
   offroad: boolean; // driving on the ground, not the road
   drift: number; // 0..1: how far into a drift (eases in fast, out slowly)
+  // Read-outs for effects and sounds (never read back by the physics):
+  hit: number; // speed lost into a wall or a solid this step
+  land: number; // speed downwards when it landed this step
 }
 
 function place(car: Car, p: Piece) {
@@ -55,7 +59,7 @@ function place(car: Car, p: Piece) {
   car.vx = car.vy = car.vz = 0;
   car.yaw = yawOf(p.d); car.yawRate = 0;
   car.grounded = true; car.nx = 0; car.ny = 1; car.nz = 0;
-  car.speed = 0; car.slip = 0; car.boosting = 0; car.offroad = false; car.drift = 0;
+  car.speed = 0; car.slip = 0; car.boosting = 0; car.offroad = false; car.drift = 0; car.hit = 0; car.land = 0;
 }
 
 export type Phase = "countdown" | "running" | "finished";
@@ -94,6 +98,7 @@ export function step(r: Race, byte: number) {
   const steer = ((byte & 15) - 7) / 7;
   const gas = (byte & 16) !== 0, brake = (byte & 32) !== 0, drift = (byte & 64) !== 0;
   const car = r.car;
+  car.hit = 0; car.land = 0;
 
   if (byte & 128) { respawn(r); return; }
 
@@ -156,6 +161,7 @@ export function step(r: Race, byte: number) {
   if (g && (car.grounded ? car.y - g.h < 0.9 : car.y <= g.h + 0.05) && g.h >= ter.h - 0.01) {
     if (!car.grounded) {
       // Landing: keep the speed along the road, lose a little.
+      car.land = -car.vy;
       car.vx *= 0.97; car.vz *= 0.97;
     }
     car.y = g.h;
@@ -170,7 +176,7 @@ export function step(r: Race, byte: number) {
       car.vx *= -0.2; car.vz *= -0.2;
       if (car.y < py) car.y = py;
     } else {
-      if (!car.grounded) { car.vx *= 0.9; car.vz *= 0.9; }
+      if (!car.grounded) { car.land = -car.vy; car.vx *= 0.9; car.vz *= 0.9; }
       car.y = ter.h;
       const e = 0.6;
       const hx = terrainAt(r.track, car.x + e, car.z).h - terrainAt(r.track, car.x - e, car.z).h;
@@ -186,6 +192,8 @@ export function step(r: Race, byte: number) {
     car.nx = 0; car.ny = 1; car.nz = 0;
   }
   solids(r, px, pz);
+  const hard = hitSolids(r.track, car, CAR_R, CAR_H);
+  if (hard > car.hit) car.hit = hard;
   if (car.y < r.track.minY - 30) respawn(r);
 }
 
@@ -273,7 +281,10 @@ function push(car: Car, p: Piece, c: number, w: number, y0: number, y1: number, 
   if (kind === 4) { car.y += best; if (car.vy < 0) car.vy = 0; return; }
   car.x += nx * best; car.z += nz * best;
   const vin = car.vx * nx + car.vz * nz;
-  if (vin < 0) { car.vx -= nx * vin * 1.3; car.vz -= nz * vin * 1.3; car.vx *= 0.96; car.vz *= 0.96; }
+  if (vin < 0) {
+    car.vx -= nx * vin * 1.3; car.vz -= nz * vin * 1.3; car.vx *= 0.96; car.vz *= 0.96;
+    if (-vin > car.hit) car.hit = -vin;
+  }
 }
 
 function reached(r: Race, p: Piece) {

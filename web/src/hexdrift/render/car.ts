@@ -696,20 +696,24 @@ export function buildCar(opts: CarOptions = {}): CarModel {
   };
 }
 
-/** "👑 Name · 1:02.345" on a gold pill, always facing the camera. */
+/** A crown and "Name · 1:02.345" on a gold pill, always facing the camera. */
 function nameTag(text: string): THREE.Sprite {
   const c = document.createElement("canvas");
   const x = c.getContext("2d")!;
   const font = "600 30px system-ui, sans-serif";
   x.font = font;
-  const w = Math.min(512, Math.ceil(x.measureText(text).width) + 36);
+  const w = Math.min(512, Math.ceil(x.measureText(text).width) + 74);
   c.width = w; c.height = 48;
   x.font = font;
   x.fillStyle = "rgba(40,28,0,0.78)";
   x.beginPath(); x.roundRect(0, 0, w, 48, 24); x.fill();
   x.fillStyle = "#ffd34d";
+  // A small crown (drawn, not an emoji).
+  x.beginPath();
+  x.moveTo(16, 33); x.lineTo(14, 16); x.lineTo(21, 23); x.lineTo(27, 13); x.lineTo(33, 23); x.lineTo(40, 16); x.lineTo(38, 33);
+  x.closePath(); x.fill();
   x.textBaseline = "middle"; x.textAlign = "center";
-  x.fillText(text, w / 2, 25, w - 24);
+  x.fillText(text, (w + 38) / 2, 25, w - 62);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));

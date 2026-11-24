@@ -5,8 +5,13 @@ import * as THREE from "three";
 import { BIOMES, trackOf, type MapDef } from "./maps.ts";
 import { botInput } from "./sim/bot.ts";
 import { COUNTDOWN, formatTime, HZ, newRace, pack, raceTicks, step, type Race } from "./sim/race.ts";
-import { groundAt } from "./sim/track.ts";
-import { buildWorld, type World } from "./render/world.ts";
+import { CELL, groundAt, key, local } from "./sim/track.ts";
+import { propsOf } from "./sim/props.ts";
+import { buildWorld, GROUND, type World } from "./render/world.ts";
+import { Particles } from "./render/particles.ts";
+import { Skids } from "./render/skids.ts";
+import { Weather, WEATHER } from "./render/weather.ts";
+import type { Smash } from "./render/props.ts";
 import { NO_GROUND, terrainAt } from "./sim/terrain.ts";
 import { blobShadow, buildCar, type CarModel } from "./render/car.ts";
 import type { Controls } from "./input.ts";
@@ -70,6 +75,26 @@ export class Game {
   private trail: Trail;
   private fx = new FinishFx();
   private trailOn = 0;
+  // Effects (none of them touch the physics).
+  private smoke: Particles;
+  private glow: Particles;
+  private skids = new Skids();
+  private weather: Weather;
+  private wrTrail = new Trail({ style: "ribbon", color: "#ffe27a", color2: "#ff9a1a" }, false, 0.75);
+  /** What happened in the steps since the last frame. */
+  private ev = { hit: 0, land: 0, cp: 0, boost: false };
+  private prevBoost = 0;
+  private shake = 0;
+  private hitSoundAt = 0;
+  private smashes: Smash[] = [];
+  private cheer = 0;
+  /** After the finish line: the car slides to a handbrake stop in slow motion. */
+  private coast: { x: number; y: number; z: number; yaw: number; yaw0: number; dx: number; dz: number; v: number; v0: number; dec: number; spin: number } | null = null;
+  private slow = 1;
+  private flash: HTMLDivElement;
+  private boostClass = false;
+  private camLift = 0;
+  private biomeId: MapDef["biome"];
   private raf = 0;
   private last = 0;
   private acc = 0;
@@ -161,6 +186,14 @@ export class Game {
     this.trail = new Trail(trailDef(itemOf("trail", look.trail) as Item));
     this.scene.add(this.trail.mesh);
     this.scene.add(this.fx.group);
+    this.biomeId = map.biome;
+    this.smoke = new Particles(900, false, this.scene.fog as THREE.Fog);
+    this.glow = new Particles(500, true, this.scene.fog as THREE.Fog);
+    this.weather = new Weather(WEATHER[map.biome]);
+    this.scene.add(this.skids.mesh, this.smoke.points, this.glow.points, this.weather.object, this.wrTrail.mesh);
+    this.flash = document.createElement("div");
+    this.flash.className = "hx-flash";
+    host.append(this.flash);
 
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(canvas);
@@ -206,6 +239,8 @@ export class Game {
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    const px = this.canvas.height || h;
+    this.smoke.setViewHeight(px); this.glow.setViewHeight(px); this.weather.setViewHeight(px);
   }
 
   start() {
@@ -242,7 +277,7 @@ export class Game {
   /** The world-record ghost: gold, with a crown and "name · time" above it. */
   setRecordGhost(inputs: Uint8Array | null, ticks = 0, name = ""): boolean {
     this.drop(this.wr);
-    this.wr = inputs ? this.makeGhost(inputs, ticks, "wr", `👑 ${name} · ${formatTime(ticks)}`) : null;
+    this.wr = inputs ? this.makeGhost(inputs, ticks, "wr", `${name} · ${formatTime(ticks)}`) : null;
     return this.wr !== null;
   }
 
@@ -280,6 +315,8 @@ export class Game {
     this.prev = this.cur;
     this.camYaw = this.race.car.yaw;
     this.camInit = false;
+    this.ev = { hit: 0, land: 0, cp: 0, boost: false };
+    this.prevBoost = this.race.car.boosting;
   }
 
   private stepGhost(g: Ghost | null) {
@@ -296,6 +333,12 @@ export class Game {
     const before = this.race.splits.length;
     step(this.race, byte);
     this.cur = snap(this.race);
+    const car = this.race.car;
+    if (car.hit > this.ev.hit) this.ev.hit = car.hit;
+    if (car.land > this.ev.land) this.ev.land = car.land;
+    if (this.race.splits.length > before) this.ev.cp++;
+    if (car.boosting === 39 && this.prevBoost < 38) this.ev.boost = true;
+    this.prevBoost = car.boosting;
     this.stepGhost(this.ghost);
     this.stepGhost(this.wr);
     const g = this.ghost;
@@ -308,6 +351,7 @@ export class Game {
       if (g) this.showSplit(this.race.finishTicks - g.finish);
       const c = this.race.car;
       this.fx.start(itemOf("finish", this.look.finish).id as FinishKind, c.x, c.y, c.z);
+      this.startCoast();
       this.events.onFinish(this.race.finishTicks, this.race.inputs.slice(), this.race.splits.slice());
     }
   }
@@ -332,6 +376,13 @@ export class Game {
     this.splitUntil = 0;
     this.trail.reset();
     this.fx.stop();
+    this.wrTrail.reset();
+    this.smoke.clear(); this.glow.clear(); this.skids.clear();
+    this.world.breakables.reset();
+    this.coast = null; this.slow = 1; this.shake = 0; this.cheer = 0;
+    this.ev = { hit: 0, land: 0, cp: 0, boost: false };
+    this.prevBoost = 0;
+    this.flash.classList.remove("on");
     this.prev = this.cur = snap(this.race);
     this.camYaw = this.race.car.yaw;
     this.camInit = false;
@@ -392,31 +443,40 @@ export class Game {
   private vy = new THREE.Vector3();
   private vz = new THREE.Vector3();
   private smoothN = new THREE.Vector3(0, 1, 0);
+  private tmpV = new THREE.Vector3();
 
   private draw(alpha: number, dt: number) {
     const a = this.prev, b = this.cur;
     const jump = (a.x - b.x) ** 2 + (a.z - b.z) ** 2 > 400; // respawned
     const t = jump ? 1 : alpha;
-    const x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t, z = a.z + (b.z - a.z) * t;
+    let x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t, z = a.z + (b.z - a.z) * t;
     let dyaw = b.yaw - a.yaw;
     if (dyaw > Math.PI) dyaw -= Math.PI * 2;
     if (dyaw < -Math.PI) dyaw += Math.PI * 2;
-    const yaw = a.yaw + dyaw * t;
+    let yaw = a.yaw + dyaw * t;
     const car = this.race.car;
+
+    // Slow motion just after the finish (only the pictures; the run is over).
+    if (this.coast) {
+      this.slow = Math.min(1, this.slow + dt * (this.slow < 0.3 ? 0.06 : 1.1));
+    }
+    const sdt = dt * this.slow;
+    if (this.coast) ({ x, y, z, yaw } = this.coastStep(sdt));
 
     this.pose(this.car, this.smoothN, b, jump, x, y, z, yaw, dt);
     const steer = this.race.inputs.length ? ((this.race.inputs[this.race.inputs.length - 1] & 15) - 7) / 7 : 0;
     const lastIn = this.race.inputs[this.race.inputs.length - 1] ?? 0;
-    this.car.update(car.speed, steer, dt, (lastIn & 32) !== 0);
-    this.car.setBoost(car.boosting > 0);
+    const shownSpeed = this.coast ? this.coast.v * 0.15 : car.speed;
+    this.car.update(shownSpeed * this.slow, this.coast ? 0 : steer, dt, (lastIn & 32) !== 0 || this.coast !== null);
+    this.car.setBoost(car.boosting > 0 && !this.coast);
 
     // The trail: bright while boosting, softer while drifting or flying.
-    const glow = car.boosting > 0 ? 1 : Math.abs(car.slip) > 4 && car.grounded ? 0.55 : !car.grounded && Math.abs(car.speed) > 20 ? 0.35 : 0;
+    const glow = this.coast ? 0 : car.boosting > 0 ? 1 : Math.abs(car.slip) > 4 && car.grounded ? 0.55 : !car.grounded && Math.abs(car.speed) > 20 ? 0.35 : 0;
     this.trailOn += (glow - this.trailOn) * Math.min(1, dt * (glow > this.trailOn ? 12 : 4));
-    if (jump) this.trail.reset();
+    if (jump) { this.trail.reset(); this.skids.lift(); }
     const sy = Math.sin(yaw), cy = Math.cos(yaw);
-    this.trail.update(x - sy * 2.3, y + 0.32, z - cy * 2.3, cy, -sy, this.trailOn, dt);
-    this.fx.update(dt);
+    this.trail.update(x - sy * 2.3, y + 0.32, z - cy * 2.3, cy, -sy, this.trailOn, sdt);
+    this.fx.update(sdt);
 
     // The ghosts.
     for (const gh of [this.ghost, this.wr]) {
@@ -430,12 +490,24 @@ export class Game {
         let gy = q.yaw - p.yaw;
         if (gy > Math.PI) gy -= Math.PI * 2;
         if (gy < -Math.PI) gy += Math.PI * 2;
-        this.pose(gh.model, gh.n, q, gj, p.x + (q.x - p.x) * tt, p.y + (q.y - p.y) * tt, p.z + (q.z - p.z) * tt, p.yaw + gy * tt, dt);
+        const gx = p.x + (q.x - p.x) * tt, gyy = p.y + (q.y - p.y) * tt, gz = p.z + (q.z - p.z) * tt, gyaw = p.yaw + gy * tt;
+        this.pose(gh.model, gh.n, q, gj, gx, gyy, gz, gyaw, dt);
         const gi = gh.race.inputs;
         gh.model.update(gh.race.car.speed, gi.length ? ((gi[gi.length - 1] & 15) - 7) / 7 : 0, dt);
         gh.model.setBoost(gh.race.car.boosting > 0);
-      }
+        if (gh === this.wr) {
+          // The record holder leaves a golden trail and a little glitter.
+          if (gj) this.wrTrail.reset();
+          const s2 = Math.sin(gyaw), c2 = Math.cos(gyaw);
+          const on = Math.min(1, Math.abs(gh.race.car.speed) / 15) * 0.9;
+          this.wrTrail.update(gx - s2 * 2.3, gyy + 0.45, gz - c2 * 2.3, c2, -s2, on, sdt);
+          if (on > 0.3 && Math.random() < dt * 40) {
+            this.glow.emit({ x: gx - s2 * 2.2, y: gyy + 0.6 + Math.random() * 0.6, z: gz - c2 * 2.2, vy: 0.6, spread: 1.2, color: Math.random() < 0.5 ? "#ffe27a" : "#fff6d0", size: 0.22, life: 0.8, alpha: 0.9 });
+          }
+        }
+      } else if (gh === this.wr) this.wrTrail.update(0, -1e4, 0, 1, 0, 0, sdt);
     }
+    this.wrTrail.mesh.visible = this.wr !== null;
 
     // Shadow on the road or the ground below.
     const road = groundAt(this.race.track, x, y + 0.5, z, 0.5);
@@ -449,6 +521,8 @@ export class Game {
       this.shadow.mesh.scale.set(s, 1, s);
       (this.shadow.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 1 - (y - gh) / 25);
     } else this.shadow.mesh.visible = false;
+
+    this.effects(x, y, z, yaw, road, dt, sdt);
 
     // Chase camera.
     const c = CAMS[this.cam];
@@ -472,13 +546,28 @@ export class Game {
       const k = Math.min(1, (performance.now() - this.finishAt) / 2600);
       const e = 1 - (1 - k) ** 3;
       const o = yaw + Math.PI * 0.35 + (performance.now() - this.finishAt) / 4200;
-      const rr = 5.5 + 7 * e;
-      this.camPos.set(x + Math.sin(o) * rr, y + 2.1 + 3.4 * e, z + Math.cos(o) * rr);
+      const rr = 5.5 + 6 * e;
+      this.camPos.set(x + Math.sin(o) * rr, y + 2.1 + 5.5 * e, z + Math.cos(o) * rr);
       this.camLook.set(x, y + 1 - 0.2 * e, z);
     }
+
     if (this.introT >= 0) this.introCamera(x, y, z, yaw);
     this.camera.position.copy(this.camPos);
-    this.camera.lookAt(this.camLook);
+    this.tmpV.copy(this.camLook);
+    if (this.introT < 0) {
+      // Never inside a grandstand, a tower or a rock: rise over it instead.
+      const need = this.camClear(this.camPos);
+      this.camLift += (need - this.camLift) * Math.min(1, dt * (need > this.camLift ? 10 : 2));
+      this.camera.position.y += this.camLift;
+      if (this.shake > 0.002) {
+        // A short, sharp shake for hits and hard landings.
+        const k = this.shake;
+        this.camera.position.x += (Math.random() - 0.5) * k; this.camera.position.y += (Math.random() - 0.5) * k * 0.7; this.camera.position.z += (Math.random() - 0.5) * k;
+        this.tmpV.x += (Math.random() - 0.5) * k * 0.4; this.tmpV.y += (Math.random() - 0.5) * k * 0.4;
+      }
+    }
+    this.shake *= Math.exp(-dt * 7);
+    this.camera.lookAt(this.tmpV);
     // Tall (portrait) screens get a wider view so the road ahead stays visible.
     const tall = Math.max(0, 1.3 - this.camera.aspect) * 30;
     const fov = Math.min(100, c.fov + tall + Math.min(14, sp * 0.16) + (car.boosting > 0 ? 6 : 0));
@@ -487,10 +576,171 @@ export class Game {
       this.camera.updateProjectionMatrix();
     }
     const sky = this.world.group.getObjectByName("sky");
-    if (sky) sky.position.copy(this.camPos);
+    if (sky) sky.position.copy(this.camera.position);
+    this.weather.update(dt, this.camera.position);
 
     this.renderer.render(this.scene, this.camera);
     this.updateHud();
+  }
+
+  /** Smoke, dust, tyre marks, sparks, breakables, the crowd: everything that's only for show. */
+  private effects(x: number, y: number, z: number, yaw: number, road: ReturnType<typeof groundAt>, dt: number, sdt: number) {
+    const car = this.race.car;
+    const ev = this.ev;
+    const running = this.race.phase === "running";
+    const fx = Math.sin(yaw), fz = Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
+    const sp = this.coast ? this.coast.v : Math.abs(car.speed);
+    const pal = GROUND[this.biomeId];
+    // Hits: sparks off the bodywork, a thump and a shake.
+    if (ev.hit > 4 && running) {
+      const k = Math.min(1, ev.hit / 35);
+      const side = Math.random() < 0.5 ? -1 : 1;
+      for (let i = 0; i < 6 + k * 26; i++) {
+        this.glow.emit({ x: x + rx * side * 1.0 + fx * (Math.random() * 3 - 1), y: y + 0.5, z: z + rz * side * 1.0 + fz * (Math.random() * 3 - 1), vx: car.vx * 0.4 + rx * side * 4, vy: 3 + Math.random() * 5, vz: car.vz * 0.4 + rz * side * 4, spread: 9, color: Math.random() < 0.6 ? "#ffcf6a" : "#ff7a2a", size: 0.16, life: 0.45 + Math.random() * 0.3, gravity: 22, drag: 1 });
+      }
+      this.shake = Math.max(this.shake, 0.25 + k * 0.6);
+      const now = performance.now();
+      if (now - this.hitSoundAt > 140) { play("impact", k); this.hitSoundAt = now; }
+    }
+    // Hard landings: a puff of whatever is underfoot.
+    if (ev.land > 7 && running) {
+      const k = Math.min(1, ev.land / 30);
+      const col = car.offroad ? pal.flat : this.biomeId === "city" ? "#9a98b8" : "#d8d0c4";
+      for (let i = 0; i < 10 + k * 16; i++) {
+        const a = Math.random() * Math.PI * 2;
+        this.smoke.emit({ x: x + Math.cos(a) * 1.2, y: y + 0.3, z: z + Math.sin(a) * 1.6, vx: Math.cos(a) * (3 + 5 * k), vy: 0.8, vz: Math.sin(a) * (3 + 5 * k), color: col, size: 0.9, grow: 3, life: 0.9 + k * 0.6, alpha: 0.4 + 0.2 * k, drag: 2.2 });
+      }
+      this.shake = Math.max(this.shake, 0.15 + k * 0.45);
+      play("land", k);
+    }
+    // Checkpoints: a ring of light from the arch and a chime.
+    if (ev.cp) {
+      const acc = BIOMES[this.map.biome].accent;
+      for (let i = 0; i < 48; i++) {
+        const a = (i / 48) * Math.PI * 2;
+        this.glow.emit({ x: x + fx * 3, y: y + 4.5 + Math.sin(a) * 4, z: z + fz * 3, vx: rx * Math.cos(a) * 9 + car.vx * 0.6, vy: Math.sin(a) * 9, vz: rz * Math.cos(a) * 9 + car.vz * 0.6, color: i % 3 ? acc : "#ffffff", size: 0.34, life: 0.6, drag: 2.5 });
+      }
+      play("checkpoint");
+      const chip = this.hud.cps?.parentElement;
+      if (chip) { chip.classList.remove("hx-cp-flash"); void chip.offsetWidth; chip.classList.add("hx-cp-flash"); }
+    }
+    if (ev.boost) play("boost");
+    this.ev = { hit: 0, land: 0, cp: 0, boost: false };
+    const boosting = car.boosting > 0 && running;
+    if (boosting !== this.boostClass) { this.boostClass = boosting; this.canvas.parentElement?.classList.toggle("hx-boosting", boosting); }
+    if (boosting && Math.random() < dt * 50) {
+      this.glow.emit({ x: x - fx * 2.5 + (Math.random() - 0.5), y: y + 0.5, z: z - fz * 2.5 + (Math.random() - 0.5), vx: car.vx * 0.5, vy: 1, vz: car.vz * 0.5, spread: 3, color: "#ffb84a", size: 0.14, life: 0.35 });
+    }
+
+    // Tyres on the surface: marks, smoke, dust, spray.
+    const grounded = this.coast ? true : car.grounded;
+    if (grounded && (running || this.coast)) {
+      const off = !this.coast && car.offroad;
+      const ice = !off && road?.piece.ice === true;
+      const slipK = this.coast ? Math.min(1, this.coast.v / 20) : Math.max(0, Math.min(1, (Math.abs(car.slip) - 2.5) / 6));
+      const lastIn = this.race.inputs[this.race.inputs.length - 1] ?? 0;
+      const brakeK = (lastIn & 32) && car.speed > 10 ? 0.7 : 0;
+      const driftK = car.drift > 0.4 && sp > 12 ? car.drift * 0.8 : 0;
+      const k = this.coast ? slipK : Math.max(slipK, brakeK, driftK);
+      const wheels: [number, number][] = off ? [[-0.85, -1.35], [0.85, -1.35], [-0.85, 1.35], [0.85, 1.35]] : [[-0.85, -1.35], [0.85, -1.35]];
+      const rain = this.biomeId === "city";
+      wheels.forEach(([u, w], n) => {
+        const wx = x + rx * u + fx * w, wz = z + rz * u + fz * w;
+        if (off) {
+          const deep = Math.min(1, sp / 20) * 0.45 + slipK * 0.35;
+          this.skids.mark(n, wx, y, wz, rx, rz, 0.42, deep, pal.bank);
+          if (n < 2 && sp > 5 && Math.random() < dt * 30 * Math.min(1, sp / 25)) {
+            this.smoke.emit({ x: wx, y: y + 0.3, z: wz, vx: car.vx * 0.25, vy: 1.4, vz: car.vz * 0.25, spread: 2.5, color: this.biomeId === "glacier" ? "#ffffff" : pal.flat, size: 0.9, grow: 3.2, life: 1.1, alpha: 0.35 + 0.25 * Math.min(1, sp / 30), drag: 1.6 });
+          }
+        } else if (ice) {
+          this.skids.mark(n, wx, y, wz, rx, rz, 0.22, k * 0.5, "#e8f6ff");
+          if (k > 0.2 && Math.random() < dt * 40) this.glow.emit({ x: wx, y: y + 0.2, z: wz, vx: -fx * 3 + car.vx * 0.3, vy: 2.5, vz: -fz * 3 + car.vz * 0.3, spread: 4, color: "#e8f8ff", size: 0.16, life: 0.5, gravity: 9 });
+        } else {
+          this.skids.mark(n, wx, y, wz, rx, rz, 0.32, k * 0.6, "#0b0b0e");
+          if (k > 0.25 && Math.random() < dt * 34 * k) {
+            this.smoke.emit({ x: wx, y: y + 0.35, z: wz, vx: car.vx * 0.15, vy: 0.9, vz: car.vz * 0.15, spread: 1.2, color: rain ? "#a8a9c4" : "#dcdce2", size: 0.9, grow: 3.6, life: 1.5, alpha: 0.32 * k + 0.08, drag: 1.4 });
+          }
+          // Spray off wet roads.
+          if (rain && sp > 18 && Math.random() < dt * 22) this.smoke.emit({ x: wx - fx * 0.5, y: y + 0.3, z: wz - fz * 0.5, vx: car.vx * 0.5, vy: 1.2, vz: car.vz * 0.5, spread: 2, color: "#b9c6e6", size: 0.6, grow: 2.4, life: 0.55, alpha: 0.2 });
+        }
+      });
+    } else {
+      this.skids.lift();
+    }
+    // Raindrops splashing on the road around you.
+    if (this.biomeId === "city") {
+      for (let i = 0; i < 3; i++) {
+        if (Math.random() > dt * 60) continue;
+        const px = x + (Math.random() - 0.5) * 26 + fx * 8, pz = z + (Math.random() - 0.5) * 26 + fz * 8;
+        const g = groundAt(this.race.track, px, y + 4, pz, 8);
+        if (g) this.glow.emit({ x: px, y: g.h + 0.05, z: pz, vy: 1.8, spread: 1.6, color: "#9fb4e8", size: 0.1, life: 0.22, gravity: 14, alpha: 0.5 });
+      }
+    }
+
+    // Knocking things over (only your own car, never the ghosts).
+    if (running || this.coast) {
+      const vx = this.coast ? this.coast.dx * this.coast.v : car.vx, vz = this.coast ? this.coast.dz * this.coast.v : car.vz;
+      this.smashes.length = 0;
+      this.world.breakables.hit(x, y, z, vx, vz, this.smashes);
+      for (const s of this.smashes) {
+        for (let i = 0; i < 10 + s.hard * 14; i++) this.smoke.emit({ x: s.x, y: s.y, z: s.z, vx: vx * 0.35, vy: 3 + Math.random() * 4, vz: vz * 0.35, spread: 7, color: s.color, size: 0.22, life: 0.9, alpha: 0.95, gravity: 18, drag: 0.8 });
+        if (s.sound === "snow") this.smoke.burst(10, { x: s.x, y: s.y, z: s.z, vx: vx * 0.2, vy: 1.5, vz: vz * 0.2, spread: 4, color: "#ffffff", size: 1, grow: 2.5, life: 1, alpha: 0.5, drag: 2 });
+        if (s.sound === "metal") this.glow.burst(12, { x: s.x, y: s.y + 1, z: s.z, vy: 3, spread: 8, color: "#dff1ff", size: 0.14, life: 0.4, gravity: 20 });
+        play(`smash-${s.sound}`, s.hard);
+        this.shake = Math.max(this.shake, 0.12 + s.hard * 0.25);
+      }
+    }
+    this.world.breakables.update(sdt);
+    // The crowd jumps at the start and goes wild at the finish.
+    const want = this.race.phase === "finished" ? 1 : this.race.phase === "countdown" || (running && this.race.tick - COUNTDOWN < 150) ? 0.45 : 0;
+    this.cheer = want;
+    this.world.update(sdt, this.cheer);
+    this.smoke.update(sdt);
+    this.glow.update(sdt);
+    this.skids.update();
+  }
+
+  /** How far the camera must rise to be clear of any solid prop it's in (0 when clear). */
+  private camClear(p: THREE.Vector3): number {
+    const list = propsOf(this.race.track).cells.get(key(Math.round(p.x / CELL), Math.round(p.z / CELL)));
+    if (!list) return 0;
+    let lift = 0;
+    for (const s of list) {
+      const dx = p.x - s.x, dz = p.z - s.z, m = 1.2;
+      const inside = s.box ? Math.abs(dx) < s.a + m && Math.abs(dz) < s.b + m : (dx / (s.a + m)) ** 2 + (dz / (s.b + m)) ** 2 < 1;
+      if (inside && p.y < s.top + 1.5 && s.top - p.y < 14) lift = Math.max(lift, s.top + 1.5 - p.y);
+    }
+    return lift;
+  }
+
+  /** The car's last moments after the line: it slides sideways to a stop before the road ends. */
+  private startCoast() {
+    const car = this.race.car;
+    const v = Math.sqrt(car.vx * car.vx + car.vz * car.vz);
+    if (v < 0.5) return;
+    const fin = this.race.track.pieces[this.race.track.pieces.length - 1];
+    const room = Math.max(4, CELL / 2 - 4 - local(fin, car.x, car.z).w);
+    this.coast = {
+      x: car.x, y: car.y, z: car.z, yaw: car.yaw, yaw0: car.yaw,
+      dx: car.vx / v, dz: car.vz / v, v, v0: v, dec: (v * v) / (2 * room),
+      spin: car.slip !== 0 ? (car.slip > 0 ? -1 : 1) : Math.random() < 0.5 ? -1 : 1,
+    };
+    this.slow = 0.22;
+    this.flash.classList.remove("on"); void this.flash.offsetWidth; this.flash.classList.add("on");
+    this.shake = 0.35;
+    play("finish");
+  }
+
+  private coastStep(dt: number) {
+    const c = this.coast!;
+    c.v = Math.max(0, c.v - c.dec * dt);
+    c.x += c.dx * c.v * dt; c.z += c.dz * c.v * dt;
+    const g = groundAt(this.race.track, c.x, c.y + 1, c.z, 1.5);
+    if (g) c.y = g.h;
+    const k = 1 - c.v / c.v0;
+    const e = k * k * (3 - 2 * k);
+    c.yaw = c.yaw0 + c.spin * 1.25 * e;
+    return { x: c.x, y: c.y, z: c.z, yaw: c.yaw };
   }
 
   /**
@@ -553,7 +803,7 @@ export class Game {
       if (el && cache[k] !== v) { el.textContent = v; cache[k] = v; }
     };
     set("time", h.time, formatTime(raceTicks(r)));
-    set("speed", h.speed, String(Math.round(Math.abs(r.car.speed) * 3.6)));
+    set("speed", h.speed, String(Math.round(Math.abs(this.coast ? this.coast.v : r.car.speed) * 3.6)));
     set("cps", h.cps, `${r.cps.size}/${r.track.checkpoints}`);
     let count = "";
     if (this.introT >= 0) count = "";
@@ -594,6 +844,9 @@ export class Game {
     this.shadow.dispose();
     this.trail.dispose();
     this.fx.dispose();
+    this.wrTrail.dispose();
+    this.smoke.dispose(); this.glow.dispose(); this.skids.dispose(); this.weather.dispose();
+    this.flash.remove();
     this.renderer.dispose();
     this.renderer.forceContextLoss();
     this.canvas.remove();

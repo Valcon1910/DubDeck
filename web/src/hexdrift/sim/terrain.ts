@@ -16,7 +16,7 @@ const ISLAND = 12;
 
 const NONE = -1e9;
 
-function hash(ix: number, iz: number, seed: number) {
+export function hash(ix: number, iz: number, seed: number) {
   let h = Math.imul(ix, 374761393) ^ Math.imul(iz, 668265263) ^ Math.imul(seed, 1442695041);
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
@@ -31,7 +31,7 @@ function noise(x: number, z: number, seed: number) {
 }
 
 /** Distance from a point to a piece's road area (0 on the road). */
-function distTo(p: Piece, u: number, w: number) {
+export function distTo(p: Piece, u: number, w: number) {
   if (p.t === "curveL" || p.t === "curveR") {
     const cu = p.t === "curveR" ? CELL / 2 : -CELL / 2;
     const du = u - cu, dw = w + CELL / 2;

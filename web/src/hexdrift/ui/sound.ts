@@ -68,11 +68,14 @@ function noise(c: Ctx, out: AudioNode, n: Noise) {
   s.start(t0, Math.random() * 0.5); s.stop(t0 + n.dur + 0.02);
 }
 
-export type UiSound = "hover" | "click" | "confirm" | "back" | "whoosh" | "toggle" | "locked" | "tick" | "count" | "go" | "reveal" | "medal";
+export type UiSound = "hover" | "click" | "confirm" | "back" | "whoosh" | "toggle" | "locked" | "tick" | "count" | "go" | "reveal" | "medal"
+  // In the race (synthesised for now; recorded sounds come with the sound pass):
+  | "impact" | "land" | "checkpoint" | "boost" | "finish"
+  | "smash-metal" | "smash-wood" | "smash-plastic" | "smash-snow";
 
 let lastHover = 0;
-/** Plays one interface sound. Cheap enough to call on every press. */
-export function play(s: UiSound) {
+/** Plays one sound (k: 0..1, how hard, for impacts). Cheap enough to call on every press. */
+export function play(s: UiSound, k = 1) {
   const a = audio();
   if (!a) return;
   const { c, out } = a;
@@ -130,6 +133,48 @@ export function play(s: UiSound) {
       tone(c, out, { f: 2220, type: "sine", at: 0.02, dur: 0.5, vol: 0.08 });
       tone(c, out, { f: 140, f2: 45, type: "sine", dur: 0.3, vol: 0.5 });
       noise(c, out, { dur: 0.5, vol: 0.12, f: 1200, f2: 6000, q: 0.6, attack: 0.02 });
+      break;
+    case "impact": {
+      // A body thump with a scrape of grit; louder and lower when harder.
+      const v = 0.15 + 0.45 * k;
+      tone(c, out, { f: 95 + 60 * (1 - k), f2: 40, type: "sine", dur: 0.22, vol: v });
+      noise(c, out, { dur: 0.12 + 0.2 * k, vol: v * 0.7, f: 900, f2: 300, q: 0.7 });
+      noise(c, out, { dur: 0.05, vol: v * 0.5, f: 3200, q: 1 });
+      break;
+    }
+    case "land":
+      tone(c, out, { f: 70, f2: 38, type: "sine", dur: 0.2, vol: 0.2 + 0.35 * k });
+      noise(c, out, { dur: 0.16, vol: 0.12 + 0.2 * k, f: 500, f2: 200, q: 0.6 });
+      break;
+    case "checkpoint":
+      tone(c, out, { f: 1046, type: "triangle", dur: 0.14, vol: 0.14 });
+      tone(c, out, { f: 1568, type: "sine", at: 0.06, dur: 0.32, vol: 0.13 });
+      noise(c, out, { dur: 0.3, vol: 0.06, f: 6000, q: 0.6, attack: 0.02 });
+      break;
+    case "boost":
+      noise(c, out, { dur: 0.55, vol: 0.2, f: 400, f2: 4200, q: 0.8, attack: 0.04 });
+      tone(c, out, { f: 120, f2: 360, type: "sawtooth", dur: 0.4, vol: 0.05, attack: 0.03 });
+      break;
+    case "finish":
+      noise(c, out, { dur: 1.4, vol: 0.22, f: 2500, f2: 900, q: 0.4, attack: 0.05 }); // a crowd-ish roar
+      tone(c, out, { f: 60, f2: 35, type: "sine", dur: 0.5, vol: 0.4 });
+      break;
+    case "smash-metal":
+      tone(c, out, { f: 640 + 300 * Math.random(), f2: 420, type: "square", dur: 0.25, vol: 0.05 + 0.06 * k });
+      tone(c, out, { f: 1800 + 500 * Math.random(), type: "sine", dur: 0.5, vol: 0.05 + 0.05 * k });
+      noise(c, out, { dur: 0.15, vol: 0.15 + 0.2 * k, f: 4000, q: 1.2 });
+      break;
+    case "smash-wood":
+      noise(c, out, { dur: 0.09, vol: 0.25 + 0.25 * k, f: 1400, q: 1.5 });
+      tone(c, out, { f: 240, f2: 120, type: "triangle", dur: 0.12, vol: 0.12 + 0.12 * k });
+      noise(c, out, { at: 0.05, dur: 0.18, vol: 0.1, f: 2500, q: 1 });
+      break;
+    case "smash-plastic":
+      tone(c, out, { f: 380, f2: 200, type: "triangle", dur: 0.1, vol: 0.14 + 0.1 * k });
+      noise(c, out, { dur: 0.06, vol: 0.15, f: 2200, q: 1 });
+      break;
+    case "smash-snow":
+      noise(c, out, { dur: 0.3, vol: 0.22 + 0.2 * k, f: 1200, f2: 500, q: 0.5, attack: 0.01 });
       break;
     case "medal":
       [784, 988, 1175, 1568].forEach((f, i) => tone(c, out, { f, type: "triangle", at: i * 0.07, dur: 0.5, vol: 0.13 }));

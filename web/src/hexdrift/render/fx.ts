@@ -36,7 +36,7 @@ export class Trail {
   private hue = 0;
   private tmp = new THREE.Color();
 
-  constructor(private def: TrailDef, ghost = false) {
+  constructor(private def: TrailDef, ghost = false, opacity?: number) {
     this.ribbons = def.style === "twin" ? 2 : 1;
     this.c1 = new THREE.Color(def.color);
     this.c2 = new THREE.Color(def.color2 ?? def.color);
@@ -57,7 +57,7 @@ export class Trail {
       }
     }
     this.geo.setIndex(idx);
-    this.mat = new THREE.MeshBasicMaterial({ map: soft(), vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, opacity: ghost ? 0.35 : 1 });
+    this.mat = new THREE.MeshBasicMaterial({ map: soft(), vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, opacity: opacity ?? (ghost ? 0.35 : 1) });
     this.mesh = new THREE.Mesh(this.geo, this.mat);
     this.mesh.frustumCulled = false;
   }
