@@ -742,7 +742,7 @@ function Finish({ map, result, next, onRestart, signedIn }: { map: MapDef; resul
   const medal = medalFor(map, result.ticks);
   // The results slide in after the celebration; a chime if there's a medal.
   useEffect(() => {
-    const t = setTimeout(() => play(medal || result.isBest ? "medal" : "whoosh"), 1500);
+    const t = setTimeout(() => play(medal || result.isBest ? "medal" : "whoosh"), 2500);
     return () => clearTimeout(t);
   }, [medal, result.isBest]);
   const order: Exclude<Medal, null>[] = ["vortex", "gold", "silver", "bronze"];

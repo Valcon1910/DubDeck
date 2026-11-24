@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { CELL, CURVE_IN, CURVE_OUT, DIRV, HALF_W, LEVEL, surface, THICK, WALL_H, WALL_T, type Piece, type Track } from "../sim/track.ts";
 import { NO_GROUND, terrainAt } from "../sim/terrain.ts";
 import type { Biome, BiomeId } from "../maps.ts";
+import { buildProps, type Breakables } from "./props.ts";
 
 const ARCH_H = 9;
 
@@ -73,6 +74,10 @@ const hOf = (p: Piece, u: number, w: number) => {
 
 export interface World {
   group: THREE.Group;
+  /** Lamp posts, cones, fences...: knocked over by the car (only for show). */
+  breakables: Breakables;
+  /** Animates the world (the crowd; cheer 0..1). */
+  update(dt: number, cheer?: number): void;
   dispose(): void;
 }
 
@@ -195,12 +200,15 @@ export function buildWorld(track: Track, biome: Biome, biomeId: BiomeId): World 
     group.add(im);
   }
 
-  const groundY = biomeId === "sky" ? null : track.minY;
-  scenery(group, track, biome, biomeId, groundY, geos, mats);
+  // Solid scenery and props (from the physics), and the breakables.
+  const props = buildProps(group, track, biome, biomeId, geos, mats);
+  if (biomeId === "sky") islands(group, track, geos, mats);
   sky(group, biome, geos, mats);
 
   return {
     group,
+    breakables: props.breakables,
+    update(dt, cheer = 0) { props.update(dt, cheer); },
     dispose() {
       for (const g of geos) g.dispose();
       for (const m of mats) m.dispose();
@@ -239,53 +247,37 @@ function rng(seed: number) {
   return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
 }
 
-function scenery(group: THREE.Group, track: Track, biome: Biome, id: BiomeId, groundY: number | null, geos: THREE.BufferGeometry[], mats: THREE.Material[]) {
+/** Cloud islands drifting far below the sky roads (out of reach: only for looks). */
+function islands(group: THREE.Group, track: Track, geos: THREE.BufferGeometry[], mats: THREE.Material[]) {
   const span = bounds(track);
   const used = new Set(track.pieces.map((p) => `${p.x},${p.z}`));
-  const near = (x: number, z: number, r: number) => {
-    for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) if (used.has(`${x + dx},${z + dz}`)) return true;
-    return false;
-  };
   const rand = rng(track.pieces.length * 7919 + span.x0 * 31 + span.z1);
-  let geo: THREE.BufferGeometry;
-  const colours: string[] = [];
-  switch (id) {
-    case "city": geo = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0); colours.push("#2b2f5c", "#3a2d6e", "#1f3a5c", "#4a2a5e"); break;
-    case "canyon": geo = new THREE.CylinderGeometry(0.8, 1, 1, 6).translate(0, 0.5, 0); colours.push("#a4482a", "#c0643a", "#8e3b22"); break;
-    case "glacier": geo = new THREE.ConeGeometry(1, 1, 5).translate(0, 0.5, 0); colours.push("#dff3ff", "#bfe6ff", "#a8dcff"); break;
-    case "sky": geo = new THREE.IcosahedronGeometry(1, 0); colours.push("#ffffff", "#f3f8ff", "#e9f3ff"); break;
-    default: geo = new THREE.SphereGeometry(1, 7, 4, 0, Math.PI * 2, 0, Math.PI / 2); colours.push("#e3b866", "#d9ab57", "#efc77a"); break;
-  }
+  const geo = new THREE.IcosahedronGeometry(1, 0);
   geos.push(geo);
   const mat = new THREE.MeshLambertMaterial({ color: "#ffffff", flatShading: true });
   mats.push(mat);
-  const R = 9;
+  const colours = ["#ffffff", "#f3f8ff", "#e9f3ff"];
   const spots: THREE.Matrix4[] = [];
-  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), v = new THREE.Vector3();
-  const up = new THREE.Vector3(0, 1, 0);
+  const q = new THREE.Quaternion(), s = new THREE.Vector3(), v = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+  const R = 9;
   for (let x = span.x0 - R; x <= span.x1 + R; x++) {
     for (let z = span.z0 - R; z <= span.z1 + R; z++) {
-      if (near(x, z, id === "sky" ? 0 : 1) || rand() > (id === "city" ? 0.55 : 0.3)) continue;
+      if (used.has(`${x},${z}`) || rand() > 0.3) continue;
       const jx = (rand() - 0.5) * CELL * 0.6, jz = (rand() - 0.5) * CELL * 0.6;
-      const gy = groundY === null ? track.minY - 30 : terrainAt(track, x * CELL + jx, z * CELL + jz).h - 0.5;
       q.setFromAxisAngle(up, rand() * Math.PI * 2);
-      if (id === "city") { const w = 6 + rand() * 9; s.set(w, 30 + rand() * 70, w); v.set(x * CELL + jx, gy, z * CELL + jz); }
-      else if (id === "canyon") { const w = 5 + rand() * 9; s.set(w, 25 + rand() * 45, w); v.set(x * CELL + jx, gy, z * CELL + jz); }
-      else if (id === "glacier") { const w = 3 + rand() * 6; s.set(w, 18 + rand() * 40, w); v.set(x * CELL + jx, gy, z * CELL + jz); }
-      else if (id === "sky") { const w = 5 + rand() * 10; s.set(w * 1.6, w * 0.6, w); v.set(x * CELL + jx, track.minY - 12 - rand() * 50, z * CELL + jz); }
-      else { const w = 10 + rand() * 18; s.set(w * 1.5, w * 0.35, w); v.set(x * CELL + jx, gy, z * CELL + jz); }
+      const w = 5 + rand() * 10;
+      s.set(w * 1.6, w * 0.6, w);
+      v.set(x * CELL + jx, track.minY - 12 - rand() * 50, z * CELL + jz);
       spots.push(new THREE.Matrix4().compose(v, q, s));
     }
   }
   const im = new THREE.InstancedMesh(geo, mat, spots.length);
   const c = new THREE.Color();
   spots.forEach((mm, i) => { im.setMatrixAt(i, mm); im.setColorAt(i, c.set(colours[i % colours.length])); });
-  m.identity();
   group.add(im);
-  void biome;
 }
 
-const GROUND: Record<BiomeId, { flat: string; bank: string; low: string }> = {
+export const GROUND: Record<BiomeId, { flat: string; bank: string; low: string }> = {
   city: { flat: "#24223a", bank: "#3a3456", low: "#101024" },
   canyon: { flat: "#c2643a", bank: "#8e3b22", low: "#ff7a2a" },
   glacier: { flat: "#f2f8ff", bank: "#a9cfe8", low: "#5fa8d8" },
