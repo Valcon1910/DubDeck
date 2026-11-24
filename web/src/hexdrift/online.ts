@@ -3,7 +3,7 @@
 // Uses Chat's sign-in, so it only works where Chat does; offline, runs wait on
 // this device and are sent the next time the game is opened online.
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { markSynced, PHYSICS_V, toB64, fromB64, unsynced, type Run } from "./records.ts";
+import { adoptRun, markSynced, PHYSICS_V, toB64, fromB64, unsynced, type Run } from "./records.ts";
 
 /** The checker is deployed once per physics version, so old and new games never mix. */
 const FN = `hexdrift-v${PHYSICS_V}`;
@@ -25,20 +25,40 @@ export async function submitRun(sb: SupabaseClient, run: Run): Promise<SubmitRes
   return { accepted: false, error: data?.error ?? error?.message ?? "Couldn't send the run", final };
 }
 
-let syncing: Promise<Map<string, Submitted>> | null = null;
-/** Sends every best run not sent yet. Returns what the checker said, per map. */
-export function syncPending(sb: SupabaseClient): Promise<Map<string, Submitted>> {
+/**
+ * Brings this account's records from its other devices onto this one (the
+ * same bests on a phone and a laptop). Older-physics rows still count for
+ * medals on maps that haven't changed. Returns true when anything changed.
+ */
+export async function pullMine(sb: SupabaseClient, me: string): Promise<boolean> {
+  const { data, error } = await sb.from(TABLE).select("map,ticks,inputs,v,set_at").eq("email", me);
+  if (error || !data) return false;
+  let changed = false;
+  for (const r of data as { map: string; ticks: number; inputs: string; v: number; set_at: string }[]) {
+    if (await adoptRun(r.map, r.ticks, fromB64(r.inputs), r.v, me, Date.parse(r.set_at) || Date.now())) changed = true;
+  }
+  return changed;
+}
+
+let syncing: Promise<{ sent: Map<string, Submitted>; pulled: boolean }> | null = null;
+/**
+ * Syncs this device with the account: takes in its better records from other
+ * devices, then sends every best run not sent yet. Returns what the checker
+ * said, per map, and whether records came in.
+ */
+export function syncAccount(sb: SupabaseClient, me: string) {
   if (syncing) return syncing;
   syncing = (async () => {
-    const out = new Map<string, Submitted>();
-    if (typeof navigator !== "undefined" && !navigator.onLine) return out;
-    for (const run of await unsynced()) {
+    const sent = new Map<string, Submitted>();
+    if (typeof navigator !== "undefined" && !navigator.onLine) return { sent, pulled: false };
+    const pulled = me ? await pullMine(sb, me).catch(() => false) : false;
+    for (const run of await unsynced(me)) {
       const r = await submitRun(sb, run).catch(() => null);
       if (!r) break; // network trouble: try again later
-      if (r.accepted) { out.set(run.map, r); await markSynced(run.map, run.t); }
-      else if (r.final) await markSynced(run.map, run.t);
+      if (r.accepted) { sent.set(run.map, r); await markSynced(run.map, run.t, me); }
+      else if (r.final) await markSynced(run.map, run.t, me);
     }
-    return out;
+    return { sent, pulled };
   })().finally(() => { syncing = null; });
   return syncing;
 }
