@@ -33,7 +33,8 @@ export class Preview {
   private fx = new FinishFx();
   private last = performance.now();
 
-  constructor(host: HTMLElement) {
+  /** "hero": framed wider, for the title screen's big car. */
+  constructor(host: HTMLElement, private framing: "garage" | "hero" = "garage") {
     const canvas = document.createElement("canvas");
     canvas.className = "hx-preview-canvas";
     host.prepend(canvas);
@@ -97,8 +98,9 @@ export class Preview {
     this.camera.aspect = w / h;
     // Keep the whole car (the truck is the longest) in view on narrow screens.
     const narrow = w / h < 1.2;
+    const k = this.framing === "hero" ? 1.18 : 1;
     this.camera.fov = narrow ? 40 : 34;
-    this.camera.position.set(0, narrow ? 3 : 2.6, narrow ? 10.5 : 8.6);
+    this.camera.position.set(0, (narrow ? 3 : 2.6) * k, (narrow ? 10.5 : 8.6) * k);
     this.camera.lookAt(0, 0.7, 0);
     this.camera.updateProjectionMatrix();
   }
@@ -119,7 +121,7 @@ export class Preview {
   celebrate(kind: string) { this.fx.start(kind as FinishKind, 0, 0, 0, 0.32); }
 
   private frame(now: number) {
-    const dt = Math.min(0.1, (now - this.last) / 1000);
+    const dt = Math.min(0.1, Math.max(0, (now - this.last) / 1000));
     this.last = now;
     if (!this.drag) {
       // The flick carries on, then settles into a slow turn.
@@ -136,6 +138,8 @@ export class Preview {
       const on = now < this.boostUntil;
       this.car.setBoost(on);
       if (this.trail) {
+        // Only while showing it off: the ribbon is drawn in the car's own space.
+        this.trail.mesh.visible = now < this.boostUntil + 1200;
         // In the car's own space: the road "moves" backwards under it.
         this.trail.shift(0, -14 * dt);
         this.trail.update(0, 0.32, -2.3, 1, 0, on ? 1 : 0, dt);

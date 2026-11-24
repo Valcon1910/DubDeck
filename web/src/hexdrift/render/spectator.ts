@@ -145,11 +145,10 @@ class Stage {
   private frame(now: number) {
     const c = this.cur;
     if (!c) return;
-    const dt = Math.min(0.1, (now - this.last) / 1000);
+    const dt = Math.min(0.1, Math.max(0, (now - this.last) / 1000));
     this.last = now;
-    const n = c.b.path.length;
-    const pts = n / (c.b.track.line.length ? 1 : 1);
-    c.s += (SPEED / 5) * dt;
+    const pts = c.b.path.length;
+    c.s += (SPEED / 5) * dt; // route points are about 5 units apart
     // Fade out near the end of the route, then start over.
     const left = pts - 8 - c.s;
     if (left < 0) { c.s = 2; }

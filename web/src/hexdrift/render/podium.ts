@@ -122,7 +122,7 @@ export class Podium {
   }
 
   private frame(now: number) {
-    const dt = Math.min(0.1, (now - this.last) / 1000);
+    const dt = Math.min(0.1, Math.max(0, (now - this.last) / 1000));
     this.last = now;
     for (const c of this.cars) {
       c.spin += dt * 0.5;

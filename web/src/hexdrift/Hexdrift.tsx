@@ -8,11 +8,16 @@ import { Controls, type Action } from "./input.ts";
 import { Game } from "./game.ts";
 import { allBests, allTimes, bestNow, bestTimeNow, clearBest, clearLive, offerBest, readLive, saveLive, type Best, type Run } from "./records.ts";
 import { canFullscreen, disableGaming, enableGaming, enterFullscreen, isFullscreen, isGaming, isStandalone, onGaming } from "./gaming.ts";
-import { board, playerRecords, rankFor, recordRun, syncAccount, worldRecords, type Entry, type Submitted } from "./online.ts";
+import { board, medalLeaders, playerRecords, rankFor, recordRun, syncAccount, worldRecords, type Entry, type Leader, type Submitted } from "./online.ts";
 import { CHAT_ON, displayName, useChat, type Profile } from "../vortex/chat/store";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { itemOf, MAX_POINTS, medalPoints, readLook, saveLook, SLOTS, type BodyDef, type Item, type Look, type Slot } from "./garage.ts";
 import { Preview } from "./render/preview.ts";
+import { Podium, podiumOrder } from "./render/podium.ts";
+import { mapStill, spectator } from "./render/spectator.ts";
+import { isMuted, play, setMuted, wireUiSounds } from "./ui/sound.ts";
+import { IconBack, IconCamera, IconCrown, IconFlag, IconFullscreen, IconGamepad, IconGarage, IconLock, IconMedal, IconMute, IconPause, IconPlay, IconRestart, IconRoute, IconSound, IconTrophy } from "./ui/icons.tsx";
+import type { IntroStage } from "./game.ts";
 import "./hexdrift.css";
 
 const MEDAL_NAME: Record<Exclude<Medal, null>, string> = { vortex: "Vortex", gold: "Gold", silver: "Silver", bronze: "Bronze" };
@@ -24,15 +29,22 @@ function MedalIcon({ m, size = 18 }: { m: Medal; size?: number }) {
 
 type View =
   | { kind: "menu" }
+  | { kind: "maps" }
+  | { kind: "map"; map: MapDef }
   | { kind: "play"; map: MapDef }
   | { kind: "records"; map: MapDef }
   | { kind: "player"; email: string }
   | { kind: "garage" };
 
-/** #/hexdrift, #/hexdrift/<map>, #/hexdrift/<map>/records, #/hexdrift/player/<email> */
+/**
+ * #/hexdrift (title), #/hexdrift/maps, #/hexdrift/map/<map> (its page),
+ * #/hexdrift/<map> (race), #/hexdrift/<map>/records, #/hexdrift/player/<email>
+ */
 function readView(): View {
   const parts = location.hash.replace(/^#\/?/, "").split("/");
   if (parts[1] === "garage") return { kind: "garage" };
+  if (parts[1] === "maps") return { kind: "maps" };
+  if (parts[1] === "map") { const m = MAPS.find((x) => x.id === parts[2]); return m ? { kind: "map", map: m } : { kind: "maps" }; }
   if (parts[1] === "player" && parts[2]) return { kind: "player", email: decodeURIComponent(parts[2]).toLowerCase() };
   const map = MAPS.find((m) => m.id === parts[1]);
   if (!map) return { kind: "menu" };
@@ -79,8 +91,8 @@ export function Hexdrift() {
     if (pulled) setRev((n) => n + 1);
     for (const [id, r] of res) {
       const name = MAPS.find((m) => m.id === id)?.name ?? id;
-      if (r.beatWorldRecord) { setToast(`👑 You took the world record on ${name}!`); break; }
-      if (r.worldRecord && r.improved) setToast(`👑 World record on ${name}!`);
+      if (r.beatWorldRecord) { setToast(`You took the world record on ${name}!`); break; }
+      if (r.worldRecord && r.improved) setToast(`World record on ${name}!`);
     }
     return res;
   }, [sb, me]);
@@ -96,15 +108,28 @@ export function Hexdrift() {
     const t = setTimeout(() => setToast(""), 5000);
     return () => clearTimeout(t);
   }, [toast]);
+  // Every press in the menus gets a sound; every screen change a whoosh.
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => wireUiSounds(root.current!), []);
+  const viewKey = view.kind + ("map" in view ? `:${view.map.id}` : "email" in view ? `:${view.email}` : "");
+  const firstView = useRef(true);
+  useEffect(() => {
+    if (firstView.current) { firstView.current = false; return; }
+    if (view.kind !== "play") play("whoosh");
+  }, [viewKey]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <Online.Provider value={{ sb, me, profiles, sync, rev }}>
-      <div className="hx" role="application" aria-label="Hexdrift">
-        {view.kind === "play" ? <Play key={view.map.id} map={view.map} />
-          : view.kind === "records" ? <Records key={view.map.id} map={view.map} />
-          : view.kind === "player" ? <Player key={view.email} email={view.email} />
-          : view.kind === "garage" ? <Garage />
-          : <Menu />}
-        {toast && <div className="hx-toast" role="status">{toast}</div>}
+      <div className="hx" role="application" aria-label="Hexdrift" ref={root}>
+        <div className="hx-view" key={viewKey}>
+          {view.kind === "play" ? <Play map={view.map} />
+            : view.kind === "records" ? <Records map={view.map} />
+            : view.kind === "player" ? <Player email={view.email} />
+            : view.kind === "garage" ? <Garage />
+            : view.kind === "maps" ? <MapSelect />
+            : view.kind === "map" ? <MapDetail map={view.map} />
+            : <Title />}
+        </div>
+        {toast && <div className="hx-toast" role="status"><IconCrown size={18} />{toast}</div>}
       </div>
     </Online.Provider>
   );
@@ -144,13 +169,172 @@ function useKeyboard() {
   return on;
 }
 
-function Menu() {
-  const [bests, setBests] = useState<Map<string, Best> | null>(null);
+/** Top bar shared by the menu screens: a way back, then sound, garage and Gaming Mode. */
+function TopBar({ back, garage = true }: { back?: { href: string; label: string }; garage?: boolean }) {
   const gaming = useGaming();
-  const online = useOnline();
+  const [quiet, setQuiet] = useState(isMuted);
+  return (
+    <header className="hx-bar">
+      {back ? <a className="hx-back" href={back.href}><IconBack size={18} />{back.label}</a>
+        : gaming ? <span className="hx-back hx-dim">Gaming Mode is on</span>
+        : <a className="hx-back" href="#/games" aria-label="Back to Vortex"><IconBack size={18} />Vortex</a>}
+      <span className="hx-bar-r">
+        <button type="button" className="hx-chipbtn hx-sq" data-sound="toggle" aria-label={quiet ? "Turn menu sounds on" : "Turn menu sounds off"}
+          title={quiet ? "Sounds off" : "Sounds on"} onClick={() => { setMuted(!quiet); setQuiet(!quiet); if (quiet) play("toggle"); }}>
+          {quiet ? <IconMute /> : <IconSound />}
+        </button>
+        {garage && <a className="hx-chipbtn" href="#/hexdrift/garage"><IconGarage />Garage</a>}
+        <GamingButton />
+      </span>
+    </header>
+  );
+}
+
+interface Pillar { place: number; look: Look | null; name: string; sub: React.ReactNode; href?: string; me?: boolean }
+/** Lit pillars with each holder's car on top, and their name and time below. */
+function PodiumView({ places, empty }: { places: Pillar[]; empty: React.ReactNode }) {
+  const host = useRef<HTMLDivElement>(null);
+  const pod = useRef<Podium | null>(null);
+  const [fail, setFail] = useState(false);
+  useEffect(() => {
+    try { pod.current = new Podium(host.current!); } catch { setFail(true); }
+    return () => { pod.current?.dispose(); pod.current = null; };
+  }, []);
+  const sig = places.map((p) => `${p.place}:${p.name}:${JSON.stringify(p.look)}`).join("|");
+  useEffect(() => { pod.current?.set(places.map((p) => ({ place: p.place, look: p.look }))); }, [sig]); // eslint-disable-line react-hooks/exhaustive-deps
+  const row = podiumOrder(places);
+  return (
+    <div className={`hx-podium ${places.length ? "" : "is-empty"} ${fail ? "no-3d" : ""}`} style={{ ["--n" as string]: Math.max(1, places.length) }}>
+      <div className="hx-podium-stage" ref={host} />
+      {places.length === 0 && <p className="hx-podium-empty">{empty}</p>}
+      <ol className="hx-podium-names">
+        {row.map((p, i) => (
+          <li key={p.place} className={`hx-pl-${p.place} ${p.me ? "me" : ""}`} style={{ animationDelay: `${120 + i * 90}ms` }}>
+            <span className="hx-pl-place">{p.place === 1 ? <IconCrown size={16} /> : null}#{p.place}</span>
+            {p.href ? <a className="hx-pl-name" href={p.href}>{p.name}</a> : <span className="hx-pl-name">{p.name}</span>}
+            <span className="hx-pl-sub">{p.sub}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+/** The title screen: your car, the way in, and the medal leaders. */
+function Title() {
   const keyboard = useKeyboard();
+  const online = useOnline();
+  const { sb, me, profiles, rev } = useOnlineRecords();
+  const host = useRef<HTMLDivElement>(null);
+  const preview = useRef<Preview | null>(null);
+  const [points, setPoints] = useState<number | null>(null);
+  const [done, setDone] = useState(0);
+  const [leaders, setLeaders] = useState<Leader[] | null>(null);
+  const [no3d, setNo3d] = useState(false);
+  useEffect(() => {
+    clearLive();
+    bootLive = null;
+    let alive = true;
+    void allTimes().then((m) => {
+      if (!alive) return;
+      const p = medalPoints(m);
+      setPoints(p);
+      setDone(m.size);
+      preview.current?.setLook(readLook(p));
+    });
+    return () => { alive = false; };
+  }, [rev]);
+  useEffect(() => {
+    try { preview.current = new Preview(host.current!, "hero"); preview.current.setLook(readLook()); } catch { setNo3d(true); }
+    return () => { preview.current?.dispose(); preview.current = null; };
+  }, []);
+  useEffect(() => {
+    if (!sb) return;
+    let alive = true;
+    void medalLeaders(sb, 5).then((l) => { if (alive) setLeaders(l); }).catch(() => { if (alive) setLeaders([]); });
+    return () => { alive = false; };
+  }, [sb, rev]);
+  const pillars: Pillar[] = (leaders ?? []).map((l, i) => ({
+    place: i + 1, look: l.look, name: l.email === me ? "You" : nameOf(profiles, l.email), me: l.email === me,
+    href: `#/hexdrift/player/${encodeURIComponent(l.email)}`,
+    sub: <><IconMedal size={14} />{l.points} pts{l.wrs ? <> · <IconCrown size={13} />{l.wrs}</> : null}</>,
+  }));
+  return (
+    <div className="hx-menu hx-title">
+      <div className="hx-lines" aria-hidden="true" />
+      <TopBar />
+      <section className="hx-hero">
+        <div className="hx-hero-text">
+          <h1 className="hx-logo" aria-label="HEXDRIFT">HEX<span aria-hidden="true">DRIFT</span></h1>
+          <p className="hx-sub">Time trial racing. Beat the medals, chase the world record ghost.</p>
+          <div className="hx-cta">
+            <a className="hx-big" href="#/hexdrift/maps" data-sound="confirm"><IconPlay size={22} /><span>Play</span></a>
+            <a className="hx-big hx-big-2" href="#/hexdrift/garage"><IconGarage size={22} /><span>Garage</span></a>
+          </div>
+          <dl className="hx-stats">
+            <div><dt>Medal points</dt><dd>{points ?? "…"}<small>/{MAX_POINTS}</small></dd></div>
+            <div><dt>Maps finished</dt><dd>{done}<small>/{MAPS.length}</small></dd></div>
+          </dl>
+          {!online && <p className="hx-offline">You're offline. Everything still works, and your records are saved on this device.</p>}
+        </div>
+        <div className="hx-hero-car" ref={host}>
+          {no3d ? <p className="hx-dim">This device can't show 3D graphics.</p> : <p className="hx-hint">Drag to spin it any way</p>}
+        </div>
+      </section>
+      <section className="hx-leaders" aria-labelledby="hx-leaders-h">
+        <h2 id="hx-leaders-h" className="hx-h2"><IconTrophy />Medal leaders</h2>
+        {sb ? (
+          leaders === null ? <p className="hx-dim hx-center">Loading…</p>
+            : <PodiumView places={pillars} empty="No medals yet this season. Finish a map to take the top pillar." />
+        ) : <p className="hx-dim hx-center"><NeedOnlineText /></p>}
+      </section>
+      {keyboard && (
+        <p className="hx-help">
+          <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows drive</span>
+          <span><kbd>Space</kbd> drift</span>
+          <span><kbd>Enter</kbd> back to checkpoint</span>
+          <span><kbd>R</kbd> restart</span>
+          <span><kbd>C</kbd> camera</span>
+          <span>Gamepads and touch work too</span>
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** A map's picture: a still from above, and the live drone view while hovered. */
+function MapArt({ map, live = false }: { map: MapDef; live?: boolean }) {
+  const el = useRef<HTMLSpanElement>(null);
+  const [src, setSrc] = useState("");
+  useEffect(() => {
+    let alive = true;
+    const io = new IntersectionObserver((es) => {
+      if (!es.some((e) => e.isIntersecting)) return;
+      io.disconnect();
+      void mapStill(map).then((u) => { if (alive) setSrc(u); });
+    }, { rootMargin: "200px" });
+    io.observe(el.current!);
+    return () => { alive = false; io.disconnect(); };
+  }, [map]);
+  useEffect(() => {
+    if (!live) return;
+    const h = el.current!;
+    spectator()?.show(h, map);
+    return () => spectator()?.hide(h);
+  }, [live, map]);
+  const b = BIOMES[map.biome];
+  return (
+    <span className="hx-art" ref={el} style={{ ["--hx-sky" as string]: b.sky, ["--hx-g" as string]: b.ground }} aria-hidden="true">
+      {src && <img src={src} alt="" draggable={false} />}
+    </span>
+  );
+}
+
+function MapSelect() {
+  const [bests, setBests] = useState<Map<string, Best> | null>(null);
   const { sb, me, profiles, rev } = useOnlineRecords();
   const [wrs, setWrs] = useState<Map<string, Entry> | null>(null);
+  const [hover, setHover] = useState("");
   useEffect(() => {
     if (!sb) return;
     let alive = true;
@@ -158,7 +342,6 @@ function Menu() {
     return () => { alive = false; };
   }, [sb]);
   useEffect(() => {
-    // Back at the menu: the unfinished run is over.
     clearLive();
     bootLive = null;
     let alive = true;
@@ -166,55 +349,102 @@ function Menu() {
     return () => { alive = false; };
   }, [rev]);
   return (
-    <div className="hx-menu">
-      <header className="hx-menu-head">
-        <div className="hx-menu-bar">
-          {gaming ? <span className="hx-back hx-dim">Gaming Mode is on</span> : <a className="hx-back" href="#/games" aria-label="Back to Vortex">‹ Vortex</a>}
-          <span className="hx-row-tight">
-            <a className="hx-gaming" href="#/hexdrift/garage">🔧 Garage</a>
-            <GamingButton />
-          </span>
-        </div>
-        <h1 className="hx-logo" aria-label="HEXDRIFT">HEX<span aria-hidden="true">DRIFT</span></h1>
-        <p className="hx-sub">Time trial · beat the medals · race your ghost</p>
-        {!online && <p className="hx-offline">You're offline. Everything still works, and your records are saved on this device.</p>}
-      </header>
+    <div className="hx-menu hx-maps-page">
+      <TopBar back={{ href: "#/hexdrift", label: "Home" }} />
+      <h1 className="hx-h1"><IconRoute size={28} />Choose a map</h1>
       <ul className="hx-maps">
-        {MAPS.map((m) => {
+        {MAPS.map((m, i) => {
           const best = bests?.get(m.id) ?? null;
           const medal = best ? medalFor(m, best.t) : null;
           const b = BIOMES[m.biome];
           const wr = wrs?.get(m.id);
           return (
-            <li key={m.id} className="hx-map-li">
-              <a className="hx-map" href={`#/hexdrift/${m.id}`} style={{ ["--hx-a" as string]: b.accent, ["--hx-sky" as string]: b.sky, ["--hx-g" as string]: b.ground }}>
-                <span className="hx-map-art" aria-hidden="true"><span /></span>
+            <li key={m.id} style={{ animationDelay: `${60 + i * 70}ms` }}>
+              <a className="hx-map" href={`#/hexdrift/map/${m.id}`} style={{ ["--hx-a" as string]: b.accent }}
+                onPointerEnter={(e) => { if (e.pointerType === "mouse") setHover(m.id); }}
+                onPointerLeave={() => setHover((h) => (h === m.id ? "" : h))}
+                onFocus={() => setHover(m.id)} onBlur={() => setHover((h) => (h === m.id ? "" : h))}>
+                <MapArt map={m} live={hover === m.id} />
                 <span className="hx-map-text">
                   <strong>{m.name}</strong>
-                  <span className="hx-map-tags"><em>{b.name}</em><em>{m.difficulty}</em></span>
+                  <span className="hx-map-tags"><em>{b.name}</em><em className={`hx-diff hx-diff-${m.difficulty.toLowerCase()}`}>{m.difficulty}</em></span>
                   <span className="hx-map-best">
                     {best ? <><MedalIcon m={medal} />{formatTime(best.t)}</> : <span className="hx-dim">{bests ? "No time yet" : "…"}</span>}
                   </span>
-                  {wr && <span className="hx-map-wr" title="World record">👑 {formatTime(wr.ticks)} <span className="hx-dim">{wr.email === me ? "You" : nameOf(profiles, wr.email)}</span></span>}
+                  {wr && <span className="hx-map-wr" title="World record"><IconCrown size={14} />{formatTime(wr.ticks)} <span className="hx-dim">{wr.email === me ? "You" : nameOf(profiles, wr.email)}</span></span>}
                 </span>
               </a>
-              {sb && <a className="hx-map-board" href={`#/hexdrift/${m.id}/records`} aria-label={`${m.name} leaderboard`} title="Leaderboard">🏆</a>}
             </li>
           );
         })}
       </ul>
-      {keyboard && <p className="hx-help">
-        <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows drive</span>
-        <span><kbd>Space</kbd> drift</span>
-        <span><kbd>Enter</kbd> back to checkpoint</span>
-        <span><kbd>R</kbd> restart</span>
-        <span><kbd>C</kbd> camera</span>
-        <span>Gamepads and touch work too</span>
-      </p>}
     </div>
   );
 }
 
+/** A map's page: its drone view, what it's like, your best, and its top three. */
+function MapDetail({ map }: { map: MapDef }) {
+  const idx = MAPS.findIndex((m) => m.id === map.id);
+  const b = BIOMES[map.biome];
+  const { sb, me, profiles, rev } = useOnlineRecords();
+  const [best, setBest] = useState<Best | null>(() => bestTimeNow(map.id));
+  const [top, setTop] = useState<Entry[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void allTimes().then(() => { if (alive) setBest(bestTimeNow(map.id)); });
+    return () => { alive = false; };
+  }, [map.id, rev]);
+  useEffect(() => {
+    if (!sb) return;
+    let alive = true;
+    void board(sb, map.id, 3).then((r) => { if (alive) setTop(r.top); }).catch(() => { if (alive) setTop([]); });
+    return () => { alive = false; };
+  }, [sb, map.id, rev]);
+  const order: Exclude<Medal, null>[] = ["vortex", "gold", "silver", "bronze"];
+  const medal = best ? medalFor(map, best.t) : null;
+  // Online: the map's top three. Offline or signed out: just your own best.
+  const pillars: Pillar[] = sb && top
+    ? top.map((e, i) => ({
+      place: i + 1, look: e.look ?? (e.email === me ? readLook() : null), name: e.email === me ? "You" : nameOf(profiles, e.email), me: e.email === me,
+      href: `#/hexdrift/player/${encodeURIComponent(e.email)}`, sub: <><MedalIcon m={medalFor(map, e.ticks)} size={12} />{formatTime(e.ticks)}</>,
+    }))
+    : best ? [{ place: 1, look: readLook(), name: "You", me: true, sub: <><MedalIcon m={medal} size={12} />{formatTime(best.t)}</> }] : [];
+  return (
+    <div className="hx-menu hx-detail-page" style={{ ["--hx-a" as string]: b.accent }}>
+      <TopBar back={{ href: "#/hexdrift/maps", label: "Maps" }} />
+      <section className={`hx-detail ${idx % 2 ? "flip" : ""}`}>
+        <div className="hx-detail-view">
+          <MapArt map={map} live />
+          <span className="hx-live"><i />Live</span>
+        </div>
+        <div className="hx-detail-text">
+          <p className="hx-kicker">{String(idx + 1).padStart(2, "0")} · {b.name} · <span className={`hx-diff hx-diff-${map.difficulty.toLowerCase()}`}>{map.difficulty}</span></p>
+          <h1 className="hx-detail-name">{map.name}</h1>
+          <p className="hx-detail-blurb">{map.blurb}</p>
+          <div className="hx-detail-best">
+            {best ? <><MedalIcon m={medal} size={22} /><span>Your best <strong>{formatTime(best.t)}</strong></span></> : <span className="hx-dim">No time yet</span>}
+          </div>
+          <ul className="hx-targets-row">
+            {order.map((m) => (
+              <li key={m} className={best && best.t <= map.medals[m] ? "got" : ""}><MedalIcon m={m} size={14} /><span>{formatTime(map.medals[m])}</span></li>
+            ))}
+          </ul>
+          <div className="hx-cta">
+            <a className="hx-big" href={`#/hexdrift/${map.id}`} data-sound="confirm"><IconFlag size={22} /><span>Race</span></a>
+            {sb && <a className="hx-big hx-big-2" href={`#/hexdrift/${map.id}/records`}><IconTrophy size={20} /><span>Leaderboard</span></a>}
+          </div>
+        </div>
+      </section>
+      <section className="hx-leaders">
+        <h2 className="hx-h2"><IconCrown />{sb ? "Top three" : "Your best"}</h2>
+        {sb && top === null ? <p className="hx-dim hx-center">Loading…</p>
+          : <PodiumView places={pillars} empty={sb ? "No records yet. The top pillar is yours to take." : "Finish the map to stand on the pillar."} />}
+      </section>
+    </div>
+  );
+}
+
+let offAt = 0;
 /** One tap turns Gaming Mode on; holding for 3 seconds turns it off. */
 function GamingButton({ compact = false }: { compact?: boolean }) {
   const on = useGaming();
@@ -231,17 +461,18 @@ function GamingButton({ compact = false }: { compact?: boolean }) {
     if (!on) return;
     setHolding(true);
     clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => { setHolding(false); disableGaming(); }, 3000);
+    timer.current = window.setTimeout(() => { setHolding(false); offAt = performance.now(); disableGaming(); }, 3000);
   };
   const cancel = () => { clearTimeout(timer.current); setHolding(false); };
   useEffect(() => () => clearTimeout(timer.current), []);
 
   if (!on) {
     return (
-      <button type="button" className={`hx-gaming ${compact ? "hx-icon" : ""}`} title="Gaming Mode: full screen, and Back or reload can't end your run"
+      <button type="button" data-sound="toggle" className={`hx-gaming ${compact ? "hx-icon" : ""}`} title="Gaming Mode: full screen, and Back or reload can't end your run"
         aria-label="Turn on Gaming Mode"
-        onClick={enableGaming}>
-        {compact ? "⛶" : <>⛶ Gaming Mode</>}
+        // Lifting the finger after the 3-second hold lands on this button: not a new tap.
+        onClick={() => { if (performance.now() - offAt > 700) enableGaming(); }}>
+        <IconGamepad />{compact ? null : <span>Gaming Mode</span>}
       </button>
     );
   }
@@ -249,7 +480,7 @@ function GamingButton({ compact = false }: { compact?: boolean }) {
     <>
       {canFullscreen() && !fs && (
         <button type="button" className={`hx-gaming ${compact ? "hx-icon" : ""}`} aria-label="Back to full screen" title="Back to full screen" onClick={() => void enterFullscreen()}>
-          {compact ? "⤢" : "⤢ Full screen"}
+          <IconFullscreen />{compact ? null : <span>Full screen</span>}
         </button>
       )}
       <button type="button" className={`hx-gaming on ${holding ? "holding" : ""} ${compact ? "hx-icon" : ""}`}
@@ -305,6 +536,8 @@ function Play({ map }: { map: MapDef }) {
   const syncRef = useRef(sync);
   syncRef.current = sync;
   const [wrName, setWrName] = useState("");
+  // The race-start cutscene (only when arriving at the map, not on restarts).
+  const [intro, setIntro] = useState<IntroStage>("done");
 
   const loadGhost = useCallback((run: Run | null) => {
     game.current?.setGhost(run ? run.inputs : null, run?.t ?? 0);
@@ -356,7 +589,8 @@ function Play({ map }: { map: MapDef }) {
           });
         },
         onHidden() { pause(true); },
-      }, c, (Number(pref("hexdrift.cam", "0")) || 0) % 3, readLook());
+        onIntro(s) { setIntro(s); },
+      }, c, (Number(pref("hexdrift.cam", "0")) || 0) % 3, readLook(), !(bootLive && bootLive.map === map.id && bootLive.inputs.length > 0));
     } catch (e) {
       setError(e instanceof Error ? e.message : "This device can't show 3D graphics.");
       return () => c.dispose();
@@ -418,28 +652,29 @@ function Play({ map }: { map: MapDef }) {
   if (error) {
     return (
       <div className="hx-over"><div className="hx-panel">
-        <h2>Can't start Hexdrift</h2><p>{error}</p><a className="hx-btn" href="#/hexdrift">Back to maps</a>
+        <h2>Can't start Hexdrift</h2><p>{error}</p><a className="hx-btn" href="#/hexdrift/maps">Back to maps</a>
       </div></div>
     );
   }
 
   return (
-    <div className="hx-play" ref={host}>
+    <div className={`hx-play ${intro !== "done" ? "in-intro" : ""}`} ref={host}>
+      {intro !== "done" && <Intro map={map} stage={intro} best={best} />}
       <div className="hx-hud" aria-live="off">
         <div className="hx-hud-top">
           <span className="hx-chip"><span className="hx-dim">CP</span> <span ref={cps}>0/0</span></span>
           <span className="hx-time" ref={time}>0:00.000</span>
           <span className="hx-hud-btns">
-            <button type="button" className="hx-icon" aria-label="Restart (R)" title="Restart (R)" onClick={restart}>↺</button>
-            <button type="button" className="hx-icon" aria-label="Camera (C)" title="Camera (C)" onClick={() => setPref("hexdrift.cam", String(game.current?.cycleCamera() ?? 0))}>◉</button>
+            <button type="button" className="hx-icon" aria-label="Restart (R)" title="Restart (R)" onClick={restart}><IconRestart /></button>
+            <button type="button" className="hx-icon" aria-label="Camera (C)" title="Camera (C)" onClick={() => setPref("hexdrift.cam", String(game.current?.cycleCamera() ?? 0))}><IconCamera /></button>
             <GamingButton compact />
-            <button type="button" className="hx-icon" aria-label="Pause (Esc)" title="Pause (Esc)" onClick={() => pause(true)}>II</button>
+            <button type="button" className="hx-icon" aria-label="Pause (Esc)" title="Pause (Esc)" onClick={() => pause(true)}><IconPause /></button>
           </span>
         </div>
         <div className="hx-targets">
           {best && <span><MedalIcon m={medalFor(map, best.t)} size={12} />Best {formatTime(best.t)}</span>}
           <span><MedalIcon m="gold" size={12} />{formatTime(map.medals.gold)}</span>
-          {wrName && <span className="hx-wr-chip">👑 {wrName}</span>}
+          {wrName && <span className="hx-wr-chip"><IconCrown size={13} />{wrName}</span>}
         </div>
         <div className="hx-split" ref={split} />
         <div className="hx-count" ref={count} />
@@ -455,12 +690,36 @@ function Play({ map }: { map: MapDef }) {
           <div className="hx-row">
             <button type="button" className="hx-btn hx-btn-main" onClick={() => pause(false)} autoFocus>{over === "restored" ? "Carry on" : "Resume"}</button>
             <button type="button" className="hx-btn" onClick={restart}>Restart</button>
-            <a className="hx-btn" href="#/hexdrift">Maps</a>
+            <a className="hx-btn" href={`#/hexdrift/map/${map.id}`}>Maps</a>
           </div>
           {gaming && <p className="hx-dim hx-small">Gaming Mode is on: hold its button for 3 seconds to turn it off.</p>}
         </div></div>
       )}
       {over && typeof over === "object" && <Finish map={map} result={over} next={next} onRestart={restart} signedIn={!!sb} />}
+    </div>
+  );
+}
+
+/** Titles over the race-start cutscene. */
+function Intro({ map, stage, best }: { map: MapDef; stage: IntroStage; best: Best | null }) {
+  const b = BIOMES[map.biome];
+  const idx = MAPS.findIndex((m) => m.id === map.id);
+  return (
+    <div className={`hx-intro hx-intro-${stage}`} style={{ ["--hx-a" as string]: b.accent }} aria-live="polite">
+      <div className="hx-bars" aria-hidden="true"><i /><i /></div>
+      {stage === "fly" && (
+        <div className="hx-intro-title">
+          <p className="hx-kicker">{String(idx + 1).padStart(2, "0")} · {b.name} · {map.difficulty}</p>
+          <h2>{map.name}</h2>
+        </div>
+      )}
+      {stage === "car" && (
+        <div className="hx-intro-targets">
+          {best ? <span><MedalIcon m={medalFor(map, best.t)} size={16} />Your best {formatTime(best.t)}</span> : <span>First run</span>}
+          <span><MedalIcon m="gold" size={16} />Gold {formatTime(map.medals.gold)}</span>
+        </div>
+      )}
+      <p className="hx-intro-skip">Tap or press any key to skip</p>
     </div>
   );
 }
@@ -473,7 +732,7 @@ function OnlineLine({ map, online, signedIn }: { map: MapDef; online: Result["on
   }
   return (
     <p className={`hx-online ${online.worldRecord ? "hx-online-wr" : ""}`}>
-      {online.worldRecord ? "👑 World record!" : `Online rank #${online.rank} of ${online.players}`}{" "}
+      {online.worldRecord ? <><IconCrown size={18} /> World record!</> : `Online rank #${online.rank} of ${online.players}`}{" "}
       <a href={`#/hexdrift/${map.id}/records`}>Leaderboard</a>
     </p>
   );
@@ -481,6 +740,11 @@ function OnlineLine({ map, online, signedIn }: { map: MapDef; online: Result["on
 
 function Finish({ map, result, next, onRestart, signedIn }: { map: MapDef; result: Result; next: MapDef; onRestart: () => void; signedIn: boolean }) {
   const medal = medalFor(map, result.ticks);
+  // The results slide in after the celebration; a chime if there's a medal.
+  useEffect(() => {
+    const t = setTimeout(() => play(medal || result.isBest ? "medal" : "whoosh"), 1500);
+    return () => clearTimeout(t);
+  }, [medal, result.isBest]);
   const order: Exclude<Medal, null>[] = ["vortex", "gold", "silver", "bronze"];
   return (
     <div className="hx-over hx-over-late"><div className="hx-panel hx-finish">
@@ -499,7 +763,7 @@ function Finish({ map, result, next, onRestart, signedIn }: { map: MapDef; resul
       <div className="hx-row">
         <button type="button" className="hx-btn hx-btn-main" onClick={onRestart} autoFocus>Restart</button>
         <a className="hx-btn" href={`#/hexdrift/${next.id}`}>Next map</a>
-        <a className="hx-btn" href="#/hexdrift">Maps</a>
+        <a className="hx-btn" href="#/hexdrift/maps">Maps</a>
       </div>
     </div></div>
   );
@@ -554,16 +818,13 @@ function Avatar({ p, email, size = 32 }: { p: Profile | undefined; email: string
     : <span className="hx-av" style={{ width: size, height: size, fontSize: size * 0.45 }} aria-hidden="true">{name.slice(0, 1).toUpperCase()}</span>;
 }
 
-function NeedOnline() {
+function NeedOnlineText() {
   const online = useOnline();
-  return (
-    <p className="hx-dim">
-      {!CHAT_ON ? "Online records aren't set up on this site yet."
-        : !online ? "You're offline. Leaderboards need the internet; your own times are still saved on this device."
-        : "Connecting to the online records…"}
-    </p>
-  );
+  return <>{!CHAT_ON ? "Online records aren't set up on this site yet."
+    : !online ? "You're offline. Leaderboards need the internet; your own times are still saved on this device."
+    : "Sign in to Vortex Chat to see the online records."}</>;
 }
+function NeedOnline() { return <p className="hx-dim"><NeedOnlineText /></p>; }
 
 /** A map's leaderboard: the world record, your rank, and the top 50. */
 function Records({ map }: { map: MapDef }) {
@@ -587,15 +848,15 @@ function Records({ map }: { map: MapDef }) {
   return (
     <div className="hx-menu hx-page">
       <header className="hx-menu-bar">
-        <a className="hx-back" href="#/hexdrift">‹ Maps</a>
-        <a className="hx-btn hx-btn-main" href={`#/hexdrift/${map.id}`}>Play</a>
+        <a className="hx-back" href={`#/hexdrift/map/${map.id}`}><IconBack size={18} />{map.name}</a>
+        <a className="hx-btn hx-btn-main" href={`#/hexdrift/${map.id}`} data-sound="confirm">Race</a>
       </header>
       <h1 className="hx-page-title">{map.name} <span className="hx-dim">leaderboard</span></h1>
       {!sb ? <NeedOnline /> : error ? <p className="hx-dim">{error}</p> : !data ? <p className="hx-dim">Loading…</p> : (
         <>
           <div className="hx-cards">
             <div className="hx-card hx-card-wr">
-              <span className="hx-dim">👑 World record</span>
+              <span className="hx-dim"><IconCrown size={14} /> World record</span>
               <strong>{wr ? formatTime(wr.ticks) : "—"}</strong>
               <span>{wr ? <a href={`#/hexdrift/player/${encodeURIComponent(wr.email)}`}>{wr.email === me ? "You" : nameOf(profiles, wr.email)}</a> : "Nobody yet: be first"}</span>
             </div>
@@ -614,7 +875,7 @@ function Records({ map }: { map: MapDef }) {
             <ol className="hx-board">
               {data.top.map((e, i) => (
                 <li key={e.email} className={e.email === me ? "me" : ""}>
-                  <span className="hx-board-rank">{i === 0 ? "👑" : i + 1}</span>
+                  <span className="hx-board-rank">{i === 0 ? <IconCrown size={18} /> : i + 1}</span>
                   <a className="hx-board-who" href={`#/hexdrift/player/${encodeURIComponent(e.email)}`}>
                     <Avatar p={profiles.get(e.email)} email={e.email} size={28} />{nameOf(profiles, e.email)}{e.email === me && <em> (you)</em>}
                   </a>
@@ -654,7 +915,7 @@ function Player({ email }: { email: string }) {
   return (
     <div className="hx-menu hx-page">
       <header className="hx-menu-bar">
-        <a className="hx-back" href="#/hexdrift">‹ Maps</a>
+        <a className="hx-back" href="#/hexdrift"><IconBack size={18} />Home</a>
       </header>
       <div className="hx-player">
         <Avatar p={p} email={email} size={64} />
@@ -669,8 +930,8 @@ function Player({ email }: { email: string }) {
             const r = rows.find((x) => x.e.map === m.id);
             return (
               <li key={m.id}>
-                <span className="hx-board-rank">{r ? (r.wr ? "👑" : `#${r.rank}`) : "—"}</span>
-                <a className="hx-board-who" href={`#/hexdrift/${m.id}/records`}>{m.name}</a>
+                <span className="hx-board-rank">{r ? (r.wr ? <IconCrown size={18} /> : `#${r.rank}`) : "—"}</span>
+                <a className="hx-board-who" href={`#/hexdrift/map/${m.id}`}>{m.name}</a>
                 <MedalIcon m={r ? medalFor(m, r.e.ticks) : null} size={14} />
                 <span className="hx-board-time">{r ? formatTime(r.e.ticks) : <span className="hx-dim">No time</span>}</span>
                 <span />
@@ -730,7 +991,7 @@ function Garage() {
   return (
     <div className="hx-menu hx-page hx-garage">
       <header className="hx-menu-bar">
-        <a className="hx-back" href="#/hexdrift">‹ Maps</a>
+        <a className="hx-back" href="#/hexdrift"><IconBack size={18} />Home</a>
         <span className="hx-points" title="Your best medal on each map: bronze 1, silver 2, gold 3, Vortex 4">
           <MedalIcon m="gold" size={14} /> {points ?? "…"} / {MAX_POINTS} medal points
         </span>
@@ -741,7 +1002,7 @@ function Garage() {
         <p className="hx-preview-hint hx-dim">Drag to spin</p>
         {lockedItem && (
           <div className="hx-preview-lock" role="status">
-            🔒 {lockedItem.name}: unlocks at {lockedItem.need} medal points (you have {have}).
+            <IconLock size={16} /> {lockedItem.name}: unlocks at {lockedItem.need} medal points (you have {have}).
             <button type="button" className="hx-btn" onClick={() => setTrying(null)}>Back to my car</button>
           </div>
         )}
@@ -764,12 +1025,12 @@ function Garage() {
               : it.id === "factory" && tab === "accent" ? car.accent : (it as Item).color;
           return (
             <li key={it.id}>
-              <button type="button" className={`hx-part ${on ? "on" : ""} ${lock ? "locked" : ""} ${trying?.[tab] === it.id ? "trying" : ""}`}
+              <button type="button" data-sound={lock ? "locked" : "click"} className={`hx-part ${on ? "on" : ""} ${lock ? "locked" : ""} ${trying?.[tab] === it.id ? "trying" : ""}`}
                 aria-pressed={on} onClick={() => pick(it)}>
                 {color ? <span className="hx-swatch" style={{ background: color }} /> : it.id === "rainbow" ? <span className="hx-swatch hx-rainbow" /> : null}
                 <span className="hx-part-name">{it.name}</span>
                 {tab === "body" && <span className="hx-part-blurb">{(it as BodyDef).blurb}</span>}
-                <span className="hx-part-tag">{on ? "Equipped" : lock ? `🔒 ${it.need} pts` : it.need === 0 ? "Free" : "Unlocked"}</span>
+                <span className="hx-part-tag">{on ? "Equipped" : lock ? <><IconLock size={12} /> {it.need} pts</> : it.need === 0 ? "Free" : "Unlocked"}</span>
               </button>
             </li>
           );

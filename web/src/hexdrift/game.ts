@@ -105,7 +105,7 @@ export class Game {
   private skip = (e: Event) => {
     if (this.introT < 0 || this.paused) return;
     if (e instanceof KeyboardEvent && (e.repeat || e.key === "Escape")) return;
-    if (this.introT > 0.25 && this.introT < FLY + REVEAL) this.introT = FLY + REVEAL;
+    if (this.introT < FLY + REVEAL) this.introT = FLY + REVEAL;
   };
   private onVis = () => { if (document.hidden && !this.paused && !this.finished) this.events.onHidden(); };
   private ro: ResizeObserver;
@@ -351,7 +351,7 @@ export class Game {
   }
 
   private frame(now: number) {
-    const dt = Math.min(0.1, (now - this.last) / 1000);
+    const dt = Math.min(0.1, Math.max(0, (now - this.last) / 1000));
     this.last = now;
     this.frameMs += ((dt * 1000) - this.frameMs) * 0.05;
     this.controls.pollPad();

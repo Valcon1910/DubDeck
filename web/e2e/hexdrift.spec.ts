@@ -16,12 +16,23 @@ async function fresh(page: Page, map: string) {
   await expect.poll(async () => (await hook(page)) !== null).toBe(true);
 }
 
-test("Games page opens Hexdrift and its five maps", async ({ page }) => {
+test("Games page opens Hexdrift: title, five maps, a map's page, then the race", async ({ page }) => {
   await page.goto("/#/games");
   await page.getByRole("link", { name: /Hexdrift/ }).click();
   await expect(page).toHaveURL(/#\/hexdrift$/);
   await expect(page.getByRole("heading", { name: "HEXDRIFT" })).toBeVisible();
+  await page.getByRole("link", { name: "Play" }).click();
   await expect(page.locator(".hx-map")).toHaveCount(5);
+  await page.locator(".hx-map", { hasText: "Canyon Rush" }).click();
+  await expect(page.getByRole("heading", { name: "Canyon Rush" })).toBeVisible();
+  await expect(page.locator(".hx-detail-blurb")).not.toBeEmpty();
+  await page.getByRole("link", { name: "Race" }).click();
+  await expect(page).toHaveURL(/#\/hexdrift\/canyon-rush$/);
+  // The race-start cutscene plays, and a key press skips it.
+  await expect(page.locator(".hx-intro")).toBeVisible();
+  await page.keyboard.press("x");
+  await expect(page.locator(".hx-intro")).toBeHidden({ timeout: 5000 });
+  await page.goto("/#/hexdrift");
   await page.getByRole("link", { name: /Back to Vortex/ }).click();
   await expect(page).toHaveURL(/#\/games$/);
 });
@@ -58,14 +69,15 @@ test("a finished run is saved, then raced as a ghost with live splits", async ({
   await expect(page.locator(".hx-final")).toHaveText(final, { timeout: 90_000 });
   await page.getByRole("link", { name: "Maps" }).click();
   await expect(page.locator(".hx-map", { hasText: "Glacier Run" })).toContainText(final);
+  await page.locator(".hx-map", { hasText: "Glacier Run" }).click();
+  await expect(page.locator(".hx-detail-best")).toContainText(final);
   // Still there after a reload (stored in IndexedDB).
   await page.reload();
-  await expect(page.locator(".hx-map", { hasText: "Glacier Run" })).toContainText(final);
+  await expect(page.locator(".hx-detail-best")).toContainText(final);
 });
 
 test("a reload in the middle of a run puts the car back where it was", async ({ page }) => {
-  await page.goto("/#/hexdrift");
-  await page.locator(".hx-map", { hasText: "Desert Mirage" }).click();
+  await page.goto("/#/hexdrift/desert-mirage");
   await expect.poll(async () => (await hook(page))?.phase, { timeout: 20_000 }).toBe("running");
   await page.keyboard.down("ArrowUp");
   await page.waitForTimeout(2600);
@@ -82,8 +94,9 @@ test("a reload in the middle of a run puts the car back where it was", async ({ 
   await page.getByRole("button", { name: "Carry on" }).click();
   await expect(page.getByRole("heading", { name: "Run restored" })).toBeHidden();
   // Going back to the maps ends it: no restore next time.
-  await page.goto("/#/hexdrift");
-  await page.locator(".hx-map", { hasText: "Desert Mirage" }).click();
+  await page.goto("/#/hexdrift/maps");
+  await expect(page.locator(".hx-map")).toHaveCount(5);
+  await page.goto("/#/hexdrift/desert-mirage");
   await expect.poll(async () => (await hook(page))?.phase).toBe("countdown");
 });
 
@@ -113,7 +126,7 @@ test("Gaming Mode: one tap on, Back and links stay in the game, hold 3 s to turn
 
 test("garage: free parts equip and stay, locked parts preview only, and the car uses the look", async ({ page }) => {
   await page.goto("/#/hexdrift");
-  await page.getByRole("link", { name: /Garage/ }).click();
+  await page.getByRole("link", { name: /Garage/ }).first().click();
   await expect(page.locator(".hx-page-title")).toHaveText("Garage");
   await expect(page.locator(".hx-points")).toContainText("/ 20 medal points");
   // A free paint equips and is remembered.
@@ -142,7 +155,7 @@ test("times from older physics keep their medal on maps that didn't change; chan
     localStorage.setItem("hexdrift.best.desert-mirage", JSON.stringify({ t: 1300, i: btoa("\u0010"), at: 1, v: 4 }));
     localStorage.setItem("hexdrift.best.canyon-rush", JSON.stringify({ t: 900, i: btoa("\u0010"), at: 1, v: 1 }));
   });
-  await page.reload();
+  await page.goto("/#/hexdrift/maps");
   await expect(page.locator(".hx-map", { hasText: "Desert Mirage" })).toContainText("0:21.667");
   await expect(page.locator(".hx-map", { hasText: "Desert Mirage" }).locator(".hx-medal-gold")).toBeVisible();
   await expect(page.locator(".hx-map", { hasText: "Canyon Rush" })).not.toContainText("0:15.000");

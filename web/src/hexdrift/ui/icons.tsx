@@ -17,13 +17,11 @@ function Svg({ size = 20, children, ...rest }: P & { children: React.ReactNode }
 export const IconBack = (p: P) => <Svg {...p}><path d="M15 5 8 12l7 7" /></Svg>;
 export const IconNext = (p: P) => <Svg {...p}><path d="m9 5 7 7-7 7" /></Svg>;
 
-/** Spanner over a wheel: the garage. */
+/** A spanner: the garage. */
 export const IconGarage = (p: P) => (
   <Svg {...p}>
-    <circle cx="8" cy="16" r="4.2" />
-    <circle cx="8" cy="16" r="1.4" fill="currentColor" stroke="none" />
-    <path d="M13.5 10.5 19 5m-2.6-.9a3.2 3.2 0 0 0 3.5 3.5l1.2-1.2-1.1-.4-.5-1.5-1.5-.5-.4-1.1z" />
-    <path d="m11.2 12.8 2.3-2.3" />
+    <path d="M14.8 3.6a5 5 0 0 0-5.7 6.6L3.5 15.8a2.1 2.1 0 0 0 3 3l5.6-5.6a5 5 0 0 0 6.6-5.7l-2.9 2.9-2.6-.4-.4-2.6z" fill="currentColor" fillOpacity={0.18} />
+    <circle cx="5.2" cy="17.1" r="0.6" fill="currentColor" stroke="none" />
   </Svg>
 );
 
