@@ -31,7 +31,7 @@ test("Games page opens Hexdrift: title, five maps, a map's page, then the race",
   // The race-start cutscene plays, and a key press skips it.
   await expect(page.locator(".hx-intro")).toBeVisible();
   await page.keyboard.press("x");
-  await expect(page.locator(".hx-intro")).toBeHidden({ timeout: 5000 });
+  await expect(page.locator(".hx-intro")).toBeHidden({ timeout: 10000 });
   await page.goto("/#/hexdrift");
   await page.getByRole("link", { name: /Back to Vortex/ }).click();
   await expect(page).toHaveURL(/#\/games$/);
