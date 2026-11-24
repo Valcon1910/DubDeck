@@ -5,6 +5,7 @@ import {
   conversationPicture, conversationTitle, dataUrlToBlob, displayName, UnreadBadge, useChat,
   type Attachment, type Conversation, type Message, type Participant, type Profile,
 } from "./store";
+import { Files, mediaSize, size } from "./media";
 
 const PAGE = 50;
 const MAX_FILE = 25 * 1024 * 1024;
@@ -87,16 +88,75 @@ export function ChatPage() {
   );
 }
 
+type ChatAction = "leave" | "delete";
+
+/**
+ * One chat in the list. Swipe it left (finger, pen or mouse drag) to show
+ * Leave / Delete; each asks before doing anything.
+ */
 function ConversationItem({ c, active }: { c: Conversation; active: boolean }) {
-  const { me, profiles } = useChat()!;
+  const { me, profiles, owner } = useChat()!;
   const title = conversationTitle(c, me, profiles);
   const who = c.last_sender === me ? "You" : c.last_sender ? displayName(profiles.get(c.last_sender), c.last_sender) : "";
   const preview = c.last_sender == null ? (c.kind === "group" ? "Group created" : "Say hi!")
     : c.last_deleted ? "Message deleted"
     : c.last_body || (c.last_files ? `Sent ${c.last_files === 1 ? "a file" : `${c.last_files} files`}` : "");
+  const actions: ChatAction[] = c.kind === "group" ? ["leave", "delete"] : ["delete"];
+  const width = actions.length * 84;
+  const [dx, setDx] = useState(0);
+  const [open, setOpen] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [ask, setAsk] = useState<ChatAction | null>(null);
+  const drag = useRef<{ x: number; y: number; base: number; moved: boolean; locked: "x" | "y" | null } | null>(null);
+  const swiped = useRef(false);
+
+  const settle = (opened: boolean) => { setOpen(opened); setDx(opened ? -width : 0); setDragging(false); };
+
   return (
-    <li>
-      <a href={`#/chat/${c.id}`} className={`vx-chat-item ${c.unread ? "vx-chat-item-unread" : ""}`} aria-current={active ? "page" : undefined}>
+    <li className={`vx-swipe ${open ? "vx-swipe-open" : ""}`}>
+      <span className="vx-swipe-actions" style={{ width }} aria-hidden={!open}>
+        {actions.map((a) => (
+          <button key={a} type="button" tabIndex={open ? 0 : -1} className={`vx-swipe-btn vx-swipe-${a}`} onClick={() => setAsk(a)}>
+            {a === "leave" ? "Leave" : "Delete"}
+          </button>
+        ))}
+      </span>
+      <a href={`#/chat/${c.id}`} className={`vx-chat-item ${c.unread ? "vx-chat-item-unread" : ""} ${dragging ? "vx-dragging" : ""}`}
+        aria-current={active ? "page" : undefined} style={{ transform: dx ? `translateX(${dx}px)` : undefined }}
+        draggable={false}
+        onDragStart={(e) => e.preventDefault()}
+        onPointerDown={(e) => {
+          if (e.pointerType === "mouse" && e.button !== 0) return;
+          drag.current = { x: e.clientX, y: e.clientY, base: open ? -width : 0, moved: false, locked: null };
+        }}
+        onPointerMove={(e) => {
+          const d = drag.current;
+          if (!d) return;
+          const mx = e.clientX - d.x, my = e.clientY - d.y;
+          if (!d.locked && Math.hypot(mx, my) > 8) {
+            d.locked = Math.abs(mx) > Math.abs(my) ? "x" : "y";
+            if (d.locked === "x") { e.currentTarget.setPointerCapture(e.pointerId); setDragging(true); }
+          }
+          if (d.locked !== "x") return;
+          d.moved = true;
+          const x = Math.min(0, d.base + mx);
+          setDx(x < -width ? -width - (-width - x) * 0.25 : x); // rubber band past the buttons
+        }}
+        onPointerUp={(e) => {
+          const d = drag.current;
+          drag.current = null;
+          if (!d?.moved) return;
+          swiped.current = true;
+          const travelled = e.clientX - d.x;
+          settle(open ? travelled < width / 3 : travelled < -width / 3);
+        }}
+        onPointerCancel={() => { drag.current = null; settle(open); }}
+        onClick={(e) => {
+          // A swipe isn't a tap; a tap on an open row closes it.
+          if (swiped.current) { e.preventDefault(); swiped.current = false; return; }
+          if (open) { e.preventDefault(); settle(false); }
+        }}
+        onKeyDown={(e) => { if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); settle(true); } if (e.key === "Escape") settle(false); }}>
         <Avatar src={conversationPicture(c, me, profiles)} name={title} size={42} />
         <span className="vx-chat-item-text">
           <strong>{title}</strong>
@@ -107,7 +167,41 @@ function ConversationItem({ c, active }: { c: Conversation; active: boolean }) {
           <UnreadBadge count={c.unread} label="unread messages" />
         </span>
       </a>
+      {ask && <ConfirmChat c={c} title={title} action={ask} admin={c.my_role === "admin" || owner} onClose={(done) => { setAsk(null); settle(false); if (done && active) location.hash = "#/chat"; }} />}
     </li>
+  );
+}
+
+function ConfirmChat({ c, title, action, admin, onClose }: { c: Conversation; title: string; action: ChatAction; admin: boolean; onClose: (done: boolean) => void }) {
+  const { sb, me, reload } = useChat()!;
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const forEveryone = action === "delete" && c.kind === "group" && admin;
+  const text = action === "leave"
+    ? `You'll stop getting messages from ${title}. Someone in the group can add you back.`
+    : forEveryone ? `${title} and all its messages will be deleted for everyone. This can't be undone.`
+    : c.kind === "group" ? `${title} is removed from your list with its messages. You stay in the group, so new messages bring it back.`
+    : `This chat is removed from your list with its messages. ${title} keeps their copy, and a new message starts it again.`;
+  async function run() {
+    setBusy(true); setErr("");
+    const { error } = action === "leave" ? await sb!.rpc("remove_member", { p_id: c.id, p_email: me })
+      : forEveryone ? await sb!.rpc("delete_conversation", { p_id: c.id })
+      : await sb!.rpc("clear_conversation", { p_id: c.id });
+    if (error) { setErr(error.message); setBusy(false); return; }
+    reload();
+    onClose(true);
+  }
+  return (
+    <Modal title={action === "leave" ? `Leave ${title}?` : forEveryone ? `Delete ${title} for everyone?` : c.kind === "group" ? `Delete ${title}?` : `Delete chat with ${title}?`} onClose={() => onClose(false)}>
+      <p>{text}</p>
+      {err && <p className="vx-alert vx-alert-error" role="alert">{err}</p>}
+      <div className="vx-action-row">
+        <button type="button" className="vx-btn vx-btn-danger" disabled={busy} onClick={() => void run()} autoFocus>
+          {busy ? "…" : action === "leave" ? "Leave" : "Delete"}
+        </button>
+        <button type="button" className="vx-btn vx-btn-ghost" onClick={() => onClose(false)}>Cancel</button>
+      </div>
+    </Modal>
   );
 }
 
@@ -124,6 +218,7 @@ function Thread({ c, onInfo }: { c: Conversation; onInfo: () => void }) {
   const [editing, setEditing] = useState<Message | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const urls = useSignedUrls();
   const { typing, sendTyping, clearTyping } = useTyping(c.id);
@@ -138,13 +233,15 @@ function Thread({ c, onInfo }: { c: Conversation; onInfo: () => void }) {
   }, [sb, c.id]);
 
   const loadLatest = useCallback(async () => {
-    const { data } = await sb!.from("messages").select("*").eq("conversation_id", c.id).order("created_at", { ascending: false }).limit(PAGE);
+    let q = sb!.from("messages").select("*").eq("conversation_id", c.id);
+    if (c.cleared_at) q = q.gt("created_at", c.cleared_at);
+    const { data } = await q.order("created_at", { ascending: false }).limit(PAGE);
     if (!data) return;
     const latest = (data as Message[]).reverse();
     setMessages((old) => merge(old, latest));
     setMore((m) => m || data.length === PAGE);
     setLoaded(true);
-  }, [sb, c.id]);
+  }, [sb, c.id, c.cleared_at]);
 
   useEffect(() => { void loadLatest(); void loadPeople(); markRead(); }, [loadLatest, loadPeople, markRead]);
 
@@ -165,24 +262,38 @@ function Thread({ c, onInfo }: { c: Conversation; onInfo: () => void }) {
     return () => document.removeEventListener("visibilitychange", on);
   }, [markRead]);
 
-  // Stay at the bottom as messages arrive, unless the reader scrolled up.
+  // Stay at the bottom as messages arrive (and as pictures finish loading),
+  // unless the reader scrolled up. Earlier messages keep the view still.
+  const restore = useRef<number | null>(null);
   useLayoutEffect(() => {
     const el = scroller.current;
-    if (el && stick.current) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    if (restore.current != null) { el.scrollTop = el.scrollHeight - restore.current; restore.current = null; }
+    else if (stick.current) el.scrollTop = el.scrollHeight;
   }, [messages, loaded]);
+  useEffect(() => {
+    const el = scroller.current, inner = content.current;
+    if (!el || !inner) return;
+    const ro = new ResizeObserver(() => { if (stick.current) el.scrollTop = el.scrollHeight; });
+    ro.observe(inner);
+    return () => ro.disconnect();
+  }, []);
+  // Messages that arrive while the chat is open slide in; the first load doesn't.
+  const openedAt = useRef(new Date().toISOString());
 
   async function loadEarlier() {
     const first = messages[0];
     if (!first) return;
     const el = scroller.current;
     const from = el ? el.scrollHeight - el.scrollTop : 0;
-    const { data } = await sb!.from("messages").select("*").eq("conversation_id", c.id).lt("created_at", first.created_at)
-      .order("created_at", { ascending: false }).limit(PAGE);
+    let q = sb!.from("messages").select("*").eq("conversation_id", c.id).lt("created_at", first.created_at);
+    if (c.cleared_at) q = q.gt("created_at", c.cleared_at);
+    const { data } = await q.order("created_at", { ascending: false }).limit(PAGE);
     if (!data) return;
     stick.current = false;
+    restore.current = from; // applied before the next paint, so nothing jumps
     setMessages((old) => merge(old, (data as Message[]).reverse()));
     setMore(data.length === PAGE);
-    requestAnimationFrame(() => { if (el) el.scrollTop = el.scrollHeight - from; });
   }
 
   useEffect(() => {
@@ -221,6 +332,7 @@ function Thread({ c, onInfo }: { c: Conversation; onInfo: () => void }) {
 
       <div className="vx-chat-messages" ref={scroller} role="log" aria-live="polite" aria-label={`Messages with ${title}`}
         onScroll={(e) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; }}>
+        <div ref={content} className="vx-chat-content">
         {more && <button type="button" className="vx-btn vx-btn-ghost vx-btn-sm vx-chat-earlier" onClick={() => void loadEarlier()}>Load earlier messages</button>}
         {loaded && messages.length === 0 && <p className="vx-muted vx-chat-placeholder">No messages yet. Say hi!</p>}
         {messages.map((m, i) => {
@@ -232,7 +344,7 @@ function Thread({ c, onInfo }: { c: Conversation; onInfo: () => void }) {
           return (
             <div key={m.id}>
               {day && <p className="vx-chat-day"><span>{dayLabel(m.created_at)}</span></p>}
-              <div className={`vx-msg ${mine ? "vx-msg-mine" : ""} ${grouped ? "vx-msg-grouped" : ""} ${selected === m.id ? "vx-msg-selected" : ""}`}
+              <div className={`vx-msg ${mine ? "vx-msg-mine" : ""} ${grouped ? "vx-msg-grouped" : ""} ${selected === m.id ? "vx-msg-selected" : ""} ${m.created_at > openedAt.current ? "vx-msg-new" : ""}`}
                 onClick={() => setSelected((s) => (s === m.id ? null : m.id))}>
                 {!mine && <span className="vx-msg-avatar">{!grouped && <Avatar src={profiles.get(m.sender)?.avatar ?? ""} name={displayName(profiles.get(m.sender), m.sender)} size={30} />}</span>}
                 <div className="vx-msg-col">
@@ -278,6 +390,7 @@ function Thread({ c, onInfo }: { c: Conversation; onInfo: () => void }) {
             </div>
           </div>
         )}
+        </div>
       </div>
 
       <Composer c={c} reply={reply} editing={editing} onTyping={sendTyping} onDone={() => { setReply(null); setEditing(null); stick.current = true; }} />
@@ -382,7 +495,8 @@ function Composer({ c, reply, editing, onDone, onTyping }: { c: Conversation; re
           const path = `${c.id}/${crypto.randomUUID()}/${safe}`;
           const { error } = await sb!.storage.from("chat").upload(path, f, { contentType: f.type || "application/octet-stream" });
           if (error) throw new Error(`Couldn't upload ${f.name}: ${error.message}`);
-          attachments.push({ path, name: f.name.slice(0, 120), size: f.size, type: f.type || "application/octet-stream" });
+          const dim = await mediaSize(f);
+          attachments.push({ path, name: f.name.slice(0, 120), size: f.size, type: f.type || "application/octet-stream", ...(dim ?? {}) });
         }
         const { error } = await sb!.from("messages").insert({ conversation_id: c.id, body, attachments, reply_to: reply?.id ?? null });
         if (error) throw error;
@@ -437,29 +551,6 @@ function Composer({ c, reply, editing, onDone, onTyping }: { c: Conversation; re
         </button>
       </div>
     </div>
-  );
-}
-
-/** Photos and videos show inline; other files are download links. */
-function Files({ files, urls }: { files: Attachment[]; urls: (path: string) => string | undefined }) {
-  return (
-    <span className="vx-msg-files">
-      {files.map((f) => {
-        const url = urls(f.path);
-        if (f.type.startsWith("image/")) {
-          return url
-            ? <a key={f.path} href={url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}><img src={url} alt={f.name} loading="lazy" /></a>
-            : <span key={f.path} className="vx-msg-file-wait" aria-label={`Loading ${f.name}`} />;
-        }
-        if (f.type.startsWith("video/")) return url ? <video key={f.path} src={url} controls preload="metadata" onClick={(e) => e.stopPropagation()} /> : <span key={f.path} className="vx-msg-file-wait" />;
-        if (f.type.startsWith("audio/")) return url ? <audio key={f.path} src={url} controls onClick={(e) => e.stopPropagation()} /> : null;
-        return (
-          <a key={f.path} className="vx-msg-file" href={url ? `${url}&download=${encodeURIComponent(f.name)}` : undefined} onClick={(e) => e.stopPropagation()}>
-            <span aria-hidden="true">📄</span><span>{f.name}<em>{size(f.size)}</em></span>
-          </a>
-        );
-      })}
-    </span>
   );
 }
 
@@ -727,7 +818,4 @@ function lastSeen(p: Profile | undefined) {
   if (mins < 60) return `Active ${Math.round(mins)} min ago`;
   if (mins < 60 * 24) return `Active ${Math.round(mins / 60)} h ago`;
   return `Active ${new Date(p.last_seen).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
-}
-function size(n: number) {
-  return n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
 }

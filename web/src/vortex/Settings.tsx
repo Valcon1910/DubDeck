@@ -109,7 +109,7 @@ export type IconName = "chevron-left" | "chevron-right" | "home" | "games" | "do
 const PATHS: Record<IconName, string> = {
   "chevron-left": "M15 5l-7 7 7 7",
   "chevron-right": "M9 5l7 7-7 7",
-  chat: "M21 12a8 8 0 0 1-11.8 7L4 20.5l1.5-4.6A8 8 0 1 1 21 12zM8.5 12h.01M12 12h.01M15.5 12h.01",
+  chat: "M21 12a8 8 0 0 1-11.8 7L4 20.5l1.5-4.6A8 8 0 1 1 21 12zM9.5 12h.01M13 12h.01M16.5 12h.01",
   home: "M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",
   games: "M7 9v4M5 11h4M15.5 10.5h.01M17.5 12.5h.01M6.5 6h11A4.5 4.5 0 0 1 22 10.5v3a3.5 3.5 0 0 1-6.3 2.1L15 15H9l-.7.6A3.5 3.5 0 0 1 2 13.5v-3A4.5 4.5 0 0 1 6.5 6z",
   download: "M12 3v12m0 0-4.5-4.5M12 15l4.5-4.5M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2",

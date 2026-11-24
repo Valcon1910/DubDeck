@@ -2,7 +2,8 @@
 // While it's on:
 //  - the page goes full screen (hides the address bar on computers and Android);
 //  - on Chrome for computers the Escape key is captured, so a quick press doesn't exit;
-//  - Back doesn't leave the game, and reloading or closing asks "Leave site?" first;
+//  - Back doesn't leave the game;
+//  - reloading is allowed and keeps Gaming Mode on (full screen comes back on the next tap);
 //  - the screen stays awake.
 // No website can fully disable a browser's own reload and close buttons; this
 // makes accidents very unlikely. Small and three.js-free: the site shell uses it too.
@@ -39,7 +40,10 @@ export const isFullscreen = () => !!(document.fullscreenElement || (document as 
 /** Opened from the home screen (no address bar anyway). */
 export const isStandalone = () => matchMedia?.("(display-mode: standalone), (display-mode: fullscreen)").matches || (navigator as { standalone?: boolean }).standalone === true;
 
-const beforeUnload = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+const KEY = "vortex.gaming";
+const remember = (v: boolean) => { try { if (v) sessionStorage.setItem(KEY, "1"); else sessionStorage.removeItem(KEY); } catch { /* */ } };
+// Browsers only allow full screen after a tap, so after a reload it returns on the first one.
+const refull = () => { if (on && !isFullscreen()) void enterFullscreen(); };
 const onPop = () => { if (on) history.pushState({ hexdriftGuard: 1 }, "", location.href); };
 const onVisible = () => { if (on && document.visibilityState === "visible") void lockScreen(); };
 
@@ -59,8 +63,9 @@ export async function enterFullscreen() {
 export function enableGaming() {
   if (on) return;
   on = true;
+  remember(true);
   void enterFullscreen();
-  window.addEventListener("beforeunload", beforeUnload);
+  window.addEventListener("pointerdown", refull);
   // An extra history entry: pressing Back lands on it and we add it again.
   history.pushState({ hexdriftGuard: 1 }, "", location.href);
   window.addEventListener("popstate", onPop);
@@ -72,7 +77,8 @@ export function enableGaming() {
 export function disableGaming() {
   if (!on) return;
   on = false;
-  window.removeEventListener("beforeunload", beforeUnload);
+  remember(false);
+  window.removeEventListener("pointerdown", refull);
   window.removeEventListener("popstate", onPop);
   document.removeEventListener("visibilitychange", onVisible);
   try { (navigator as Nav).keyboard?.unlock?.(); } catch { /* */ }
@@ -84,3 +90,6 @@ export function disableGaming() {
   wake = null;
   emit();
 }
+
+// Still on from before a reload in this tab.
+try { if (sessionStorage.getItem(KEY) === "1") enableGaming(); } catch { /* */ }

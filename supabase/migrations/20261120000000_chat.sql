@@ -284,7 +284,9 @@ returns void language sql security definer set search_path = public as $$
 $$;
 
 -- The chat list: newest first, with the last message and unread count.
-create or replace function public.my_conversations()
+-- (Replaced by a newer version in a later file; dropped first so re-running works.)
+drop function if exists public.my_conversations();
+create function public.my_conversations()
 returns table (
   id uuid, kind text, name text, icon text, created_by text, last_message_at timestamptz,
   last_read_at timestamptz, my_role text, unread int, members text[],

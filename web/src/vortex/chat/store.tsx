@@ -4,16 +4,20 @@
 // session for it. Supabase's library is only downloaded once Chat is used.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { dispatch } from "../github";
+import { isGaming } from "../../hexdrift/gaming";
 import type { RealtimePostgresChangesPayload, SupabaseClient } from "@supabase/supabase-js";
 
 export const CHAT_ON = __VORTEX_CHAT__;
 
-export interface Attachment { path: string; name: string; size: number; type: string }
+/** w/h: picture or video size, saved when sent so the space is kept while it loads. */
+export interface Attachment { path: string; name: string; size: number; type: string; w?: number; h?: number }
 export interface Profile { email: string; name: string; avatar: string; member: boolean; last_seen: string | null }
 export interface Conversation {
   id: string; kind: "dm" | "group"; name: string; icon: string; created_by: string;
   last_message_at: string; last_read_at: string; my_role: "member" | "admin"; unread: number; members: string[];
   last_body: string | null; last_sender: string | null; last_files: number; last_deleted: boolean | null;
+  /** You removed the chat from your list at this time: older messages stay hidden for you. */
+  cleared_at: string | null;
 }
 export interface Message {
   id: string; conversation_id: string; sender: string; body: string; attachments: Attachment[];
@@ -91,6 +95,7 @@ export function ChatProvider({ email, owner, name, avatar, children }: Props) {
   const [profiles, setProfiles] = useState<Map<string, Profile>>(new Map());
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [attempt, setAttempt] = useState(0);
+  const [pops, setPops] = useState<Pop[]>([]);
   const [notify, setNotifyState] = useState(() => { try { return localStorage.getItem(NOTIFY_KEY) === "1"; } catch { return false; } });
   const listeners = useRef(new Set<(c: Change) => void>());
   const open = useRef<string | null>(null);
@@ -148,6 +153,8 @@ export function ChatProvider({ email, owner, name, avatar, children }: Props) {
   profilesRef.current = profiles;
   const notifyRef = useRef(notify);
   notifyRef.current = notify;
+  const convRef = useRef(conversations);
+  convRef.current = conversations;
 
   useEffect(() => {
     if (!sb) return;
@@ -162,7 +169,20 @@ export function ChatProvider({ email, owner, name, avatar, children }: Props) {
       if (table === "messages" && p.eventType === "INSERT") alertFor(p.new as unknown as Message);
     };
     const alertFor = (m: Message) => {
-      if (m.sender === me || !notifyRef.current || typeof Notification === "undefined" || Notification.permission !== "granted") return;
+      if (m.sender === me) return;
+      // The small card in the top right (not in Gaming Mode, not for the chat on screen).
+      if (!document.hidden && open.current !== m.conversation_id && !isGaming()) {
+        const p = profilesRef.current.get(m.sender);
+        const conv = convRef.current.find((c) => c.id === m.conversation_id);
+        const pop: Pop = {
+          id: m.id, cid: m.conversation_id, who: displayName(p, m.sender), avatar: p?.avatar ?? "",
+          group: conv?.kind === "group" ? conv.name : "",
+          text: m.body || (m.attachments.length ? (m.attachments.length === 1 ? "Sent a file" : `Sent ${m.attachments.length} files`) : "New message"),
+        };
+        setPops((list) => [...list.filter((x) => x.cid !== pop.cid).slice(-2), pop]);
+        window.setTimeout(() => setPops((list) => list.filter((x) => x.id !== pop.id)), 6000);
+      }
+      if (!notifyRef.current || typeof Notification === "undefined" || Notification.permission !== "granted") return;
       if (!document.hidden && open.current === m.conversation_id) return;
       const who = displayName(profilesRef.current.get(m.sender), m.sender);
       const n = new Notification(`${who} on Vortex`, {
@@ -232,7 +252,35 @@ export function ChatProvider({ email, owner, name, avatar, children }: Props) {
     notify, setNotify,
   }), [status, error, sb, me, owner, profiles, conversations, reload, notify, setNotify]);
 
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+  return (
+    <Ctx.Provider value={value}>
+      {children}
+      <MessagePops pops={pops} close={(id) => setPops((l) => l.filter((x) => x.id !== id))} />
+    </Ctx.Provider>
+  );
+}
+
+interface Pop { id: string; cid: string; who: string; avatar: string; group: string; text: string }
+
+/** New-message cards in the top right; tap one to open that chat. */
+function MessagePops({ pops, close }: { pops: Pop[]; close: (id: string) => void }) {
+  if (!pops.length) return null;
+  return (
+    <div className="vx-pops" role="status" aria-live="polite">
+      {pops.map((p) => (
+        <div key={p.id} className="vx-pop">
+          <a className="vx-pop-main" href={`#/chat/${p.cid}`} onClick={() => close(p.id)}>
+            {p.avatar ? <img className="vx-pop-avatar" src={p.avatar} alt="" /> : <span className="vx-pop-avatar" aria-hidden="true">{p.who.slice(0, 1).toUpperCase()}</span>}
+            <span className="vx-pop-text">
+              <strong>{p.who}{p.group && <em> in {p.group}</em>}</strong>
+              <span>{p.text}</span>
+            </span>
+          </a>
+          <button type="button" className="vx-pop-close" aria-label="Dismiss" onClick={() => close(p.id)}>×</button>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 /** data:image/png;base64,… → Blob (fetch() of data: URLs is blocked by the site's security policy). */
