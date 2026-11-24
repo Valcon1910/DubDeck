@@ -4,7 +4,6 @@
 // Some parts are free; the rest unlock with medal points, earned by your best
 // medal on each map (bronze 1, silver 2, gold 3, Vortex 4).
 import { MAPS, medalFor, type Medal } from "./maps.ts";
-import type { Run } from "./records.ts";
 
 export interface BodyDef { id: string; name: string; need: number; blurb: string; paint: string; accent: string }
 export interface Item { id: string; name: string; need: number; color?: string; color2?: string; style?: string }
@@ -103,7 +102,7 @@ export const MEDAL_POINTS: Record<Exclude<Medal, null>, number> = { bronze: 1, s
 export const MAX_POINTS = MAPS.length * 4;
 
 /** Medal points from your best time on each map. */
-export function medalPoints(bests: Map<string, Run>) {
+export function medalPoints(bests: Map<string, { t: number }>) {
   let p = 0;
   for (const m of MAPS) {
     const b = bests.get(m.id);

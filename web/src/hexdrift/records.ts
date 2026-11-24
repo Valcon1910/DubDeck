@@ -4,6 +4,7 @@
 // Falls back to localStorage if IndexedDB isn't available.
 
 import { PHYSICS_V } from "./sim/race.ts";
+import { MAPS } from "./maps.ts";
 export { PHYSICS_V };
 
 export interface Run {
@@ -13,6 +14,34 @@ export interface Run {
   at: number; // when it was set
   v: number; // physics version
   synced?: boolean; // sent to the online records (step 3)
+  owner?: string; // the account it was sent as (or came from)
+}
+
+/**
+ * Times from older physics can't be replayed (no ghost, not sent online),
+ * but they still count for the map's best time and medal as long as that
+ * map hasn't changed since: maps.ts says from which version each map's
+ * times are still comparable ("since"). Only changed maps lose progress.
+ */
+export interface Best { t: number; legacy: boolean }
+const LEGACY = "hexdrift.legacy";
+let legacy: Record<string, { t: number; v: number }> = {};
+function sinceOf(map: string) { return MAPS.find((m) => m.id === map)?.since ?? PHYSICS_V; }
+function readLegacy() {
+  try {
+    const v = JSON.parse(localStorage.getItem(LEGACY) ?? "{}");
+    if (v && typeof v === "object") legacy = v;
+  } catch { legacy = {}; }
+  // A map changed since: those old times no longer count.
+  for (const [m, r] of Object.entries(legacy)) if (!(r.v >= sinceOf(m))) delete legacy[m];
+}
+function keepLegacy(map: string, t: number, v: number) {
+  if (v >= PHYSICS_V || v < sinceOf(map)) return false;
+  const cur = legacy[map];
+  if (cur && cur.t <= t) return false;
+  legacy[map] = { t, v };
+  try { localStorage.setItem(LEGACY, JSON.stringify(legacy)); } catch { /* full */ }
+  return true;
 }
 
 const DB = "hexdrift", STORE = "best";
@@ -57,16 +86,21 @@ function lsRead(): Run[] {
 export function allBests(): Promise<Map<string, Run>> {
   if (loaded) return loaded;
   loaded = (async () => {
+    readLegacy();
     const db = await open();
     const old = lsRead();
+    for (const r of old) if (r.v !== PHYSICS_V) keepLegacy(r.map, r.t, r.v);
     if (!db) { for (const r of old) if (r.v === PHYSICS_V) cache.set(r.map, r); return cache; }
     const rows = await new Promise<Run[]>((resolve) => {
       const req = db.transaction(STORE).objectStore(STORE).getAll();
       req.onsuccess = () => resolve(req.result as Run[]);
       req.onerror = () => resolve([]);
     });
-    // Runs from older physics can't be replayed or compared: start fresh.
-    for (const r of rows) if (r.v === PHYSICS_V) cache.set(r.map, r);
+    // Runs from older physics can't be replayed: their times are kept (above).
+    for (const r of rows) {
+      if (r.v === PHYSICS_V) cache.set(r.map, r);
+      else keepLegacy(r.map, r.t, r.v);
+    }
     // Move step-1 records (localStorage) into IndexedDB.
     for (const r of old) {
       if (r.v !== PHYSICS_V) { try { localStorage.removeItem(`hexdrift.best.${r.map}`); } catch { /* */ } continue; }
@@ -80,6 +114,37 @@ export function allBests(): Promise<Map<string, Run>> {
 }
 
 export const bestNow = (map: string) => cache.get(map) ?? null;
+
+/** The best time on a map, counting kept times from older physics. */
+export function bestTimeNow(map: string): Best | null {
+  const r = cache.get(map), l = legacy[map];
+  if (l && (!r || l.t < r.t)) return { t: l.t, legacy: true };
+  return r ? { t: r.t, legacy: false } : null;
+}
+
+/** Best time on every map (for the menu and medal points). */
+export async function allTimes(): Promise<Map<string, Best>> {
+  await allBests();
+  const out = new Map<string, Best>();
+  for (const m of new Set([...cache.keys(), ...Object.keys(legacy)])) { const b = bestTimeNow(m); if (b) out.set(m, b); }
+  return out;
+}
+
+/**
+ * Takes in a run of this account from the online records (another device):
+ * kept when it beats the one here. Returns true when something changed.
+ */
+export async function adoptRun(map: string, t: number, inputs: Uint8Array, v: number, owner: string, at: number): Promise<boolean> {
+  await allBests();
+  if (v !== PHYSICS_V) return keepLegacy(map, t, v);
+  const cur = cache.get(map);
+  if (cur && cur.t <= t) return false;
+  const r: Run = { map, t, inputs, at, v, synced: true, owner };
+  cache.set(map, r);
+  const db = await open();
+  if (db) await write(db, r);
+  return true;
+}
 
 function write(db: IDBDatabase, r: Run) {
   return new Promise<void>((resolve) => {
@@ -108,22 +173,24 @@ export async function offerBest(map: string, t: number, inputs: number[]): Promi
 /** For tests: forget a map's best. */
 export async function clearBest(map: string) {
   cache.delete(map);
+  if (legacy[map]) { delete legacy[map]; try { localStorage.setItem(LEGACY, JSON.stringify(legacy)); } catch { /* */ } }
   const db = await open();
   if (db) await new Promise<void>((resolve) => { const tx = db.transaction(STORE, "readwrite"); tx.objectStore(STORE).delete(map); tx.oncomplete = () => resolve(); tx.onerror = () => resolve(); });
   try { localStorage.removeItem(`hexdrift.best.${map}`); } catch { /* */ }
 }
 
-/** Runs not yet sent to the online records. */
-export async function unsynced(): Promise<Run[]> {
+/** Runs not yet sent to the online records (never ones another account brought in). */
+export async function unsynced(me: string): Promise<Run[]> {
   const m = await allBests();
-  return [...m.values()].filter((r) => !r.synced && r.v === PHYSICS_V);
+  return [...m.values()].filter((r) => !r.synced && r.v === PHYSICS_V && (!r.owner || r.owner === me));
 }
 
 /** Marks a run as sent (unless a newer best replaced it meanwhile). */
-export async function markSynced(map: string, t: number) {
+export async function markSynced(map: string, t: number, owner?: string) {
   const r = cache.get(map);
   if (!r || r.t !== t) return;
   r.synced = true;
+  if (owner) r.owner = owner;
   const db = await open();
   if (db) await write(db, r);
 }

@@ -16,7 +16,14 @@
 .hx-back { display: inline-block; text-decoration: none; opacity: 0.8; padding: 6px 0; }
 .hx-back:hover { opacity: 1; }
 .hx-logo { margin: 6px 0 2px; font-size: clamp(36px, 8vw, 64px); font-weight: 800; letter-spacing: 0.04em; font-style: italic; line-height: 1; }
-.hx-logo span { background: linear-gradient(90deg, #23e5ff, #ff3df2); -webkit-background-clip: text; background-clip: text; color: transparent; }
+/* "DRIFT" flows to the right through cycling colours. The padding keeps the
+   italic T's overhang inside the painted box (it was clipped). */
+.hx-logo span { display: inline-block; padding: 0 0.14em 0.06em 0.02em; margin-right: -0.14em;
+  background: linear-gradient(90deg, #23e5ff, #7a5cff, #ff3df2, #ffb03d, #23e5ff, #7a5cff, #ff3df2, #ffb03d, #23e5ff);
+  background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: hx-flow 6s linear infinite; }
+@keyframes hx-flow { from { background-position: 100% 0; } to { background-position: 0% 0; } }
+@media (prefers-reduced-motion: reduce) { .hx-logo span { animation: none; } }
 .hx-sub { margin: 0; opacity: 0.7; }
 .hx-maps { list-style: none; margin: 0 auto; padding: 0; max-width: 980px; display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
 .hx-map { display: flex; flex-direction: column; text-decoration: none; border-radius: 16px; overflow: hidden;
@@ -74,19 +81,26 @@
 .hx-btn-main { background: linear-gradient(90deg, #23b8ff, #b33dff); border-color: transparent; }
 
 /* ── Touch controls ── */
-.hx-touch { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; align-items: flex-end;
-  padding: 0 14px max(14px, env(safe-area-inset-bottom)); pointer-events: none; }
-.hx-touch button { pointer-events: auto; touch-action: none; border: 0; border-radius: 18px; background: rgba(255, 255, 255, 0.16); backdrop-filter: blur(2px);
-  font-weight: 800; font-size: 22px; color: #fff; }
-.hx-touch button:active { background: rgba(255, 255, 255, 0.32); }
-/* Left thumb: gas (top) and brake. Right thumb: steer left / right, drift above. */
-.hx-touch-l { display: flex; flex-direction: column; gap: 10px; }
-.hx-t-gas { width: 84px; height: 96px; background: rgba(109, 255, 179, 0.28) !important; }
-.hx-t-brake { width: 84px; height: 60px; }
-.hx-touch-r { display: grid; grid-template-columns: auto auto; gap: 10px 12px; }
-.hx-touch-r .hx-t-steer { width: 78px; height: 78px; grid-row: 2; }
-.hx-t-drift { grid-column: 1 / span 2; grid-row: 1; height: 42px; font-size: 13px !important; }
-.hx-t-small { position: absolute; right: 14px; bottom: calc(max(14px, env(safe-area-inset-bottom)) + 150px); width: 44px; height: 44px; font-size: 18px !important; }
+/* Big thumb pads, like Polytrack: steer on the left, gas / brake / drift on
+   the right. Sized from the short side of the screen so they stay huge in
+   landscape and still fit in portrait. */
+.hx-touch { --hx-tb: clamp(84px, 25vmin, 150px); position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; align-items: flex-end;
+  padding: 0 max(12px, env(safe-area-inset-left)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); pointer-events: none; }
+.hx-touch button { pointer-events: auto; touch-action: none; border: 2px solid rgba(255, 255, 255, 0.22); border-radius: 26px; background: rgba(10, 8, 30, 0.32);
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); display: grid; place-items: center; color: #fff; padding: 0;
+  transition: transform 0.08s, background-color 0.08s; }
+.hx-touch button svg { width: 46%; height: 46%; fill: currentColor; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.4)); }
+.hx-touch button:active, .hx-touch button.down { background: rgba(255, 255, 255, 0.3); transform: scale(0.95); }
+.hx-touch-l { display: flex; gap: 12px; }
+.hx-touch-l .hx-t-steer { width: var(--hx-tb); height: var(--hx-tb); }
+.hx-touch-r { display: flex; align-items: flex-end; gap: 12px; }
+.hx-t-col { display: flex; flex-direction: column; gap: 12px; }
+.hx-t-gas { width: var(--hx-tb); height: calc(var(--hx-tb) * 1.25); background: rgba(40, 200, 130, 0.3) !important; border-color: rgba(109, 255, 179, 0.5) !important; }
+.hx-t-brake { width: var(--hx-tb); height: calc(var(--hx-tb) * 0.7); }
+.hx-t-drift { width: calc(var(--hx-tb) * 0.85); height: calc(var(--hx-tb) * 0.85); font-weight: 800; font-size: clamp(12px, 3vmin, 16px); letter-spacing: 0.08em;
+  background: rgba(255, 61, 242, 0.24) !important; border-color: rgba(255, 120, 245, 0.5) !important; }
+.hx-t-small { position: absolute; right: max(12px, env(safe-area-inset-right)); bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--hx-tb) * 1.95 + 24px);
+  width: 52px; height: 52px; border-radius: 16px !important; }
 .hx-play:has(.hx-touch) .hx-speed { right: auto; left: 50%; transform: translateX(-50%); bottom: max(14px, env(safe-area-inset-bottom)); font-size: 26px; text-align: center; }
 
 /* ── Step 2: ghost splits, Gaming Mode, offline ── */
@@ -111,7 +125,7 @@
 .hx-tip p { margin: 0; }
 .hx-tip { pointer-events: auto; }
 @media (max-width: 560px) {
-  .hx-play:has(.hx-touch) .hx-speed { bottom: calc(max(14px, env(safe-area-inset-bottom)) + 200px); }
+  .hx-play:has(.hx-touch) .hx-speed { bottom: calc(max(14px, env(safe-area-inset-bottom)) + var(--hx-tb, 120px) * 1.25 + 120px); }
 }
 
 /* ── Step 3: online records ── */
@@ -128,7 +142,8 @@ a.hx-gaming { text-decoration: none; display: inline-flex; align-items: center; 
 .hx-online { margin: 6px 0; font-size: 15px; }
 .hx-online a { color: inherit; font-weight: 700; }
 .hx-online-wr { color: #ffd34d; font-weight: 800; font-size: 18px; }
-.hx-page > * { max-width: 760px; margin-left: auto; margin-right: auto; }
+/* Centred column (two classes so it beats each block's own margin). */
+.hx-menu.hx-page > * { max-width: 760px; margin-left: auto; margin-right: auto; }
 .hx-page-title { margin: 18px auto 10px; font-size: 26px; }
 .hx-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 8px 0 16px; }
 .hx-card { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-radius: 14px; background: rgba(255, 255, 255, 0.07); }
@@ -176,3 +191,10 @@ a.hx-gaming { text-decoration: none; display: inline-flex; align-items: center; 
 /* The results wait a moment so the finish celebration can be seen. */
 .hx-over-late { animation: hx-late 0.45s ease 1.5s both; }
 @keyframes hx-late { from { opacity: 0; visibility: hidden; } to { opacity: 1; visibility: visible; } }
+/* Portrait phones: drift sits above gas so three columns fit the width. */
+@media (orientation: portrait) {
+  .hx-touch { --hx-tb: clamp(84px, calc((100vw - 64px) / 3.05), 150px); }
+  .hx-touch-r { flex-direction: column; align-items: stretch; }
+  .hx-t-drift { width: var(--hx-tb); height: calc(var(--hx-tb) * 0.62); }
+  .hx-t-small { bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--hx-tb) * 2.57 + 48px); }
+}
