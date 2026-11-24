@@ -11,7 +11,7 @@ import { NO_GROUND, terrainAt } from "./terrain.ts";
  * Bump whenever the handling or track physics change: runs from older
  * physics can't be replayed exactly, so their records and ghosts are dropped.
  */
-export const PHYSICS_V = 4;
+export const PHYSICS_V = 5;
 
 export const HZ = 60;
 const DT = 1 / HZ;
@@ -48,6 +48,7 @@ export interface Car {
   slip: number; // sideways speed (drift smoke)
   boosting: number; // steps left of boost glow
   offroad: boolean; // driving on the ground, not the road
+  drift: number; // 0..1: how far into a drift (eases in fast, out slowly)
 }
 
 function place(car: Car, p: Piece) {
@@ -55,7 +56,7 @@ function place(car: Car, p: Piece) {
   car.vx = car.vy = car.vz = 0;
   car.yaw = yawOf(p.d); car.yawRate = 0;
   car.grounded = true; car.nx = 0; car.ny = 1; car.nz = 0;
-  car.speed = 0; car.slip = 0; car.boosting = 0; car.offroad = false;
+  car.speed = 0; car.slip = 0; car.boosting = 0; car.offroad = false; car.drift = 0;
 }
 
 export type Phase = "countdown" | "running" | "finished";
@@ -119,11 +120,15 @@ export function step(r: Race, byte: number) {
     }
     if (!gas && !brake) vf -= vf * 0.35 * DT;
     vf -= vf * (vf < 0 ? -vf : vf) * 0.0006 * DT;
-    if (drift) vf -= vf * 0.12 * DT;
+    // The drift eases in quickly and out gently, so letting go slides the car
+    // back into grip instead of snapping it straight.
+    car.drift += ((drift ? 1 : 0) - car.drift) * Math.min(1, (drift ? 9 : 2.6) * DT);
+    const dr = car.drift;
+    vf -= vf * 0.12 * dr * DT;
     if (g && g.piece.t === "boost") { vf = Math.min(vf + BOOST * DT, VMAX * 1.45); car.boosting = 40; }
     if (car.boosting > 0) car.boosting--;
 
-    const grip = (drift ? 1.5 : 10) * (ice ? 0.2 : 1) * (off ? 0.6 : 1);
+    const grip = (10 - 8.5 * dr) * (ice ? 0.2 : 1) * (off ? 0.6 : 1);
     vl -= vl * Math.min(1, grip * DT);
     car.vx = tx * vf + rx * vl; car.vy = ty * vf + ry * vl; car.vz = tz * vf + rz * vl;
     // Gravity along the slope.
@@ -131,7 +136,7 @@ export function step(r: Race, byte: number) {
 
     const sp = vf < 0 ? -vf : vf;
     let target = -steer * 2.0 * Math.min(1, sp / 6) / (1 + sp / 50) * (vf < 0 ? -1 : 1);
-    if (drift) target *= 1.45;
+    target *= 1 + 0.45 * dr;
     car.yawRate += (target - car.yawRate) * Math.min(1, (ice ? 2.5 : 5) * DT);
     car.speed = vf; car.slip = vl;
   } else {

@@ -6,9 +6,9 @@ import { MAPS, BIOMES, medalFor, type MapDef, type Medal } from "./maps.ts";
 import { formatTime } from "./sim/race.ts";
 import { Controls, type Action } from "./input.ts";
 import { Game } from "./game.ts";
-import { allBests, bestNow, clearBest, clearLive, offerBest, readLive, saveLive, type Run } from "./records.ts";
+import { allBests, allTimes, bestNow, bestTimeNow, clearBest, clearLive, offerBest, readLive, saveLive, type Best, type Run } from "./records.ts";
 import { canFullscreen, disableGaming, enableGaming, enterFullscreen, isFullscreen, isGaming, isStandalone, onGaming } from "./gaming.ts";
-import { board, playerRecords, rankFor, recordRun, syncPending, worldRecords, type Entry, type Submitted } from "./online.ts";
+import { board, playerRecords, rankFor, recordRun, syncAccount, worldRecords, type Entry, type Submitted } from "./online.ts";
 import { CHAT_ON, displayName, useChat, type Profile } from "../vortex/chat/store";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { itemOf, MAX_POINTS, medalPoints, readLook, saveLook, SLOTS, type BodyDef, type Item, type Look, type Slot } from "./garage.ts";
@@ -45,10 +45,12 @@ interface OnlineCtx {
   sb: SupabaseClient | null;
   me: string;
   profiles: Map<string, Profile>;
-  /** Sends best runs that haven't been sent yet. */
+  /** Sends best runs that haven't been sent yet (and takes in the account's others). */
   sync: () => Promise<Map<string, Submitted>>;
+  /** Goes up whenever records from the account's other devices arrive. */
+  rev: number;
 }
-const Online = createContext<OnlineCtx>({ sb: null, me: "", profiles: new Map(), sync: async () => new Map() });
+const Online = createContext<OnlineCtx>({ sb: null, me: "", profiles: new Map(), sync: async () => new Map(), rev: 0 });
 const useOnlineRecords = () => useContext(Online);
 const nameOf = (profiles: Map<string, Profile>, email: string) => displayName(profiles.get(email), email);
 
@@ -70,16 +72,18 @@ export function Hexdrift() {
   const me = chat?.me ?? "";
   const profiles = chat?.profiles ?? EMPTY;
   const [toast, setToast] = useState("");
+  const [rev, setRev] = useState(0);
   const sync = useCallback(async () => {
     if (!sb) return new Map<string, Submitted>();
-    const res = await syncPending(sb).catch(() => new Map<string, Submitted>());
+    const { sent: res, pulled } = await syncAccount(sb, me).catch(() => ({ sent: new Map<string, Submitted>(), pulled: false }));
+    if (pulled) setRev((n) => n + 1);
     for (const [id, r] of res) {
       const name = MAPS.find((m) => m.id === id)?.name ?? id;
       if (r.beatWorldRecord) { setToast(`👑 You took the world record on ${name}!`); break; }
       if (r.worldRecord && r.improved) setToast(`👑 World record on ${name}!`);
     }
     return res;
-  }, [sb]);
+  }, [sb, me]);
   // Send waiting runs now, and whenever the connection comes back.
   useEffect(() => {
     void sync();
@@ -93,7 +97,7 @@ export function Hexdrift() {
     return () => clearTimeout(t);
   }, [toast]);
   return (
-    <Online.Provider value={{ sb, me, profiles, sync }}>
+    <Online.Provider value={{ sb, me, profiles, sync, rev }}>
       <div className="hx" role="application" aria-label="Hexdrift">
         {view.kind === "play" ? <Play key={view.map.id} map={view.map} />
           : view.kind === "records" ? <Records key={view.map.id} map={view.map} />
@@ -123,11 +127,29 @@ function useOnline() {
   return online;
 }
 
+/**
+ * True when this device has a keyboard: a mouse or trackpad is attached, or a
+ * real key has been pressed here (remembered). Touch-only phones and tablets
+ * don't get keyboard hints.
+ */
+function useKeyboard() {
+  const [on, setOn] = useState(() => pref("hexdrift.kbd", "") === "1"
+    || (typeof matchMedia !== "undefined" && matchMedia("(any-pointer: fine)").matches));
+  useEffect(() => {
+    if (on) return;
+    const k = (e: KeyboardEvent) => { if (e.isTrusted && e.key.length > 0) { setPref("hexdrift.kbd", "1"); setOn(true); } };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [on]);
+  return on;
+}
+
 function Menu() {
-  const [bests, setBests] = useState<Map<string, Run> | null>(null);
+  const [bests, setBests] = useState<Map<string, Best> | null>(null);
   const gaming = useGaming();
   const online = useOnline();
-  const { sb, me, profiles } = useOnlineRecords();
+  const keyboard = useKeyboard();
+  const { sb, me, profiles, rev } = useOnlineRecords();
   const [wrs, setWrs] = useState<Map<string, Entry> | null>(null);
   useEffect(() => {
     if (!sb) return;
@@ -140,9 +162,9 @@ function Menu() {
     clearLive();
     bootLive = null;
     let alive = true;
-    void allBests().then((m) => { if (alive) setBests(new Map(m)); });
+    void allTimes().then((m) => { if (alive) setBests(m); });
     return () => { alive = false; };
-  }, []);
+  }, [rev]);
   return (
     <div className="hx-menu">
       <header className="hx-menu-head">
@@ -150,11 +172,10 @@ function Menu() {
           {gaming ? <span className="hx-back hx-dim">Gaming Mode is on</span> : <a className="hx-back" href="#/games" aria-label="Back to Vortex">‹ Vortex</a>}
           <span className="hx-row-tight">
             <a className="hx-gaming" href="#/hexdrift/garage">🔧 Garage</a>
-            {sb && me && <a className="hx-gaming" href={`#/hexdrift/player/${encodeURIComponent(me)}`}>My records</a>}
             <GamingButton />
           </span>
         </div>
-        <h1 className="hx-logo">HEX<span>DRIFT</span></h1>
+        <h1 className="hx-logo" aria-label="HEXDRIFT">HEX<span aria-hidden="true">DRIFT</span></h1>
         <p className="hx-sub">Time trial · beat the medals · race your ghost</p>
         {!online && <p className="hx-offline">You're offline. Everything still works, and your records are saved on this device.</p>}
       </header>
@@ -182,14 +203,14 @@ function Menu() {
           );
         })}
       </ul>
-      <p className="hx-help">
+      {keyboard && <p className="hx-help">
         <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows drive</span>
         <span><kbd>Space</kbd> drift</span>
         <span><kbd>Enter</kbd> back to checkpoint</span>
         <span><kbd>R</kbd> restart</span>
         <span><kbd>C</kbd> camera</span>
         <span>Gamepads and touch work too</span>
-      </p>
+      </p>}
     </div>
   );
 }
@@ -261,7 +282,7 @@ function IphoneTip() {
   );
 }
 
-interface Result { ticks: number; best: Run | null; isBest: boolean; online?: "sending" | "waiting" | Submitted }
+interface Result { ticks: number; best: Best | null; isBest: boolean; online?: "sending" | "waiting" | Submitted }
 type Over = null | "pause" | "restored" | Result;
 
 function Play({ map }: { map: MapDef }) {
@@ -277,7 +298,7 @@ function Play({ map }: { map: MapDef }) {
   const overRef = useRef<Over>(null);
   overRef.current = over;
   const [touch, setTouch] = useState(() => typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches);
-  const [best, setBest] = useState<Run | null>(() => bestNow(map.id));
+  const [best, setBest] = useState<Best | null>(() => bestTimeNow(map.id));
   const [error, setError] = useState("");
   const gaming = useGaming();
   const { sb, me, profiles, sync } = useOnlineRecords();
@@ -319,13 +340,13 @@ function Play({ map }: { map: MapDef }) {
         onFinish(ticks, inputs) {
           clearLive();
           bootLive = null;
-          const prev = bestNow(map.id);
+          const prev = bestTimeNow(map.id);
           const isBest = !prev || ticks < prev.t;
           setOver({ ticks, best: prev, isBest });
           void offerBest(map.id, ticks, inputs).then(async (saved) => {
             if (!saved) return;
             const now = bestNow(map.id);
-            setBest(now);
+            setBest(bestTimeNow(map.id));
             loadGhost(now); // race your new best next time
             // Send it to the online records (or keep it for later when offline).
             setOver((o) => o && typeof o === "object" && o.ticks === ticks ? { ...o, online: navigator.onLine ? "sending" : "waiting" } : o);
@@ -344,7 +365,7 @@ function Play({ map }: { map: MapDef }) {
     void allBests().then(() => {
       if (game.current !== g) return;
       const b = bestNow(map.id);
-      setBest(b);
+      setBest(bestTimeNow(map.id));
       loadGhost(b);
     });
     // Carry on a run the page was reloaded in the middle of.
@@ -484,26 +505,43 @@ function Finish({ map, result, next, onRestart, signedIn }: { map: MapDef; resul
   );
 }
 
+const ARROW = "M12 3 22 19H2z";
+/** A triangle pointing up, turned to point the given way. */
+const Arrow = ({ deg }: { deg: number }) => (
+  <svg viewBox="0 0 24 24" aria-hidden="true" style={{ transform: `rotate(${deg}deg)` }}><path d={ARROW} strokeLinejoin="round" /></svg>
+);
+
 /** On-screen buttons for phones and tablets (several can be held at once). */
 function TouchPad({ controls }: { controls: React.RefObject<Controls | null> }) {
-  const bind = (a: Action) => ({
-    onPointerDown: (e: React.PointerEvent) => { e.preventDefault(); (e.target as HTMLElement).setPointerCapture?.(e.pointerId); controls.current?.setTouch(a, true); },
-    onPointerUp: () => controls.current?.setTouch(a, false),
-    onPointerCancel: () => controls.current?.setTouch(a, false),
-    onLostPointerCapture: () => controls.current?.setTouch(a, false),
-    onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
-  });
+  const bind = (a: Action) => {
+    const set = (e: React.PointerEvent | null, on: boolean) => {
+      controls.current?.setTouch(a, on);
+      if (e) (e.currentTarget as HTMLElement).classList.toggle("down", on);
+      if (on && navigator.vibrate) try { navigator.vibrate(8); } catch { /* */ }
+    };
+    return {
+      onPointerDown: (e: React.PointerEvent) => { e.preventDefault(); (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); set(e, true); },
+      onPointerUp: (e: React.PointerEvent) => set(e, false),
+      onPointerCancel: (e: React.PointerEvent) => set(e, false),
+      onLostPointerCapture: (e: React.PointerEvent) => set(e, false),
+      onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
+    };
+  };
   return (
     <div className="hx-touch">
       <div className="hx-touch-l">
-        <button type="button" className="hx-t-gas" aria-label="Gas" {...bind("gas")}>▲</button>
-        <button type="button" className="hx-t-brake" aria-label="Brake" {...bind("brake")}>▼</button>
+        <button type="button" className="hx-t-steer" aria-label="Steer left" {...bind("left")}><Arrow deg={-90} /></button>
+        <button type="button" className="hx-t-steer" aria-label="Steer right" {...bind("right")}><Arrow deg={90} /></button>
       </div>
       <div className="hx-touch-r">
-        <button type="button" className="hx-t-small" aria-label="Back to checkpoint" {...bind("respawn")}>⟲</button>
+        <button type="button" className="hx-t-small" aria-label="Back to checkpoint" {...bind("respawn")}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4a8 8 0 1 1-7.4 5h2.3A6 6 0 1 0 12 6v3L7 5l5-4z" /></svg>
+        </button>
         <button type="button" className="hx-t-drift" aria-label="Drift" {...bind("drift")}>DRIFT</button>
-        <button type="button" className="hx-t-steer" aria-label="Steer left" {...bind("left")}>◀</button>
-        <button type="button" className="hx-t-steer" aria-label="Steer right" {...bind("right")}>▶</button>
+        <div className="hx-t-col">
+          <button type="button" className="hx-t-gas" aria-label="Gas" {...bind("gas")}><Arrow deg={0} /></button>
+          <button type="button" className="hx-t-brake" aria-label="Brake" {...bind("brake")}><Arrow deg={180} /></button>
+        </div>
       </div>
     </div>
   );
@@ -532,7 +570,7 @@ function Records({ map }: { map: MapDef }) {
   const { sb, me, profiles } = useOnlineRecords();
   const [data, setData] = useState<{ top: Entry[]; players: number; myRank: number | null } | null>(null);
   const [error, setError] = useState("");
-  const mine = bestNow(map.id);
+  const mine = bestTimeNow(map.id);
   useEffect(() => {
     if (!sb) return;
     let alive = true;
@@ -654,17 +692,18 @@ function Garage() {
   const [trying, setTrying] = useState<Look | null>(null);
   const [tab, setTab] = useState<Slot>("body");
   const [error, setError] = useState("");
+  const { rev } = useOnlineRecords();
 
   useEffect(() => {
     let alive = true;
-    void allBests().then((m) => {
+    void allTimes().then((m) => {
       if (!alive) return;
       const p = medalPoints(m);
       setPoints(p);
       setLook(readLook(p));
     });
     return () => { alive = false; };
-  }, []);
+  }, [rev]);
 
   useEffect(() => {
     try { preview.current = new Preview(host.current!); } catch { setError("This device can't show 3D graphics."); }
