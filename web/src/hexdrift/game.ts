@@ -19,7 +19,7 @@ import { blobShadow, buildCar, type CarModel } from "./render/car.ts";
 import type { Controls } from "./input.ts";
 import { DEFAULT_LOOK, itemOf, type Item, type Look } from "./garage.ts";
 import { FinishFx, Trail, trailDef, type FinishKind } from "./render/fx.ts";
-import { play } from "./ui/sound.ts";
+import { play, preloadSounds } from "./ui/sound.ts";
 import { RaceAudio, type Surface } from "./ui/raceaudio.ts";
 
 export interface HudRefs {
@@ -167,6 +167,7 @@ export class Game {
     this.canvas = canvas;
     this.race = newRace(track);
     this.audio = new RaceAudio(look.body, map.biome);
+    preloadSounds();
     this.prev = this.cur = snap(this.race);
     this.camYaw = this.race.car.yaw;
     this.cam = camMode;
