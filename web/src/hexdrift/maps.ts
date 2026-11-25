@@ -82,6 +82,19 @@ export const ALL_MAPS: MapDef[] = [
     medals: { vortex: 3181, gold: 3476, silver: 4000, bronze: 4919 }, since: 6, wip: true,
   },
   {
+    id: "baja-rally", name: "Baja Rally", biome: "baja", difficulty: "Medium",
+    blurb: "Out of the service park and onto the dirt. Saguaros, red rock and loose sand. Climb the switchbacks, fly the ravine and keep it pinned through the boost sweepers. The dry wash is shorter, but the sand drinks your speed.",
+    road: {
+      land: { kind: "plain", seed: 79, base: 10, amp: 40, scale: 380, fall: 30, shoulder: 0.2, mat: 1 },
+      start: [0, 0, 22.5, 0], bank: 4,
+      route: "H7 S50 B S140 C Mdirt R60/80 S120 @a S60 L45/90 S80 R45/90 S60 @b U6 S90 L90/45 U5 S60 R120/35 U4 S70 C S50 BL S80 J4 S20 G34/-3 S70 R60/80 B S180 L60/90 S120 C D6 S100 R90/50 D5 S70 L90/45 D4 S120 C B S100 Masphalt R60/90 S140 F",
+      alts: [{ from: "a", to: "b", via: [[0.5, 4]], hw: 6, surf: "sand", flush: true }],
+      dress: { kit: "baja", zones: [[0, 220, "camp", "camp"], [220, 760, "desert", "desert"], [760, 1300, "cliff", "desert"], [1300, 1900, "desert", "cliff"], [1900, 2350, "desert", "desert"], [2350, 2900, "village", "village"]],
+        set: [["stand", 25, -1, 3], ["stand", 25, 1, 3], ["mesa", 1100, 1, 30], ["windpump", 600, -1, 12], ["wreck", 900, 1, 5]] },
+    },
+    medals: { vortex: 3202, gold: 3499, silver: 4027, bronze: 4952 }, since: 6, wip: true,
+  },
+  {
     id: "miami-storm", name: "Miami Storm", biome: "storm", difficulty: "Beginner",
     blurb: "Midnight downpour downtown. Wide neon straights on soaked asphalt, a boost through the plaza and a back-alley cut for the brave. Brake early: the puddles bite.",
     road: {

@@ -74,6 +74,33 @@ export const KITS: Record<string, Record<string, KitDef>> = {
     sedan_r: { a: 0.93, b: 2.25, h: 2.1 }, sedan_b: { a: 0.93, b: 2.25, h: 1.8 }, sedan_w: { a: 0.93, b: 2.25, h: 2.1 },
     taxi: { a: 1.0, b: 2.5, h: 2.7 }, police: { a: 0.93, b: 2.25, h: 2.0 }, van: { a: 1.0, b: 2.7, h: 2.4 }, bus: { a: 1.3, b: 5.5, h: 3.3 },
   },
+  baja: {
+    adobe_a: { a: 5.1, b: 4.5, cz: 0.35, h: 4.6, front: 1 },
+    adobe_b: { a: 6.6, b: 5, cx: 0.5, h: 7.3, front: 1 },
+    adobe_c: { a: 4.6, b: 4.5, cz: 0.35, h: 4.4, front: 1 },
+    adobe_d: { a: 6.1, b: 5, cx: 0.5, h: 7.1, front: 1 },
+    cantina: { a: 8.3, b: 5, h: 7.7, front: 4.2 },
+    tienda_a: { a: 5, b: 4, h: 4.8, front: 1.8 }, tienda_b: { a: 5, b: 4, h: 4.8, front: 1.8 },
+    mission: { a: 6, b: 11.5, cz: -0.5, h: 19.3, front: 1 },
+    gas: { a: 8.3, b: 8.5, h: 9.1 },
+    watertower: { a: 2.1, b: 2.1, h: 13.2 },
+    windpump: { a: 1.5, b: 1.5, h: 10.8 },
+    palapa: { a: 3, b: 3, h: 3.9 },
+    saguaro_a: { a: 0.45, b: 0.45, h: 8.3, round: true }, saguaro_b: { a: 0.4, b: 0.4, h: 6.2, round: true }, saguaro_c: { a: 0.55, b: 0.55, h: 10.4, round: true },
+    cardon: { a: 1, b: 1, h: 7.5, round: true },
+    // Low plants: drawn only (you drive through them).
+    agave: { a: 2, b: 1.2, h: 1.1, solid: false }, shrubs: { a: 2.1, b: 1.8, h: 1, solid: false },
+    fanpalm: { a: 0.35, b: 0.35, h: 13.2, round: true },
+    rock_a: { a: 2.4, b: 2.4, h: 4, round: true }, rock_b: { a: 5, b: 4, h: 9, round: true }, mesa: { a: 13, b: 10, h: 21, round: true },
+    pole: { a: 0.2, b: 0.2, h: 9, round: true },
+    tyres: { a: 2, b: 0.6, h: 1.2 }, bales: { a: 3.2, b: 0.55, h: 1.8 },
+    tent: { a: 4.1, b: 4.1, h: 3.8 },
+    stand: { a: 15.1, b: 3.8, h: 7.4 },
+    chevron_r: { a: 1.2, b: 0.15, h: 2.7 }, chevron_l: { a: 1.2, b: 0.15, h: 2.7 },
+    wreck: { a: 0.9, b: 2.3, h: 1.5 },
+    sedan_r: { a: 1.1, b: 2.7, h: 2 }, sedan_b: { a: 1.1, b: 2.7, h: 1.9 }, sedan_w: { a: 1.1, b: 2.7, h: 2 },
+    taxi: { a: 1, b: 2, h: 1.8 }, police: { a: 1.1, b: 2.7, h: 1.9 }, van: { a: 1.1, b: 2.7, h: 1.9 }, bus: { a: 1.2, b: 5, h: 3.4 },
+  },
 };
 
 /** What lines each kind of strip: the frontage along the road, the blocks behind, and fillers between. */
@@ -83,6 +110,8 @@ interface Mix {
   wild?: boolean;
   /** Fillers scattered inside each block (default 3). */
   scatter?: number;
+  /** What stands right by the road (default: the fillers). */
+  kerb?: string[];
 }
 const MIXES: Record<string, Partial<Record<Strip, Mix>>> = {
   miami: {
@@ -97,6 +126,13 @@ const MIXES: Record<string, Partial<Record<Strip, Mix>>> = {
     forest: { front: [], back: ["pine_trio", "pine_tall", "pine_mid", "pine_trio", "rock_a", "pine_tall", "pine_mid", "pine_trio", "pine_tall", "hut"], filler: ["pine_mid", "pine_small", "pine_tall", "pine_trio", "rock_a", "pine_mid"], setback: 4, wild: true, scatter: 14 },
     cliff: { front: [], back: ["rock_b", "pine_trio", "rock_a", "rock_b", "pine_tall", "pine_mid"], filler: ["rock_a", "pine_small", "pine_mid", "rock_b", "pine_trio"], setback: 3, wild: true, scatter: 10 },
     park: { front: [], back: ["pine_trio", "pine_tall", "rock_a", "pine_mid", "barn", "pine_trio"], filler: ["pine_mid", "pine_small", "rock_a", "pine_trio"], setback: 4, wild: true, scatter: 12 },
+  },
+  baja: {
+    village: { front: ["adobe_a", "tienda_a", "adobe_b", "cantina", "adobe_c", "gas", "adobe_d", "tienda_b", "mission", "adobe_a"], back: ["adobe_a", "adobe_c", "adobe_b", "adobe_d", "palapa", "adobe_a", "adobe_c", "tienda_b", "adobe_b", "watertower", "adobe_d", "adobe_a"], filler: ["fanpalm", "saguaro_b", "agave", "shrubs", "palapa"], kerb: ["fanpalm", "pole", "agave", "fanpalm", "shrubs"], setback: 4, scatter: 4 },
+    desert: { front: [], back: ["saguaro_a", "cardon", "saguaro_c", "rock_a", "saguaro_b", "shrubs", "agave", "saguaro_a", "rock_b"], filler: ["saguaro_b", "agave", "shrubs", "saguaro_a", "cardon", "rock_a"], kerb: ["tyres", "saguaro_b", "bales", "pole", "agave", "tyres", "shrubs"], setback: 4, wild: true, scatter: 9 },
+    cliff: { front: [], back: ["rock_b", "mesa", "rock_a", "rock_b", "cardon", "rock_a"], filler: ["rock_a", "shrubs", "saguaro_b", "agave", "rock_b"], setback: 3, wild: true, scatter: 8 },
+    camp: { front: ["tent", "tent", "stand", "tent"], back: ["saguaro_a", "palapa", "rock_a", "cardon", "saguaro_c", "shrubs"], filler: ["saguaro_b", "agave", "shrubs", "rock_a"], kerb: ["tyres", "bales", "tyres", "bales", "fanpalm"], setback: 3, wild: true, scatter: 6 },
+    park: { front: [], back: ["saguaro_a", "cardon", "rock_a", "saguaro_c", "shrubs"], filler: ["saguaro_b", "agave", "shrubs", "rock_a"], setback: 4, wild: true, scatter: 10 },
   },
 };
 
@@ -288,8 +324,9 @@ export function compose(road: Road): Composed | null {
       const p = main[i];
       const v = hash(n, side + 3, 91);
       // Kerb-side fillers (palms, planters) in front of the frontage, every 12 m.
-      if (mix.filler.length && hash(n, side, 92) < 0.8) {
-        const f = pick(mix.filler, hash(n, side, 93));
+      const kerb = mix.kerb ?? mix.filler;
+      if (kerb.length && hash(n, side, 92) < 0.8) {
+        const f = pick(kerb, hash(n, side, 93));
         const fd = kit[f];
         const [x, z] = at(p, side * (p.hw + 2.4 + fd.a), 0);
         put(f, x, z, p.dz * side, -p.dx * side, hash(n, side, 94), 1.4, 0.2);
