@@ -66,7 +66,7 @@ def deco_hotel(name, w, d, floors, wall, accent, neon, fin=True):
                     cyl("glass", p, 0.42, 0.06, 10, axis="x" if abs(math.cos(aa)) > 0.7 else "z")
     # Street level: big shop windows, a terrace, a striped awning, columns.
     P, width = walls[0]
-    slab("glass_d", P, 0.6, width - 0.6, 0.5, 3.4, 0.0, 0.05)
+    slab("glass_d", P, 0.6, width - 0.6, 0.5, 3.4, 0.0, 0.14)
     for k in range(5):
         x = 0.4 + k * (width - 0.8) / 4
         slab("trimw", P, x - 0.18, x + 0.18, 0.5, 3.6, 0.0, 0.3)
@@ -161,7 +161,7 @@ def shops(name, w, d, colors):
         box(c, (x0 + u / 2, hgt / 2, 0), (u - 0.05, hgt, d), 0.04)
         box("trimw", (x0 + u / 2, hgt + 0.2, 0), (u, 0.4, d + 0.3), 0.03)
         P = wall_frame((x0, 0, d / 2), (1, 0, 0), (0, 0, 1))
-        slab("glass_d", P, 0.5, u - 0.5, 0.3, 3.0, 0.0, 0.04)
+        slab("glass_d", P, 0.5, u - 0.5, 0.3, 3.0, 0.0, 0.14)
         slab("trim", P, 0.4, u - 0.4, 0.0, 0.3, 0.0, 0.12)
         windows(P, u, 3.6, 7, floor=3.4, win=1.4, gap=0.8, sill=0.7, wh=1.6, frame="trimw", margin=0.5)
         stripes = ["canvas_r", "canvas_t", "canvas_y", "canvas_r"][k % 4]
@@ -208,7 +208,7 @@ def lifeguard(name, a, b):
     box(b, (0, 3.2, 0), (3.06, 0.35, 2.86))
     box(b, (0, 4.2, 0), (3.06, 0.2, 2.86))
     P = wall_frame((-1.5, 0, 1.42), (1, 0, 0), (0, 0, 1))
-    slab("glass", P, 0.5, 2.5, 3.5, 4.4, 0.0, 0.03)
+    slab("glass", P, 0.5, 2.5, 3.5, 4.4, 0.0, 0.1)
     prism(b, rounded(3.8, 3.6, 1), 4.9, 5.2, 0.05)
     cyl(a, (0, 5.5, 0), 1.2, 0.6, 12, r1=0.2)
     for x in (-1.7, 1.7):
