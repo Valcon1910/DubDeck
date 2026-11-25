@@ -6,6 +6,8 @@
 // Browsers only allow audio after a user gesture, so the context is created
 // on the first press and everything before that is silent.
 
+import impactsUrl from "../sfx/impacts.mp3?url";
+
 type Ctx = AudioContext;
 let ctx: Ctx | null = null;
 let bus: GainNode | null = null;
@@ -36,6 +38,43 @@ function audio(): { c: Ctx; out: GainNode } | null {
 
 /** The audio context, once a gesture has unlocked it (shared with the game's sounds). */
 export function audioContext(): { c: Ctx; out: GainNode } | null { return audio(); }
+
+// ── Recorded hits (Kenney's Impact Sounds, CC0) ──
+// One small file holding every clip, fetched the first time a sound plays;
+// until it's in, the synthesised versions stand in.
+const SPRITE: Record<string, [number, number][]> = {
+  hit_heavy: [[0.25, 0.1648], [0.6648, 0.3564], [1.2711, 0.1144], [1.6355, 0.204], [2.0895, 0.1309]],
+  hit_light: [[2.4705, 0.5424], [3.2629, 0.6547], [4.1676, 0.4888]],
+  metal: [[4.9064, 0.1558], [5.3122, 0.1714], [5.7336, 0.1309]],
+  wood: [[6.1145, 0.3298], [6.6942, 0.3298], [7.274, 0.3298], [7.8538, 0.779], [8.8828, 0.779]],
+  plastic: [[9.9118, 0.1611], [10.3229, 0.1146], [10.6875, 0.1611]],
+  snow: [[11.0986, 0.3709], [11.7195, 0.3708], [12.3403, 0.3707]],
+  land: [[12.961, 0.5268], [13.7378, 0.569], [14.5568, 0.5694]],
+  glass: [[15.3763, 0.5405], [16.1667, 0.5405]],
+};
+let sprite: AudioBuffer | null = null;
+let spriteLoading = false;
+function loadSprite(c: Ctx) {
+  if (sprite || spriteLoading) return;
+  spriteLoading = true;
+  fetch(impactsUrl).then((r) => r.arrayBuffer()).then((b) => c.decodeAudioData(b)).then((buf) => { sprite = buf; })
+    .catch(() => { spriteLoading = false; });
+}
+/** Fetches the recorded hits ahead of a race (once the audio is unlocked). */
+export function preloadSounds() { const a = audio(); if (a) loadSprite(a.c); }
+/** Plays a random take of a recorded clip; false if they aren't loaded yet. */
+function clip(c: Ctx, out: AudioNode, name: string, vol: number, rate = 1, at = 0): boolean {
+  if (!sprite) { loadSprite(c); return false; }
+  const takes = SPRITE[name];
+  if (!takes) return false;
+  const [t, d] = takes[Math.floor(Math.random() * takes.length)];
+  const s = c.createBufferSource(); s.buffer = sprite;
+  s.playbackRate.value = rate * (0.94 + Math.random() * 0.12);
+  const g = c.createGain(); g.gain.value = vol;
+  s.connect(g).connect(out);
+  s.start(c.currentTime + at, Math.max(0, t - 0.01), d + 0.04);
+  return true;
+}
 
 interface Tone { f: number; f2?: number; type?: OscillatorType; at?: number; dur: number; vol: number; attack?: number }
 function tone(c: Ctx, out: AudioNode, t: Tone) {
@@ -136,16 +175,20 @@ export function play(s: UiSound, k = 1) {
       break;
     case "impact": {
       // A body thump with a scrape of grit; louder and lower when harder.
+      // Recorded metal on top: heavy crunches for big hits, knocks for taps.
       const v = 0.15 + 0.45 * k;
-      tone(c, out, { f: 95 + 60 * (1 - k), f2: 40, type: "sine", dur: 0.22, vol: v });
-      noise(c, out, { dur: 0.12 + 0.2 * k, vol: v * 0.7, f: 900, f2: 300, q: 0.7 });
-      noise(c, out, { dur: 0.05, vol: v * 0.5, f: 3200, q: 1 });
+      const rec = clip(c, out, k > 0.45 ? "hit_heavy" : "hit_light", 0.35 + 0.55 * k, 1.05 - 0.2 * k);
+      tone(c, out, { f: 95 + 60 * (1 - k), f2: 40, type: "sine", dur: 0.22, vol: v * (rec ? 0.7 : 1) });
+      noise(c, out, { dur: 0.12 + 0.2 * k, vol: v * (rec ? 0.35 : 0.7), f: 900, f2: 300, q: 0.7 });
+      if (!rec) noise(c, out, { dur: 0.05, vol: v * 0.5, f: 3200, q: 1 });
       break;
     }
-    case "land":
+    case "land": {
+      const rec = clip(c, out, "land", 0.3 + 0.5 * k, 0.9);
       tone(c, out, { f: 70, f2: 38, type: "sine", dur: 0.2, vol: 0.2 + 0.35 * k });
-      noise(c, out, { dur: 0.16, vol: 0.12 + 0.2 * k, f: 500, f2: 200, q: 0.6 });
+      noise(c, out, { dur: 0.16, vol: (0.12 + 0.2 * k) * (rec ? 0.5 : 1), f: 500, f2: 200, q: 0.6 });
       break;
+    }
     case "checkpoint":
       tone(c, out, { f: 1046, type: "triangle", dur: 0.14, vol: 0.14 });
       tone(c, out, { f: 1568, type: "sine", at: 0.06, dur: 0.32, vol: 0.13 });
@@ -160,20 +203,24 @@ export function play(s: UiSound, k = 1) {
       tone(c, out, { f: 60, f2: 35, type: "sine", dur: 0.5, vol: 0.4 });
       break;
     case "smash-metal":
+      if (clip(c, out, "metal", 0.35 + 0.4 * k)) { tone(c, out, { f: 1800 + 500 * Math.random(), type: "sine", dur: 0.4, vol: 0.03 + 0.03 * k }); break; }
       tone(c, out, { f: 640 + 300 * Math.random(), f2: 420, type: "square", dur: 0.25, vol: 0.05 + 0.06 * k });
       tone(c, out, { f: 1800 + 500 * Math.random(), type: "sine", dur: 0.5, vol: 0.05 + 0.05 * k });
       noise(c, out, { dur: 0.15, vol: 0.15 + 0.2 * k, f: 4000, q: 1.2 });
       break;
     case "smash-wood":
+      if (clip(c, out, "wood", 0.4 + 0.4 * k)) break;
       noise(c, out, { dur: 0.09, vol: 0.25 + 0.25 * k, f: 1400, q: 1.5 });
       tone(c, out, { f: 240, f2: 120, type: "triangle", dur: 0.12, vol: 0.12 + 0.12 * k });
       noise(c, out, { at: 0.05, dur: 0.18, vol: 0.1, f: 2500, q: 1 });
       break;
     case "smash-plastic":
+      if (clip(c, out, "plastic", 0.4 + 0.4 * k, 1.1)) break;
       tone(c, out, { f: 380, f2: 200, type: "triangle", dur: 0.1, vol: 0.14 + 0.1 * k });
       noise(c, out, { dur: 0.06, vol: 0.15, f: 2200, q: 1 });
       break;
     case "smash-snow":
+      if (clip(c, out, "snow", 0.5 + 0.4 * k, 0.8)) break;
       noise(c, out, { dur: 0.3, vol: 0.22 + 0.2 * k, f: 1200, f2: 500, q: 0.5, attack: 0.01 });
       break;
     case "medal":
