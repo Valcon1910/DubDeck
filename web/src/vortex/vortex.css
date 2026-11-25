@@ -1044,3 +1044,4 @@ html[data-gaming="on"] img, html[data-gaming="on"] a { -webkit-user-drag: none; 
 .vx-tour-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--border-strong); transition: width 0.2s, background 0.2s; }
 .vx-tour-dots i.on { width: 18px; border-radius: 3px; background: var(--vx-accent); }
 @media (prefers-reduced-motion: reduce) { .vx-tour-hole { animation: none; transition: none; } }
+.vx-chat-readonly { margin: 0; padding: 14px 16px; border-top: 1px solid var(--border); text-align: center; }

@@ -365,6 +365,7 @@ function Thread({ c, onInfo }: { c: Conversation; onInfo: () => void }) {
   }, [messages, urls]);
 
   const title = conversationTitle(c, me, profiles);
+  const canSend = !(c.kind === "group" && c.admins_only && c.my_role !== "admin");
   const other = c.kind === "dm" ? c.members.find((m) => m !== me) ?? me : null;
   const byId = useMemo(() => new Map(messages.map((m) => [m.id, m])), [messages]);
   const othersRead = people.filter((p) => p.email !== me);
@@ -436,8 +437,8 @@ function Thread({ c, onInfo }: { c: Conversation; onInfo: () => void }) {
                     <div className="vx-msg-actions" onClick={(e) => e.stopPropagation()}>
                       <EmojiPicker className="vx-msg-react" label="React" onPick={(e) => void react(m, e)}
                         chosen={reactions.filter((r) => r.message_id === m.id && r.email === me).map((r) => r.emoji)} />
-                      <button type="button" onClick={() => { setEditing(null); setReply(m); setSelected(null); }}>Reply</button>
-                      {mine && m.body && <button type="button" onClick={() => { setReply(null); setEditing(m); setSelected(null); }}>Edit</button>}
+                      {canSend && <button type="button" onClick={() => { setEditing(null); setReply(m); setSelected(null); }}>Reply</button>}
+                      {canSend && mine && m.body && <button type="button" onClick={() => { setReply(null); setEditing(m); setSelected(null); }}>Edit</button>}
                       {(mine || owner) && <button type="button" className="vx-danger-text" onClick={() => void remove(m)}>Delete</button>}
                     </div>
                   )}
@@ -463,7 +464,9 @@ function Thread({ c, onInfo }: { c: Conversation; onInfo: () => void }) {
         </div>
       </div>
 
-      <Composer c={c} reply={reply} editing={editing} onTyping={sendTyping} onDone={() => { setReply(null); setEditing(null); stick.current = true; }} />
+      {!canSend
+        ? <p className="vx-chat-readonly vx-muted vx-small" role="status">Only admins can send messages in this group. You can still react.</p>
+        : <Composer c={c} reply={reply} editing={editing} onTyping={sendTyping} onDone={() => { setReply(null); setEditing(null); stick.current = true; }} />}
     </>
   );
 }
@@ -706,6 +709,7 @@ function NewChat({ kind, onClose }: { kind: "dm" | "group"; onClose: () => void 
   const [name, setName] = useState("");
   const [chosen, setChosen] = useState<string[]>([]);
   const [icon, setIcon] = useState<File | null>(null);
+  const [adminsOnly, setAdminsOnly] = useState(false);
   const [preview, setPreview] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -719,6 +723,10 @@ function NewChat({ kind, onClose }: { kind: "dm" | "group"; onClose: () => void 
       if (kind === "group" && icon) {
         const url = await uploadIcon(sb, id as string, icon);
         await sb!.rpc("update_group", { p_id: id, p_name: name.trim(), p_icon: url });
+      }
+      if (kind === "group" && adminsOnly) {
+        const { error: e2 } = await sb!.rpc("set_admins_only", { p_id: id, p_on: true });
+        if (e2) throw e2;
       }
       reload();
       onClose();
@@ -751,6 +759,10 @@ function NewChat({ kind, onClose }: { kind: "dm" | "group"; onClose: () => void 
           <input value={name} maxLength={60} onChange={(e) => setName(e.target.value)} placeholder="e.g. Study group" />
         </label>
       </div>
+      <label className="vx-check">
+        <input type="checkbox" checked={adminsOnly} onChange={(e) => setAdminsOnly(e.target.checked)} />
+        <span>Only admins can send messages</span>
+      </label>
       <p className="vx-small vx-muted">{chosen.length ? `${chosen.length} selected` : "Pick people to add"}</p>
       <MemberPicker exclude={[me]} chosen={chosen} multi onPick={(e) => setChosen((c) => (c.includes(e) ? c.filter((x) => x !== e) : [...c, e]))} />
       {err && <p className="vx-alert vx-alert-error" role="alert">{err}</p>}
@@ -770,6 +782,8 @@ function GroupInfo({ c, onClose }: { c: Conversation; onClose: () => void }) {
   const [err, setErr] = useState("");
   const pick = useRef<HTMLInputElement>(null);
   const admin = c.my_role === "admin" || owner;
+  const [adminsOnly, setAdminsOnly] = useState(!!c.admins_only);
+  useEffect(() => setAdminsOnly(!!c.admins_only), [c.admins_only]);
 
   const load = useCallback(async () => {
     const { data } = await sb!.from("participants").select("*").eq("conversation_id", c.id).order("joined_at");
@@ -807,6 +821,16 @@ function GroupInfo({ c, onClose }: { c: Conversation; onClose: () => void }) {
         ) : <strong className="vx-grow">{c.name}</strong>}
       </div>
 
+      {admin ? (
+        <label className="vx-check">
+          <input type="checkbox" checked={adminsOnly} onChange={(e) => {
+            const on = e.target.checked;
+            setAdminsOnly(on);
+            void run(() => sb!.rpc("set_admins_only", { p_id: c.id, p_on: on })).then((done) => { if (!done) setAdminsOnly(!on); });
+          }} />
+          <span>Only admins can send messages</span>
+        </label>
+      ) : c.admins_only && <p className="vx-small vx-muted">Only admins can send messages in this group.</p>}
       <h3 className="vx-small">{people.length} members</h3>
       <ul className="vx-chat-people">
         {people.map((p) => {
