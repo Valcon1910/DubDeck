@@ -1,4 +1,4 @@
-// Record pillars: a row of lit podium columns with each record holder's car
+// Record pillars: a row of lit hexagonal podium columns with each record holder's car
 // turning slowly on top. Used for a map's top 3 and the title screen's top 5
 // medal holders. An orthographic camera keeps every pillar at an exact,
 // even spacing, so the names and times under it (plain HTML columns) line up.
@@ -73,7 +73,7 @@ export class Podium {
     const vh = (half * 2 * h) / w;
     this.camera.left = -half; this.camera.right = half;
     this.camera.top = vh * 0.62; this.camera.bottom = -vh * 0.38;
-    this.camera.position.set(0, 4.2, 14);
+    this.camera.position.set(0, 8, 14);
     this.camera.lookAt(0, 2.1, 0);
     this.camera.updateProjectionMatrix();
   }
@@ -87,25 +87,33 @@ export class Podium {
       const x = (i - (row.length - 1) / 2) * SPACING;
       const h = HEIGHT[p.place] ?? 1;
       const col = new THREE.Color(COLOURS[p.place] ?? "#7a5cff");
-      // The column: dark glass with a glowing medal-coloured cap and base.
-      const body = new THREE.BoxGeometry(3.4, h, 3.0).translate(0, h / 2, 0);
-      const bm = new THREE.MeshStandardMaterial({ color: "#191633", metalness: 0.6, roughness: 0.35, emissive: col, emissiveIntensity: 0.06 });
-      const cap = new THREE.BoxGeometry(3.6, 0.16, 3.2).translate(0, h, 0);
-      const cm = new THREE.MeshBasicMaterial({ color: col });
-      const front = new THREE.PlaneGeometry(1.5, 1.5).translate(0, Math.min(h * 0.55, h - 0.8), 1.51);
+      // The column: a six-sided prism of dark glass, a flat face to the
+      // front, lit edges and a glowing cap in the medal colour. Seen a little
+      // from above, so its top and both front sides catch the light.
+      const R = 1.85, ap = R * Math.cos(Math.PI / 6);
+      const body = new THREE.CylinderGeometry(R, R, h, 6, 1).rotateY(Math.PI / 6).translate(0, h / 2, 0);
+      const bm = new THREE.MeshStandardMaterial({ color: "#1d1a3a", metalness: 0.55, roughness: 0.3, emissive: col, emissiveIntensity: 0.08, flatShading: true });
+      const edges = new THREE.EdgesGeometry(body, 20);
+      const em = new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.85 });
+      const cap = new THREE.CylinderGeometry(R + 0.08, R + 0.08, 0.16, 6, 1).rotateY(Math.PI / 6).translate(0, h + 0.08, 0);
+      const cm = new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 0.55, metalness: 0.3, roughness: 0.25, flatShading: true });
+      const glow = new THREE.RingGeometry(R + 0.1, R + 0.7, 6, 1).rotateX(-Math.PI / 2).rotateY(Math.PI / 6);
+      const gm = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.22, depthWrite: false });
+      const fs = Math.min(1.4, h * 0.8);
+      const front = new THREE.PlaneGeometry(fs, fs).translate(0, Math.max(h * 0.46, Math.min(h * 0.55, h - 0.8)), ap + 0.01);
       const tex = numberTexture(p.place, `#${col.getHexString()}`);
       const fm = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false });
       const pillar = new THREE.Group();
-      pillar.add(new THREE.Mesh(body, bm), new THREE.Mesh(cap, cm), new THREE.Mesh(front, fm));
+      pillar.add(new THREE.Mesh(body, bm), new THREE.LineSegments(edges, em), new THREE.Mesh(cap, cm), new THREE.Mesh(glow, gm), new THREE.Mesh(front, fm));
       pillar.position.x = x;
       this.group.add(pillar);
-      this.bits.geo.push(body, cap, front); this.bits.mat.push(bm, cm, fm); this.bits.tex.push(tex);
+      this.bits.geo.push(body, edges, cap, glow, front); this.bits.mat.push(bm, em, cm, gm, fm); this.bits.tex.push(tex);
       if (p.look) {
         const m = buildCar({ look: p.look });
         m.root.scale.setScalar(0.62);
-        m.root.position.set(x, h + 0.08, 0);
+        m.root.position.set(x, h + 0.16, 0);
         this.scene.add(m.root);
-        this.cars.push({ m, spin: 0.6 + i * 0.9, y: h + 0.08, born: performance.now() + i * 120 });
+        this.cars.push({ m, spin: 0.6 + i * 0.9, y: h + 0.16, born: performance.now() + i * 120 });
       }
     });
     this.resize();
