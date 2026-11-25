@@ -8,16 +8,17 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { compose, type Composed, type Placed } from "../sim/kit.ts";
-import { roadTerrain, type Road } from "../sim/road.ts";
+import { roadDist, roadTerrain, type Road } from "../sim/road.ts";
 import miamiUrl from "../kit/miami.glb?url";
 
 const URLS: Record<string, string> = { miami: miamiUrl };
 
 /** Material kinds (from the Blender material name). */
-const PLAIN = 0, GLASS = 1, NEON = 2, LAMP = 3, SCREEN = 4, CAR_GLASS = 5, FACADE = 6;
+const PLAIN = 0, GLASS = 1, NEON = 2, LAMP = 3, SCREEN = 4, CAR_GLASS = 5, FACADE = 6, BLINK = 7, ARROW = 8, ARROW_L = 9;
 const kindOf = (name: string) =>
   name === "glass_car" ? CAR_GLASS : name.startsWith("glass") ? GLASS : name.startsWith("neon") ? NEON
-    : name === "lamp" || name === "tail" ? LAMP : name === "screen" ? SCREEN : PLAIN;
+    : name === "lamp" || name === "tail" ? LAMP : name === "screen" ? SCREEN
+    : name === "blink" ? BLINK : name === "arrow" ? ARROW : name === "arrowl" ? ARROW_L : PLAIN;
 
 interface KitGeo { near: THREE.BufferGeometry; far: THREE.BufferGeometry; block: THREE.BufferGeometry; r: number }
 
@@ -208,6 +209,18 @@ if (vKind > 0.5 && vKind < 1.5) {
 } else if (vKind > 4.5 && vKind < 5.5) {
   float up = clamp(vNrm.y, 0.0, 1.0);
   diffuseColor.rgb = mix(diffuseColor.rgb, uSky * 0.6, up * 0.5 * (1.0 - uNight));
+} else if (vKind > 6.5 && vKind < 7.5) {
+  // Barrier lamps: amber, blinking, each a little out of step with the next.
+  float on = step(0.5, fract(uTime * 1.1 + vSeed * 0.5 + vLoc.x * 0.09));
+  totalEmissiveRadiance += vec3(1.0, 0.6, 0.14) * (0.2 + on * (3.0 + 2.0 * uNight));
+  diffuseColor.rgb *= 0.35;
+} else if (vKind > 7.5) {
+  // Arrow board: lamp by lamp from the tail to the head, a moment all lit, then dark.
+  float u = (vKind > 8.5 ? -vLoc.x : vLoc.x) * 0.45 + 0.5;
+  float stepN = floor(fract(uTime / 1.7 + vSeed) * 6.0);
+  float lit = step(floor(u * 4.0) + 0.5, stepN);
+  totalEmissiveRadiance += mix(vec3(0.1, 0.05, 0.01), vec3(1.0, 0.62, 0.16) * (7.0 + 3.0 * uNight), lit);
+  diffuseColor.rgb *= 0.3;
 } else if (vKind > 5.5) {
   // A far block's walls: rows of painted windows above the ground floor.
   vec2 g = vec2((vLoc.x + vLoc.z) / 2.6, vLoc.y / 3.2);
@@ -228,20 +241,46 @@ if (vKind > 0.5 && vKind < 1.5) {
 
 /** A street, as a strip of asphalt with kerbs and a dashed centre line. */
 function streets(c: Composed, road: Road, night: boolean): THREE.BufferGeometry | null {
-  if (!c.streets.length) return null;
+  if (!c.streets.length && !c.spurs.length) return null;
   const pos: number[] = [], col: number[] = [];
   const asphalt = new THREE.Color(night ? "#1d1f24" : "#4a4a4e"), kerb = new THREE.Color(night ? "#5a5a5e" : "#b9b5ad"), line = new THREE.Color("#e8e4d6");
   const quad = (a: number[], b: number[], cc: number[], d: number[], k: THREE.Color) => {
-    pos.push(...a, ...cc, ...b, ...a, ...d, ...cc);
+    pos.push(...a, ...b, ...cc, ...a, ...cc, ...d);
     for (let i = 0; i < 6; i++) col.push(k.r, k.g, k.b);
   };
   const H = (x: number, z: number) => roadTerrain(road, x, z).h;
-  for (const s of c.streets) {
+  const all = [...c.streets, ...c.spurs];
+  // Which streets pass each 32 m cell (to find junctions).
+  const cells = new Map<number, number[]>();
+  const ck = (x: number, z: number) => Math.floor(x / 32) * 100003 + Math.floor(z / 32);
+  all.forEach((s, k) => {
+    const L = Math.hypot(s.bx - s.ax, s.bz - s.az), n = Math.ceil(L / 8) + 1;
+    const seen = new Set<number>();
+    for (let i = 0; i <= n; i++) for (const ox of [-8, 8]) for (const oz of [-8, 8]) {
+      const key = ck(s.ax + (s.bx - s.ax) * i / n + ox, s.az + (s.bz - s.az) * i / n + oz);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const l = cells.get(key);
+      if (l) l.push(k); else cells.set(key, [k]);
+    }
+  });
+  /** On another street's asphalt, or the race road (a junction: no kerb, no line). */
+  const crossing = (self: number, x: number, z: number) => {
+    for (const k of cells.get(ck(x, z)) ?? []) {
+      if (k === self) continue;
+      const o = all[k], L = Math.hypot(o.bx - o.ax, o.bz - o.az);
+      const vx = x - o.ax, vz = z - o.az, ux = (o.bx - o.ax) / L, uz = (o.bz - o.az) / L;
+      const along = vx * ux + vz * uz, lat = Math.abs(-vx * uz + vz * ux);
+      if (along > -6 && along < L + 6 && lat < 4.6) return true;
+    }
+    return roadDist(road, x, z, 1.5) < 1;
+  };
+  all.forEach((s, self) => {
     const dx = s.bx - s.ax, dz = s.bz - s.az;
     const L = Math.hypot(dx, dz);
-    if (L < 1) continue;
+    if (L < 1) return;
     const ux = dx / L, uz = dz / L, rx = -uz, rz = ux;
-    const n = Math.max(1, Math.ceil(L / 8));
+    const n = Math.max(1, Math.ceil(L / 4));
     for (let i = 0; i < n; i++) {
       const t0 = i / n, t1 = (i + 1) / n;
       const x0 = s.ax + dx * t0, z0 = s.az + dz * t0, x1 = s.ax + dx * t1, z1 = s.az + dz * t1;
@@ -250,15 +289,17 @@ function streets(c: Composed, road: Road, night: boolean): THREE.BufferGeometry 
         return [px, H(px, pz) + up, pz];
       };
       quad(pt(x0, z0, -4.5, 0.06), pt(x0, z0, 4.5, 0.06), pt(x1, z1, 4.5, 0.06), pt(x1, z1, -4.5, 0.06), asphalt);
+      const mx = (x0 + x1) / 2, mz = (z0 + z1) / 2;
       for (const sd of [-1, 1]) {
+        if (crossing(self, mx + rx * sd * 5.2, mz + rz * sd * 5.2)) continue;
         quad(pt(x0, z0, sd * 4.5, 0.2), pt(x0, z0, sd * 6, 0.2), pt(x1, z1, sd * 6, 0.2), pt(x1, z1, sd * 4.5, 0.2), kerb);
       }
-      if (i % 2 === 0) {
-        const xa = x0 + ux * 1, za = z0 + uz * 1, xb = x0 + ux * 4, zb = z0 + uz * 4;
+      if (i % 2 === 0 && !crossing(self, mx, mz)) {
+        const xa = x0 + ux * 0.5, za = z0 + uz * 0.5, xb = x0 + ux * 3.5, zb = z0 + uz * 3.5;
         quad(pt(xa, za, -0.12, 0.08), pt(xa, za, 0.12, 0.08), pt(xb, zb, 0.12, 0.08), pt(xb, zb, -0.12, 0.08), line);
       }
     }
-  }
+  });
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));

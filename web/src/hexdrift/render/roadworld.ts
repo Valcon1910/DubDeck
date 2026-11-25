@@ -10,7 +10,7 @@ import { BOOST, FLUSH, GAP, landAt, MAT, roadDist, TUN, WALL_H, WALL_T, WL, WR, 
 import type { Biome, BiomeId } from "../maps.ts";
 import { buildProps } from "./props.ts";
 import { buildKit } from "./kit.ts";
-import { clampUnder } from "./under.ts";
+import { clampUnder, sinkUnderStreets } from "./under.ts";
 import { addGrain, noiseTex } from "./textures.ts";
 import type { World } from "./world.ts";
 
@@ -287,7 +287,7 @@ function terrain(group: THREE.Group, track: Track, L: Look, geos: THREE.BufferGe
         // Tucked a little under the road so it never shows through.
         const g = groundAt(track, xs[i], h + 2.5, zs[j], 0);
         if (g && g.h - h < 1.2) h -= 0.45;
-        h = clampUnder(road, xs[i], zs[j], h);
+        h = clampUnder(road, xs[i], zs[j], sinkUnderStreets(road, xs[i], zs[j], h));
       }
       // Near a road: a kerb-side strip in the verge colour; further out, the land itself.
       let mat = t.mat === MAT.water ? MAT.water : landAt(road.land, xs[i], zs[j]).mat;

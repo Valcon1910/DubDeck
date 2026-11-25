@@ -9,7 +9,7 @@
 // the layout comes only from the track: hashes and road geometry, with
 // only + - * / sqrt and Math.floor / Math.imul.
 import { hash } from "./math.ts";
-import { landAt, MAT, roadDist, roadTerrain, type Road, type Sample, type Strip } from "./road.ts";
+import { GAP, landAt, MAT, roadDist, roadTerrain, TUN, WL, WR, type Road, type Sample, type Strip } from "./road.ts";
 
 /** An object of a kit: its solid footprint (half sizes across a and deep b, centre shift cx/cz in its own frame), height, and room kept clear in front. */
 export interface KitDef { a: number; b: number; h: number; cx?: number; cz?: number; front?: number; round?: boolean; solid?: boolean }
@@ -37,6 +37,9 @@ export const KITS: Record<string, Record<string, KitDef>> = {
     foodtruck: { a: 1.2, b: 2.8, h: 3.5 },
     stand: { a: 19, b: 5.5, h: 16.7 },
     planter: { a: 2.0, b: 0.6, h: 1.5 },
+    // Side roads closed off: the barrier row (solid), and the arrow board trailers behind it.
+    closure: { a: 4.8, b: 0.32, h: 1.2 },
+    arrow_r: { a: 1.0, b: 1.5, cz: -0.6, h: 3.5 }, arrow_l: { a: 1.0, b: 1.5, cz: -0.6, h: 3.5 },
     lamp2: { a: 0.3, b: 0.3, h: 9.2, round: true },
     sedan_r: { a: 0.93, b: 2.25, h: 1.7 }, sedan_b: { a: 0.93, b: 2.25, h: 1.7 }, sedan_w: { a: 0.93, b: 2.25, h: 1.7 },
     taxi: { a: 0.93, b: 2.25, h: 1.9 }, police: { a: 0.93, b: 2.25, h: 1.9 }, van: { a: 1.0, b: 2.7, h: 2.4 }, bus: { a: 1.3, b: 6, h: 3.3 },
@@ -63,19 +66,22 @@ export interface Placed { o: string; x: number; y: number; z: number; fx: number
 /** A side street: a straight run between two points (traffic drives it). */
 export interface Street { ax: number; az: number; bx: number; bz: number }
 
-export interface Composed { placed: Placed[]; streets: Street[]; kit: Record<string, KitDef> }
+/** streets: the grid traffic drives; spurs: side roads off the race, closed where they meet it. */
+export interface Composed { placed: Placed[]; streets: Street[]; spurs: Street[]; kit: Record<string, KitDef> }
 
 /** Occupied ground, on a 2 m grid. */
 class Occupancy {
   private cells = new Set<number>();
   private key(i: number, j: number) { return Math.imul(i, 73856093) ^ Math.imul(j, 19349663); }
-  /** Is a turned box (half sizes a, b, plus margin m) free? Mark it if so (and mark is true). */
-  box(x: number, z: number, fx: number, fz: number, a: number, b: number, m: number, mark: boolean): boolean {
+  /** Is a turned box (half sizes a, b, plus margin m) free? Mark it if so (and mark is true; force marks it even if not). */
+  box(x: number, z: number, fx: number, fz: number, a: number, b: number, m: number, mark: boolean, force = false): boolean {
     const A = a + m, B = b + m;
     const R = Math.sqrt(A * A + B * B) + 2;
     const i0 = Math.floor((x - R) / 2), i1 = Math.floor((x + R) / 2);
     const j0 = Math.floor((z - R) / 2), j1 = Math.floor((z + R) / 2);
-    const hit: number[] = [];
+    // The cell under its centre always counts (a small thing can miss every cell centre).
+    const hit: number[] = [this.key(Math.floor(x / 2), Math.floor(z / 2))];
+    if (this.cells.has(hit[0]) && !force) return false;
     for (let i = i0; i <= i1; i++) {
       for (let j = j0; j <= j1; j++) {
         const px = i * 2 + 1 - x, pz = j * 2 + 1 - z;
@@ -83,7 +89,7 @@ class Occupancy {
         const ax = lx < 0 ? -lx : lx, az = lz < 0 ? -lz : lz;
         if (ax > A || az > B) continue;
         const k = this.key(i, j);
-        if (this.cells.has(k)) return false;
+        if (this.cells.has(k) && !force) return false;
         hit.push(k);
       }
     }
@@ -104,6 +110,7 @@ export function compose(road: Road): Composed | null {
   const mixes = MIXES[dress.kit] ?? {};
   const placed: Placed[] = [];
   const streets: Street[] = [];
+  const spurs: Street[] = [];
   const occ = new Occupancy();
   const sea = road.land.sea;
   const main = road.strands[0].pts;
@@ -158,6 +165,51 @@ export function compose(road: Road): Composed | null {
     const [x, z] = at(p, side * off, shift ?? 0);
     // Faces the road.
     put(o, x, z, p.dz * side, -p.dx * side, hash(i, side, 90), 1, 0);
+  }
+
+  // ── Side roads off the race, closed where they meet it ──
+  // Every couple of hundred metres where buildings line a straight stretch,
+  // a street leads off into the city; at its mouth a row of barriers with
+  // blinking lamps and an arrow board pointing the way the race goes.
+  const SPUR = 70;
+  for (const side of [-1, 1]) {
+    let s = 110 + hash(side + 5, 7, 170) * 90;
+    let n = 0;
+    while (s < total - 110) {
+      n++;
+      const strip = stripAt(s, side);
+      let i = 0;
+      while (i < main.length - 1 && main[i].s < s) i++;
+      const p = main[i];
+      const a = main[i < 8 ? 0 : i - 8], b = main[i + 8 < main.length ? i + 8 : main.length - 1];
+      let ok = (strip === "boulevard" || strip === "downtown" || strip === "shops") && a.dx * b.dx + a.dz * b.dz > 0.985;
+      for (const q of [a, p, b]) if (q.flags & (TUN | GAP | WL | WR)) ok = false;
+      // Out, square to the road (its right is (-dz, dx)).
+      const ox = -p.dz * side, oz = p.dx * side;
+      for (let k = 0; ok && k <= 6; k++) {
+        const lat = p.hw + 10 + (SPUR - 10) * k / 6;
+        const [x, z] = at(p, side * lat, 0);
+        if (roadDist(road, x, z, 9) < 8 || wetAt(x, z) || roadTerrain(road, x, z).ravine) ok = false;
+      }
+      const [mx, mz] = at(p, side * (p.hw + SPUR / 2), 0);
+      if (ok) ok = occ.box(mx, mz, ox, oz, 6.5, SPUR / 2, 0, false);
+      if (ok) {
+        const [cx, cz] = at(p, side * (p.hw + 2.4), 0);
+        const [bx, bz] = at(p, side * (p.hw + 5.6), 0);
+        // Faces the road; the arrow points the way the race runs (its own +x is -side along the road).
+        if (put("closure", cx, cz, -ox, -oz, hash(n, side, 171), 1.2, 0)) {
+          // Standing on the street, not sunk like a building.
+          placed[placed.length - 1].y = roadTerrain(road, cx, cz).h + 0.05;
+          if (put(side > 0 ? "arrow_l" : "arrow_r", bx, bz, -ox, -oz, hash(n, side, 172), 1.2, 0)) placed[placed.length - 1].y = roadTerrain(road, bx, bz).h + 0.05;
+          const [ax, az] = at(p, side * (p.hw + 1.2), 0), [ex, ez] = at(p, side * (p.hw + SPUR), 0);
+          spurs.push({ ax, az, bx: ex, bz: ez });
+          occ.box(mx, mz, ox, oz, 6.5, SPUR / 2, 0, true, true);
+          s += 230 + hash(n, side, 173) * 180;
+          continue;
+        }
+      }
+      s += 30;
+    }
   }
 
   // ── Frontage: buildings shoulder to shoulder along each side, facing the road ──
@@ -292,7 +344,7 @@ export function compose(road: Road): Composed | null {
       }
     }
   }
-  const res = { placed, streets, kit };
+  const res = { placed, streets, spurs, kit };
   cache.set(road, res);
   return res;
 }

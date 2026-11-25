@@ -23,6 +23,9 @@ palette({
     "bus": "#f4f4f0", "bus_s": "#ff4fa3", "police": "#f2f4f8", "tyre": "#151517", "rim": "#b9bec6", "tail": "#9a1020",
     # Special looks (the game knows these names).
     "glass": "#5b7d99", "glass_d": "#33485e", "glass_car": "#1c2633", "lamp": "#fff4d6",
+    # Road works: plastic barriers, a barricade and the arrow board (amber lamps the game sequences).
+    "plastic_r": "#e0362f", "plastic_w": "#f2f0ea", "panel": "#15161a", "solar": "#1f3b6b", "reflect": "#ff7a1a",
+    "blink": "#ffb43a", "arrow": "#ffa928", "arrowl": "#ffa928",
     "neon_p": "#ff3da6", "neon_c": "#2ee6ff", "neon_y": "#ffd23d", "neon_g": "#5dff8a", "screen": "#202838",
 })
 
@@ -469,6 +472,84 @@ def planter(name):
     obj(name)
 
 
+def closure(name):
+    """A side road closed off: a row of red and white water barriers with
+    blinking amber lamps, a striped barricade behind and a no-entry sign."""
+    for k in range(8):
+        x = -4.2 + k * 1.2
+        # Base (each barrier: a wide foot, a narrower body above).
+        c = "plastic_r" if k % 2 == 0 else "plastic_w"
+        prism(c, [(x - 0.6, -0.28), (x + 0.6, -0.28), (x + 0.6, 0.28), (x - 0.6, 0.28)], 0.0, 0.28, 0.04)
+        prism(c, [(x - 0.58, -0.2), (x + 0.58, -0.2), (x + 0.58, 0.2), (x - 0.58, 0.2)], 0.28, 0.78, 0.03)
+        prism(c, [(x - 0.56, -0.12), (x + 0.56, -0.12), (x + 0.56, 0.12), (x - 0.56, 0.12)], 0.78, 0.96, 0.03)
+        if not far():
+            for r in (-1, 1):
+                box(c, (x + r * 0.3, 0.55, 0), (0.1, 0.46, 0.44), 0.02)
+            cyl("plastic_w" if c == "plastic_r" else "plastic_r", (x, 0.98, 0), 0.07, 0.04, 8)
+            cyl("dark", (x + 0.6, 0.5, 0), 0.05, 0.85, 6)
+        if k % 2 == 0:
+            box("dark", (x, 1.03, 0), (0.07, 0.12, 0.07))
+            cyl("dark", (x, 1.12, 0), 0.11, 0.05, 10)
+            cyl("blink", (x, 1.21, 0), 0.095, 0.14, 10, r1=0.08)
+    # The barricade behind: two A-legs and three striped rails.
+    for lx in (-1.6, 1.6):
+        for dz in (-0.35, 0.35):
+            tube("steel", [(lx, 0.02, -1.0 + dz), (lx, 1.55, -1.0)], 0.035, 5)
+    for k, y in enumerate((0.75, 1.1, 1.45)):
+        box("plastic_w", (0, y, -0.95), (3.8, 0.22, 0.04))
+        if not far():
+            for j in range(6):
+                quad("reflect", (-1.75 + j * 0.62, y - 0.11, -0.925), (-1.5 + j * 0.62, y - 0.11, -0.925),
+                     (-1.35 + j * 0.62, y + 0.11, -0.925), (-1.6 + j * 0.62, y + 0.11, -0.925))
+    for lx in (-1.75, 1.75):
+        cyl("dark", (lx, 1.62, -0.95), 0.1, 0.05, 10)
+        cyl("blink", (lx, 1.7, -0.95), 0.085, 0.12, 10, r1=0.07)
+    # A no-entry sign on a post.
+    cyl("steel", (0, 1.4, -1.15), 0.04, 2.8, 6)
+    cyl("plastic_w", (0, 2.45, -1.1), 0.42, 0.03, 20, axis="z")
+    cyl("plastic_r", (0, 2.45, -1.08), 0.38, 0.03, 20, axis="z")
+    box("plastic_w", (0, 2.45, -1.06), (0.5, 0.11, 0.02))
+    obj(name)
+
+
+def arrowboard(name, way):
+    """A road-works trailer with a sequential arrow board: amber lamps in an
+    arrow (the shaft lights lamp by lamp, then the head), hooded, on a mast,
+    a solar panel on top. way 1: points right seen from the front, -1 left."""
+    lamp = "arrow" if way > 0 else "arrowl"
+    # Chassis, axle, wheels and mudguards; the tow bar out the back.
+    box("dark", (0, 0.62, -0.2), (1.3, 0.14, 2.2), 0.02)
+    box("reflect", (0, 0.62, 0.91), (1.3, 0.08, 0.02))
+    for s in (-1, 1):
+        wheel(s * 0.82, 0.32, -0.2, 0.32, 0.2)
+        box("steel", (s * 0.82, 0.72, -0.2), (0.26, 0.04, 0.8), 0.02)
+        tube("steel", [(s * 0.6, 0.62, -1.25), (0, 0.6, -2.1)], 0.04, 5)
+        box("dark", (s * 0.75, 0.3, 0.75), (0.08, 0.6, 0.08))
+        box("dark", (s * 0.75, 0.02, 0.75), (0.22, 0.04, 0.22))
+    cyl("dark", (0, 0.35, -1.95), 0.04, 0.6, 6)
+    cyl("tyre", (0, 0.06, -1.95), 0.06, 0.05, 8, axis="x")
+    box("steel", (0, 0.95, -0.7), (0.9, 0.5, 0.6), 0.03)
+    # Mast and the board.
+    box("steel", (0, 1.6, 0.0), (0.14, 1.9, 0.14))
+    box("dark", (0, 2.55, -0.08), (0.5, 0.25, 0.12))
+    box("panel", (0, 2.55, 0.0), (2.5, 1.3, 0.12), 0.02)
+    box("plastic_w", (0, 3.215, 0.0), (2.55, 0.04, 0.14))
+    box("plastic_w", (0, 1.885, 0.0), (2.55, 0.04, 0.14))
+    # The lamps: a shaft and a head; the game lights them in sequence along x.
+    pts = [(-1.0, 0.0), (-0.72, 0.0), (-0.44, 0.0), (-0.16, 0.0), (0.12, 0.0), (0.4, 0.0),
+           (0.98, 0.0), (0.74, 0.2), (0.74, -0.2), (0.5, 0.38), (0.5, -0.38)]
+    for u, v in pts:
+        x, y = u * way, 2.55 + v
+        cyl("dark", (x, y, 0.07), 0.12, 0.03, 12, axis="z")
+        cyl(lamp, (x, y, 0.085), 0.105, 0.02, 12, axis="z")
+        if not far():
+            cyl("panel", (x, y + 0.03, 0.13), 0.125, 0.1, 8, axis="z", cap=False)
+    # Solar panel, tilted up to the sky.
+    box("steel", (0, 3.35, -0.25), (0.08, 0.3, 0.08))
+    box("solar", (0, 3.5, -0.25), (1.4, 0.04, 0.9), 0.01)
+    obj(name)
+
+
 # ── Build ────────────────────────────────────────────────────────────────────
 def build():
     deco_hotel("deco_a", 16, 12, 4, "pink", "canvas_t", "neon_p")
@@ -504,6 +585,9 @@ def build():
     pier("pier", 60)
     heli("heli")
     planter("planter")
+    closure("closure")
+    arrowboard("arrow_r", 1)
+    arrowboard("arrow_l", -1)
 
 
 build_both(build)

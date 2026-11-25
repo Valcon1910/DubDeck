@@ -25,7 +25,7 @@ export interface Grade {
 }
 
 const GRADES: Record<string, Grade> = {
-  miami: { exposure: 1.0, saturation: 1.12, contrast: 1.07, gain: [1.05, 1.0, 0.95], lift: [0.02, 0.0, 0.035], bloom: 0.5, threshold: 1.0, rays: 1.0, haze: 0.55, vignette: 0.3 },
+  miami: { exposure: 1.0, saturation: 1.12, contrast: 1.07, gain: [1.05, 1.0, 0.95], lift: [0.02, 0.0, 0.035], bloom: 0.5, threshold: 1.0, rays: 0.85, haze: 0.5, vignette: 0.3 },
   storm: { exposure: 1.12, saturation: 0.92, contrast: 1.1, gain: [0.93, 1.0, 1.1], lift: [0.0, 0.01, 0.03], bloom: 0.9, threshold: 0.65, rays: 0.0, haze: 0.1, vignette: 0.38 },
   alpine: { exposure: 1.0, saturation: 1.06, contrast: 1.05, gain: [1.0, 1.0, 1.02], lift: [0.0, 0.005, 0.02], bloom: 0.4, threshold: 1.05, rays: 0.6, haze: 0.35, vignette: 0.25 },
   space: { exposure: 1.05, saturation: 1.1, contrast: 1.12, gain: [1.0, 0.97, 1.06], lift: [0.01, 0.0, 0.03], bloom: 1.0, threshold: 0.75, rays: 0.35, haze: 0.15, vignette: 0.4 },
