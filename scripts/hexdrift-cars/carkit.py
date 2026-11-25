@@ -9,7 +9,7 @@ COLORS = {
     "paint": (0.05, 0.12, 0.45, 1), "accent": (0.8, 0.05, 0.1, 1), "trim": (0.02, 0.02, 0.025, 1),
     "gloss": (0.01, 0.01, 0.012, 1), "glass": (0.01, 0.02, 0.04, 1), "lamp": (1, 1, 1, 1),
     "tail": (0.5, 0.02, 0.05, 1), "chrome": (0.8, 0.82, 0.86, 1), "metal": (0.5, 0.52, 0.55, 1),
-    "tyre": (0.02, 0.02, 0.022, 1), "rim": (0.3, 0.3, 0.32, 1), "caliper": (0.7, 0.05, 0.08, 1),
+    "white": (0.9, 0.9, 0.92, 1), "tyre": (0.02, 0.02, 0.022, 1), "rim": (0.3, 0.3, 0.32, 1), "caliper": (0.7, 0.05, 0.08, 1),
 }
 _mats = {}
 _parts = []
@@ -87,6 +87,10 @@ def loft(name, stations, cap_front, cap_rear, creases=None):
     bm.faces.new(rings[0])
     bm.faces.new(list(reversed(rings[-1])))
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    # Thin shapes can fool the guess: make sure the surface faces outwards
+    # (booleans cut the wrong way otherwise).
+    if bm.calc_volume(signed=True) < 0:
+        bmesh.ops.reverse_faces(bm, faces=bm.faces)
     cl = bm.edges.layers.float.new("crease_edge")
     half = len(stations[0][1])
     for idx, k in creases.items():

@@ -16,6 +16,10 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { DEFAULT_LOOK, itemOf, type BodyDef, type Item, type Look } from "../garage.ts";
 import coupeUrl from "../cars/coupe.glb?url";
+import furiaUrl from "../cars/furia.glb?url";
+import zenithUrl from "../cars/zenith.glb?url";
+import rigUrl from "../cars/rig.glb?url";
+import formulaUrl from "../cars/formula.glb?url";
 import wheelsUrl from "../cars/wheels.glb?url";
 
 export interface CarModel {
@@ -603,12 +607,16 @@ function studioEnv(e?: CarEnv): THREE.Texture {
 }
 
 // ── Bodies made in Blender ──────────────────────────────────────────────────
-const BODY_URLS: Partial<Record<string, string>> = { coupe: coupeUrl };
+const BODY_URLS: Partial<Record<string, string>> = { coupe: coupeUrl, furia: furiaUrl, zenith: zenithUrl, rig: rigUrl, formula: formulaUrl };
 const PARTS = new Set<string>(["paint", "accent", "trim", "gloss", "glass", "lamp", "tail", "metal", "chrome", "white"]);
-const bodies = new Map<string, Map<Part, THREE.BufferGeometry>>();
-const loading = new Map<string, Promise<Map<Part, THREE.BufferGeometry> | null>>();
+/** A Blender body: one geometry per part, plus the stock rear wing for cars
+ * whose wing the garage can swap (shown only with the "stock" choice). */
+interface Body { main: Map<Part, THREE.BufferGeometry>; wing: Map<Part, THREE.BufferGeometry> }
+const bodies = new Map<string, Body>();
+const loading = new Map<string, Promise<Body | null>>();
 
-/** Reads a packed glb into plain float geometries (world space), one per mesh. */
+/** Reads a packed glb into plain float geometries (world space), one per
+ * mesh, with the name of the top-level node each belongs to. */
 function readGlb(url: string): Promise<{ name: string; part: string; geo: THREE.BufferGeometry }[]> {
   return new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(url).then((gltf) => {
     const out: { name: string; part: string; geo: THREE.BufferGeometry }[] = [];
@@ -628,14 +636,16 @@ function readGlb(url: string): Promise<{ name: string; part: string; geo: THREE.
       g.applyMatrix4(m.matrixWorld);
       g.normalizeNormals();
       m.geometry.dispose();
-      out.push({ name: m.name, part: (m.material as THREE.Material).name, geo: g });
+      let top: THREE.Object3D = m;
+      while (top.parent && top.parent !== gltf.scene) top = top.parent;
+      out.push({ name: top.name, part: (m.material as THREE.Material).name, geo: g });
     });
     return out;
   });
 }
 
 /** Loads (once) the Blender body for this car; null if it has none or it failed. */
-export function loadBody(id: string): Promise<Map<Part, THREE.BufferGeometry> | null> {
+export function loadBody(id: string): Promise<Body | null> {
   const have = bodies.get(id);
   if (have) return Promise.resolve(have);
   const url = BODY_URLS[id];
@@ -643,14 +653,18 @@ export function loadBody(id: string): Promise<Map<Part, THREE.BufferGeometry> | 
   let p = loading.get(id);
   if (!p) {
     p = readGlb(url).then((meshes) => {
-      const lists = new Map<Part, THREE.BufferGeometry[]>();
-      for (const { part, geo } of meshes) {
-        if (!PARTS.has(part)) continue;
-        const l = lists.get(part as Part);
-        if (l) l.push(geo); else lists.set(part as Part, [geo]);
-      }
-      const out = new Map<Part, THREE.BufferGeometry>();
-      for (const [part, l] of lists) out.set(part, l.length === 1 ? l[0] : mergeGeometries(l, false)!);
+      const merged = (node: (name: string) => boolean) => {
+        const lists = new Map<Part, THREE.BufferGeometry[]>();
+        for (const { name, part, geo } of meshes) {
+          if (!PARTS.has(part) || !node(name)) continue;
+          const l = lists.get(part as Part);
+          if (l) l.push(geo); else lists.set(part as Part, [geo]);
+        }
+        const out = new Map<Part, THREE.BufferGeometry>();
+        for (const [part, l] of lists) out.set(part, l.length === 1 ? l[0] : mergeGeometries(l, false)!);
+        return out;
+      };
+      const out = { main: merged((n) => n !== "wing"), wing: merged((n) => n === "wing") };
       bodies.set(id, out);
       return out;
     }).catch(() => null);
@@ -762,17 +776,18 @@ export function buildCar(opts: CarOptions = {}): CarModel {
   root.add(bodyGroup);
   let dead = false;
   const lofted: THREE.BufferGeometry[] = [];
-  const useBody = (parts: Map<Part, THREE.BufferGeometry>) => {
+  const useBody = (body: Body) => {
     bodyGroup.clear();
     for (const g of lofted.splice(0)) g.dispose();
     // Shared by every car with this body: never disposed here.
-    for (const [p, g] of parts) bodyGroup.add(new THREE.Mesh(g, M[p]));
+    for (const [p, g] of body.main) bodyGroup.add(new THREE.Mesh(g, M[p]));
+    if (look.wing === "stock") for (const [p, g] of body.wing) bodyGroup.add(new THREE.Mesh(g, M[p]));
   };
   const ready = bodies.get(def.id);
   if (ready) useBody(ready);
   else {
     for (const [p, g] of kb.build()) { lofted.push(g); bodyGroup.add(new THREE.Mesh(g, M[p])); }
-    void loadBody(def.id).then((parts) => { if (parts && !dead) useBody(parts); });
+    void loadBody(def.id).then((body) => { if (body && !dead) useBody(body); });
   }
   const tailM = M.tail as THREE.MeshBasicMaterial;
 
