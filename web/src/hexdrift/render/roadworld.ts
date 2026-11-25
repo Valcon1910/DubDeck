@@ -503,7 +503,8 @@ function roadSurface(group: THREE.Group, road: Road, L: Look, geos: THREE.Buffer
       const cols = [-1, 0, 1];
       const P = (p: Sample, c: number, k: number) => {
         const lat = c * p.hw;
-        const q = side(p, lat, 0.02);
+        // Shortcuts sit a hair lower, so where one runs into the main road the main road shows (no fighting).
+        const q = side(p, lat, si === 0 ? 0.02 : -0.04);
         pos.push(...q);
         ra.push(lat, p.s, p.hw, curv[k]);
         // Gate distance from this vertex.

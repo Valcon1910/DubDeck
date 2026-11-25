@@ -10,8 +10,9 @@ import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.j
 import { compose, type Composed, type Placed } from "../sim/kit.ts";
 import { roadDist, roadTerrain, type Road } from "../sim/road.ts";
 import miamiUrl from "../kit/miami.glb?url";
+import alpineUrl from "../kit/alpine.glb?url";
 
-const URLS: Record<string, string> = { miami: miamiUrl };
+const URLS: Record<string, string> = { miami: miamiUrl, alpine: alpineUrl };
 
 /** Material kinds (from the Blender material name). */
 const PLAIN = 0, GLASS = 1, NEON = 2, LAMP = 3, SCREEN = 4, CAR_GLASS = 5, FACADE = 6, BLINK = 7, ARROW = 8, ARROW_L = 9;

@@ -80,7 +80,7 @@ export interface RoadDef {
 }
 
 /** Roadside strips: what lines a stretch of road (kit.ts knows what each holds). */
-export type Strip = "beach" | "boulevard" | "downtown" | "shops" | "park" | "none";
+export type Strip = "beach" | "boulevard" | "downtown" | "shops" | "park" | "village" | "forest" | "cliff" | "none";
 
 export interface Dress {
   /** The scenery kit. */

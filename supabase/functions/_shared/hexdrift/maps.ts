@@ -70,6 +70,19 @@ export const ALL_MAPS: MapDef[] = [
     medals: { vortex: 3899, gold: 4261, silver: 4904, bronze: 6030 }, since: 6, wip: true,
   },
   {
+    id: "alpine-pass", name: "Alpine Pass", biome: "alpine", difficulty: "Medium",
+    blurb: "Out of the village and up the pass. Switchbacks through the pines, sheet ice between the walls, the avalanche gallery, and a frozen lake for those who dare. Brake before the frozen corners, not on them.",
+    road: {
+      land: { kind: "alpine", seed: 100, base: 20, amp: 110, scale: 520, fall: 30, shoulder: 0.2, snow: -1000 },
+      start: [0, 0, 30, 0], bank: 4,
+      route: "H5.5 S50 B S130 C R60/70 U5 S110 L90/45 U4 S70 R90/45 U5 S90 C WB Mice S120 R60/60 S70 Masphalt W0 @a S40 L90/70 S100 T+ S170 T- S60 R90/60 @b C D6 S150 L120/40 S80 D5 R90/60 S110 C B S160 L60/90 S130 F",
+      alts: [{ from: "a", to: "b", via: [[0.5, -6]], hw: 6, surf: "ice", flush: true }],
+      dress: { kit: "alpine", zones: [[0, 260, "village", "village"], [260, 700, "forest", "forest"], [700, 1200, "cliff", "forest"], [1200, 1700, "forest", "cliff"], [1700, 2100, "forest", "forest"], [2100, 2800, "village", "village"]],
+        set: [["stand", 25, -1, 3], ["stand", 25, 1, 3], ["icesign", 560, 1, 1.5], ["icesign", 560, -1, 1.5], ["plough", 640, 1, 3]] },
+    },
+    medals: { vortex: 3181, gold: 3476, silver: 4000, bronze: 4919 }, since: 6, wip: true,
+  },
+  {
     id: "miami-storm", name: "Miami Storm", biome: "storm", difficulty: "Beginner",
     blurb: "Midnight downpour downtown. Wide neon straights on soaked asphalt, a boost through the plaza and a back-alley cut for the brave. Brake early: the puddles bite.",
     road: {

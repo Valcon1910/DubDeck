@@ -47,10 +47,43 @@ export const KITS: Record<string, Record<string, KitDef>> = {
     yacht: { a: 2.6, b: 12, h: 8, solid: false }, sailboat: { a: 1.6, b: 5, h: 14, solid: false },
     pier: { a: 3.9, b: 31, h: 7, cz: 30, solid: false }, heli: { a: 5, b: 6, h: 2, solid: false },
   },
+  alpine: {
+    chalet_a: { a: 6.4, b: 5.6, cz: 0.25, h: 10.4, front: 3 },
+    chalet_b: { a: 7.4, b: 6.1, cz: 0.25, h: 14.1, front: 3 },
+    chalet_c: { a: 5.9, b: 5.6, cz: 0.25, h: 10.1, front: 3 },
+    hotel: { a: 15, b: 9.5, cz: 2, h: 25, front: 4 },
+    chapel: { a: 4.7, b: 8.9, h: 21.4, front: 3 },
+    shops: { a: 12.8, b: 6, cz: 0.5, h: 9.7, front: 2 },
+    barn: { a: 6.8, b: 5.2, h: 9.1 },
+    hut: { a: 2.6, b: 2.1, h: 4.5 },
+    stand: { a: 17.5, b: 5, h: 8.3 },
+    // Trees: only the trunk is solid; the branches overlap their neighbours.
+    pine_tall: { a: 0.5, b: 0.5, h: 16, round: true },
+    pine_mid: { a: 0.4, b: 0.4, h: 10.6, round: true },
+    pine_small: { a: 0.3, b: 0.3, h: 6.4, round: true },
+    pine_trio: { a: 2.6, b: 2.2, h: 13.8, round: true },
+    rock_a: { a: 2.6, b: 1.9, h: 3.1, round: true },
+    rock_b: { a: 3.8, b: 3.8, h: 4.6, round: true },
+    fence: { a: 4.1, b: 0.15, h: 1.3 },
+    // Chevron boards round the sharp bends (lamps lit in turn the way the road goes).
+    chevron_r: { a: 1.2, b: 0.15, h: 2.8 }, chevron_l: { a: 1.2, b: 0.15, h: 2.8 },
+    icesign: { a: 0.15, b: 0.15, h: 3, round: true },
+    lamp: { a: 0.2, b: 0.2, h: 5.1, round: true },
+    lift: { a: 0.8, b: 0.8, h: 14.4 },
+    plough: { a: 1.6, b: 4.2, cz: 0.4, h: 3.1 },
+    sedan_r: { a: 0.93, b: 2.25, h: 2.1 }, sedan_b: { a: 0.93, b: 2.25, h: 1.8 }, sedan_w: { a: 0.93, b: 2.25, h: 2.1 },
+    taxi: { a: 1.0, b: 2.5, h: 2.7 }, police: { a: 0.93, b: 2.25, h: 2.0 }, van: { a: 1.0, b: 2.7, h: 2.4 }, bus: { a: 1.3, b: 5.5, h: 3.3 },
+  },
 };
 
 /** What lines each kind of strip: the frontage along the road, the blocks behind, and fillers between. */
-interface Mix { front: string[]; back: string[]; filler: string[]; setback: number; tall?: string[] }
+interface Mix {
+  front: string[]; back: string[]; filler: string[]; setback: number; tall?: string[];
+  /** No street grid (forest, rocks). */
+  wild?: boolean;
+  /** Fillers scattered inside each block (default 3). */
+  scatter?: number;
+}
 const MIXES: Record<string, Partial<Record<Strip, Mix>>> = {
   miami: {
     boulevard: { front: ["deco_a", "deco_b", "deco_c", "deco_d", "deco_a", "deco_c"], back: ["condo_a", "condo_b", "shops_a", "deco_b", "condo_a"], filler: ["palm_tall", "palm_mid", "palm_pair"], setback: 5 },
@@ -58,6 +91,12 @@ const MIXES: Record<string, Partial<Record<Strip, Mix>>> = {
     shops: { front: ["shops_a", "shops_b", "deco_b", "foodtruck"], back: ["deco_d", "condo_a", "shops_a"], filler: ["palm_mid", "planter", "lamp2", "busstop", "palm_mid"], setback: 3 },
     beach: { front: [], back: ["guard_a", "guard_b", "beachbar"], filler: ["palm_tall", "palm_pair", "palm_mid"], setback: 3 },
     park: { front: [], back: ["palm_pair", "beachbar", "palm_tall", "foodtruck", "palm_pair", "planter", "busstop"], filler: ["palm_mid", "planter", "lamp2"], setback: 4 },
+  },
+  alpine: {
+    village: { front: ["chalet_a", "chalet_b", "shops", "chalet_c", "hotel", "chalet_a", "chapel", "chalet_c"], back: ["chalet_a", "chalet_c", "barn", "chalet_b", "hut", "chalet_a", "hotel"], filler: ["pine_mid", "lamp", "fence", "pine_small", "pine_trio", "rock_a"], setback: 5, tall: ["hotel"], scatter: 4 },
+    forest: { front: [], back: ["pine_trio", "pine_tall", "pine_mid", "pine_trio", "rock_a", "pine_tall", "pine_mid", "pine_trio", "pine_tall", "hut"], filler: ["pine_mid", "pine_small", "pine_tall", "pine_trio", "rock_a", "pine_mid"], setback: 4, wild: true, scatter: 14 },
+    cliff: { front: [], back: ["rock_b", "pine_trio", "rock_a", "rock_b", "pine_tall", "pine_mid"], filler: ["rock_a", "pine_small", "pine_mid", "rock_b", "pine_trio"], setback: 3, wild: true, scatter: 10 },
+    park: { front: [], back: ["pine_trio", "pine_tall", "rock_a", "pine_mid", "barn", "pine_trio"], filler: ["pine_mid", "pine_small", "rock_a", "pine_trio"], setback: 4, wild: true, scatter: 12 },
   },
 };
 
@@ -165,6 +204,29 @@ export function compose(road: Road): Composed | null {
     const [x, z] = at(p, side * off, shift ?? 0);
     // Faces the road.
     put(o, x, z, p.dz * side, -p.dx * side, hash(i, side, 90), 1, 0);
+  }
+
+  // ── Chevron boards round the sharp bends, on the outside, turned to the cars coming ──
+  if (kit.chevron_r) {
+    let last = -1e9, n = 0;
+    for (let i = 8; i < main.length - 8; i++) {
+      const p = main[i];
+      if (p.s - last < 14) continue;
+      const a = main[i - 8], b = main[i + 8];
+      const turn = a.dx * b.dz - a.dz * b.dx;
+      if ((turn < 0.25 && turn > -0.25) || p.flags & (TUN | GAP)) continue;
+      const side = turn > 0 ? -1 : 1; // the outside
+      // Half towards the road, half back along it.
+      let fx = p.dz * side - p.dx, fz = -p.dx * side - p.dz;
+      const l = Math.sqrt(fx * fx + fz * fz);
+      fx /= l; fz /= l;
+      const [x, z] = at(p, side * (p.hw + 2.6), 0);
+      n++;
+      if (put(side < 0 ? "chevron_r" : "chevron_l", x, z, fx, fz, hash(n, side, 180), 1.2, 0)) {
+        placed[placed.length - 1].y = roadTerrain(road, x, z).h;
+        last = p.s;
+      }
+    }
   }
 
   // ── Side roads off the race, closed where they meet it ──
@@ -276,7 +338,7 @@ export function compose(road: Road): Composed | null {
       const mix = sand ? mixes.beach : mixes[strip] ?? mixes.park;
       if (!mix) continue;
       // Streets along two sides of every block (where they don't cross the race).
-      if (!sand && strip !== "beach" && strip !== "park") {
+      if (!sand && strip !== "beach" && strip !== "park" && !mix.wild) {
         for (const [a, b] of [[G(U, V), G(U + BLOCK, V)], [G(U, V), G(U, V + BLOCK)]]) {
           let ok = true;
           for (let k = 0; k <= 4 && ok; k++) {
@@ -322,10 +384,13 @@ export function compose(road: Road): Composed | null {
           }
         }
       }
-      // The courtyard in the middle: palms.
-      for (let k = 0; k < 3; k++) {
-        const f = pick(mix.filler, hash(gu0 + bu, gv0 + bv, 160 + k));
-        const [px, pz] = G(U + BLOCK / 2 + (hash(gu0 + bu, gv0 + bv, 161 + k) - 0.5) * 16, V + BLOCK / 2 + (hash(gu0 + bu, gv0 + bv, 162 + k) - 0.5) * 16);
+      // The courtyard in the middle: palms (or, in the wild, the whole block full of trees and rocks).
+      const nIn = mix.scatter ?? 3, spread = mix.wild ? BLOCK - 8 : 16;
+      for (let k = 0; k < nIn; k++) {
+        // (The first three keep their old seeds so existing maps don't move.)
+        const sd = k < 3 ? 160 + k : 400 + k * 3;
+        const f = pick(mix.filler, hash(gu0 + bu, gv0 + bv, sd));
+        const [px, pz] = G(U + BLOCK / 2 + (hash(gu0 + bu, gv0 + bv, sd + 1) - 0.5) * spread, V + BLOCK / 2 + (hash(gu0 + bu, gv0 + bv, sd + 2) - 0.5) * spread);
         if (kit[f]) put(f, px, pz, ux, uz, hash(gu0 + bu, gv0 + bv, 163 + k), 2, 0.3);
       }
     }
