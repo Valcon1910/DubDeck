@@ -5,6 +5,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { dispatch } from "../github";
 import { isGaming } from "../../hexdrift/gaming";
+import { cropStyle, readCrop, stripCrop, withCrop } from "../crop";
 import type { RealtimePostgresChangesPayload, SupabaseClient } from "@supabase/supabase-js";
 
 export const CHAT_ON = __VORTEX_CHAT__;
@@ -23,6 +24,7 @@ export interface Message {
   id: string; conversation_id: string; sender: string; body: string; attachments: Attachment[];
   reply_to: string | null; created_at: string; edited_at: string | null; deleted: boolean;
 }
+export interface Reaction { message_id: string; conversation_id: string; email: string; emoji: string; created_at: string }
 export interface Participant { conversation_id: string; email: string; role: "member" | "admin"; joined_at: string; last_read_at: string }
 
 type Status = "off" | "loading" | "ready" | "error";
@@ -165,6 +167,7 @@ export function ChatProvider({ email, owner, name, avatar, children }: Props) {
       const change = { ...p, table } as Change;
       listeners.current.forEach((fn) => fn(change));
       if (table === "profiles") { void loadProfiles(); return; }
+      if (table === "message_reactions") return;
       reload();
       if (table === "messages" && p.eventType === "INSERT") alertFor(p.new as unknown as Message);
     };
@@ -187,12 +190,12 @@ export function ChatProvider({ email, owner, name, avatar, children }: Props) {
       const who = displayName(profilesRef.current.get(m.sender), m.sender);
       const n = new Notification(`${who} on Vortex`, {
         body: m.body || (m.attachments.length ? "Sent a file" : "New message"),
-        icon: profilesRef.current.get(m.sender)?.avatar || "./favicon.svg",
+        icon: stripCrop(profilesRef.current.get(m.sender)?.avatar ?? "") || "./favicon.svg",
         tag: m.conversation_id,
       });
       n.onclick = () => { window.focus(); location.hash = `#/chat/${m.conversation_id}`; n.close(); };
     };
-    for (const t of ["messages", "participants", "conversations", "profiles"]) {
+    for (const t of ["messages", "participants", "conversations", "profiles", "message_reactions"]) {
       ch.on("postgres_changes", { event: "*", schema: "public", table: t }, on(t));
     }
     // Catch up on anything sent while the connection was being made.
@@ -216,14 +219,19 @@ export function ChatProvider({ email, owner, name, avatar, children }: Props) {
       let sent = "";
       try { sent = localStorage.getItem(key) ?? ""; } catch { /* ignore */ }
       const fingerprint = avatar ? `${avatar.length}:${avatar.slice(-40)}` : "";
-      if (fingerprint !== sent || (!avatar && mine.avatar)) {
+      // Only when this device changed it: a new device with no picture yet must not wipe the shared one.
+      if (fingerprint !== sent) {
         if (!avatar) patch.avatar = "";
         else if (/^https:\/\//.test(avatar)) patch.avatar = avatar;
         else if (avatar.startsWith("data:image/")) {
-          const blob = dataUrlToBlob(avatar);
+          const blob = dataUrlToBlob(stripCrop(avatar));
           const path = `${me}/${Date.now()}.${blob.type.split("/")[1] || "png"}`;
           const up = await sb.storage.from("pics").upload(path, blob, { contentType: blob.type });
-          if (!up.error) patch.avatar = sb.storage.from("pics").getPublicUrl(path).data.publicUrl;
+          if (!up.error) {
+            const url = sb.storage.from("pics").getPublicUrl(path).data.publicUrl;
+            const c = readCrop(avatar);
+            patch.avatar = c ? withCrop(url, c) : url;
+          }
         }
         try { localStorage.setItem(key, fingerprint); } catch { /* ignore */ }
       }
@@ -270,7 +278,7 @@ function MessagePops({ pops, close }: { pops: Pop[]; close: (id: string) => void
       {pops.map((p) => (
         <div key={p.id} className="vx-pop">
           <a className="vx-pop-main" href={`#/chat/${p.cid}`} onClick={() => close(p.id)}>
-            {p.avatar ? <img className="vx-pop-avatar" src={p.avatar} alt="" /> : <span className="vx-pop-avatar" aria-hidden="true">{p.who.slice(0, 1).toUpperCase()}</span>}
+            {p.avatar ? <span className="vx-pop-avatar"><img src={stripCrop(p.avatar)} alt="" style={cropStyle(readCrop(p.avatar))} /></span> : <span className="vx-pop-avatar" aria-hidden="true">{p.who.slice(0, 1).toUpperCase()}</span>}
             <span className="vx-pop-text">
               <strong>{p.who}{p.group && <em> in {p.group}</em>}</strong>
               <span>{p.text}</span>

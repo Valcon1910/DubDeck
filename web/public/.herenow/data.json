@@ -2,12 +2,67 @@
   "collections": {
     "votes": {
       "fields": {
-        "poll": { "type": "string", "required": true, "maxLength": 64, "trim": true },
-        "option": { "type": "integer", "required": true, "minimum": 0, "maximum": 19 },
-        "voter": { "type": "string", "required": true, "maxLength": 200, "trim": true }
+        "poll": {
+          "type": "string",
+          "required": true,
+          "maxLength": 64,
+          "trim": true
+        },
+        "option": {
+          "type": "integer",
+          "required": true,
+          "minimum": 0,
+          "maximum": 19
+        },
+        "voter": {
+          "type": "string",
+          "required": true,
+          "maxLength": 200,
+          "trim": true
+        }
       },
-      "access": { "read": "public", "insert": "public", "update": "owner", "delete": "owner" },
+      "access": {
+        "read": "public",
+        "insert": "public",
+        "update": "owner",
+        "delete": "owner"
+      },
       "rateLimit": "60/hour/ip"
+    },
+    "reactions": {
+      "fields": {
+        "post": {
+          "type": "string",
+          "required": true,
+          "maxLength": 64,
+          "trim": true
+        },
+        "emoji": {
+          "type": "string",
+          "required": true,
+          "maxLength": 16,
+          "trim": true
+        },
+        "voter": {
+          "type": "string",
+          "required": true,
+          "maxLength": 200,
+          "trim": true
+        },
+        "on": {
+          "type": "integer",
+          "required": true,
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "access": {
+        "read": "public",
+        "insert": "public",
+        "update": "owner",
+        "delete": "owner"
+      },
+      "rateLimit": "120/hour/ip"
     }
   }
 }

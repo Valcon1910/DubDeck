@@ -257,6 +257,11 @@ test("announcements: an editor posts one with a title, picture and description",
     if (url.includes("/git/refs/heads/")) return route.fulfill({ json: {} });
     return route.fulfill({ status: 404, json: {} });
   });
+  const reacts: unknown[] = [];
+  await page.route("**/.herenow/data/reactions**", async (route) => {
+    if (route.request().method() === "POST") { reacts.push({ data: route.request().postDataJSON(), created_at: new Date().toISOString() }); return route.fulfill({ status: 201, json: {} }); }
+    return route.fulfill({ json: { records: reacts } });
+  });
   await page.goto("/#/announcements");
   await expect(page.getByRole("heading", { name: "Announcements", level: 1 })).toBeVisible();
   await page.getByLabel("Title").fill("Big update");
@@ -286,6 +291,16 @@ test("announcements: an editor posts one with a title, picture and description",
   await expect(page.getByText("1 vote")).toBeVisible();
   expect(votes.at(-1)).toMatchObject({ data: { poll: id, option: 1, voter: "valentino.104688@anglo.edu.co" } });
   await expect(page.getByRole("button", { name: /Slope/ })).toContainText("100%");
+
+  // Emoji reactions: tap to add, tap the chip again to take it back.
+  const post = page.locator(".vx-news-item", { hasText: "Big update" });
+  await post.getByRole("button", { name: "Add a reaction" }).click();
+  await page.getByRole("menuitem", { name: "🎉" }).click();
+  await expect(post.locator(".vx-react.mine")).toContainText("🎉1");
+  expect(reacts.at(-1)).toMatchObject({ data: { post: id, emoji: "🎉", voter: "valentino.104688@anglo.edu.co", on: 1 } });
+  await post.locator(".vx-react.mine").click();
+  await expect(post.locator(".vx-react", { hasText: "🎉" })).toHaveCount(0);
+  expect(reacts.at(-1)).toMatchObject({ data: { post: id, emoji: "🎉", on: 0 } });
   expect(saved.announcements.items[0].files.map((f: { kind: string }) => f.kind)).toEqual(["image", "video", "file"]);
   expect(saved.announcements.items[0].files[2]).toMatchObject({ name: "Rules v2.pdf", path: expect.stringMatching(/^\/files\/.+-Rules-v2\.pdf$/) });
   expect(Object.keys(files).filter((k) => k.startsWith("web/public/files/"))).toHaveLength(3);
@@ -625,4 +640,25 @@ test("only the qualities the video has are offered", async ({ page }) => {
   await expect(page.getByRole("link", { name: /Video 4K/ })).toHaveCount(1);
   await expect(page.getByRole("link", { name: /Video 1440p/ })).toHaveCount(1);
   await expect(page.getByRole("link", { name: /Video 8K/ })).toHaveCount(0);
+});
+
+test("Gaming Mode: page text can't be highlighted or copied, fields still work", async ({ page }) => {
+  await page.goto("/#/");
+  await page.evaluate(() => sessionStorage.setItem("vortex.gaming", "1"));
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-gaming", "on");
+  const body = await page.evaluate(() => getComputedStyle(document.querySelector("h1, h2, p")!).userSelect);
+  expect(body).toBe("none");
+  const blocked = await page.evaluate(() => {
+    const e = new Event("copy", { bubbles: true, cancelable: true });
+    document.querySelector("h1, h2, p")!.dispatchEvent(e);
+    return e.defaultPrevented;
+  });
+  expect(blocked).toBe(true);
+  const field = await page.evaluate(() => {
+    const i = document.createElement("input"); document.body.append(i);
+    const e = new Event("copy", { bubbles: true, cancelable: true }); i.dispatchEvent(e);
+    const r = [e.defaultPrevented, getComputedStyle(i).userSelect]; i.remove(); return r;
+  });
+  expect(field).toEqual([false, "text"]);
 });

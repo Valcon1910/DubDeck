@@ -27,7 +27,18 @@ export function onGaming(fn: Listener) {
   return () => { listeners.delete(fn); };
 }
 
-const emit = () => { for (const f of listeners) f(on); };
+// No highlighting or copying page content while it's on (typing in fields still works).
+const editable = (t: EventTarget | null) => t instanceof Element && !!t.closest("input, textarea, [contenteditable='true']");
+const noCopy = (e: Event) => { if (!editable(e.target)) e.preventDefault(); };
+function lockSelection(v: boolean) {
+  document.documentElement.dataset.gaming = v ? "on" : "off";
+  for (const t of ["selectstart", "copy", "cut", "dragstart"] as const) {
+    if (v) document.addEventListener(t, noCopy, true); else document.removeEventListener(t, noCopy, true);
+  }
+  if (v) window.getSelection?.()?.removeAllRanges();
+}
+
+const emit = () => { lockSelection(on); for (const f of listeners) f(on); };
 
 /** False on iPhones: Safari there doesn't let websites go full screen. */
 export const canFullscreen = () => {
