@@ -8,6 +8,8 @@
 
 import { MAPS, trackOf } from "../_shared/hexdrift/maps.ts";
 import { COUNTDOWN, newRace, PHYSICS_V, step } from "../_shared/hexdrift/race.ts";
+import { cleanMap, roadDefOf, THEMES, versionOf } from "../_shared/hexdrift/custom.ts";
+import { buildRoadTrack, type Track } from "../_shared/hexdrift/track.ts";
 
 const URL = Deno.env.get("SUPABASE_URL")!;
 const ANON = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -36,11 +38,27 @@ function decode(b64: string): Uint8Array | null {
   try { return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)); } catch { return null; }
 }
 
-/** Re-drives the run. Returns the finish time in steps, or null if it doesn't finish. */
-function replay(mapId: string, inputs: Uint8Array): number | null {
+/**
+ * The road of a map: a built-in one, or a community map ("<id>-<version>",
+ * only while that version is the one published and not taken down).
+ */
+async function trackFor(mapId: string): Promise<Track | null> {
   const map = MAPS.find((m) => m.id === mapId);
-  if (!map) return null;
-  const r = newRace(trackOf(map));
+  if (map) return trackOf(map);
+  const c = mapId.match(/^(c[0-9a-z]{8})-([0-9a-z]{1,8})$/);
+  if (!c) return null;
+  const got = await call(`/rest/v1/hexdrift_maps?id=eq.${c[1]}&hidden=is.false&select=id,local_id,name,theme,pieces,version`);
+  const row = got.data?.[0];
+  if (!row || row.version !== c[2]) return null;
+  const m = cleanMap({ id: row.local_id, name: row.name, theme: row.theme, pieces: row.pieces }, row.local_id);
+  if (!m || versionOf(m) !== c[2]) return null;
+  return buildRoadTrack(roadDefOf(m), THEMES[m.theme].biome);
+}
+
+/** Re-drives the run. Returns the finish time in steps, or null if it doesn't finish. */
+function replay(track: Track | null, inputs: Uint8Array): number | null {
+  if (!track) return null;
+  const r = newRace(track);
   for (let i = 0; i < COUNTDOWN; i++) step(r, 0);
   for (const b of inputs) {
     step(r, b);
@@ -86,7 +104,7 @@ Deno.serve(async (req) => {
   if (!inputs || inputs.length !== ticks) return json({ error: "Bad run" }, 400);
 
   const look = cleanLook(body?.look);
-  const got = replay(map, inputs);
+  const got = replay(await trackFor(map), inputs);
   if (got !== ticks) return json({ error: "That run doesn't finish in that time", rejected: true }, 422);
 
   const m = encodeURIComponent(map);
