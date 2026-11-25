@@ -329,6 +329,24 @@ def curve(pts, closed=True, per=6, sharp=()):
     return out
 
 
+def rounded(pts, r, per=4):
+    """A polygon with its corners rounded off (radius about r); the edges
+    stay straight."""
+    P = [Vector(p) for p in pts]
+    n = len(P)
+    out = []
+    for i in range(n):
+        a, b, c = P[i - 1], P[i], P[(i + 1) % n]
+        d = min(r, (b - a).length * 0.45, (c - b).length * 0.45)
+        p0 = b + (a - b).normalized() * d
+        p1 = b + (c - b).normalized() * d
+        for k in range(per + 1):
+            t = k / per
+            q = p0 * (1 - t) ** 2 + b * 2 * t * (1 - t) + p1 * t * t
+            out.append((q.x, q.y))
+    return out
+
+
 # How each view maps a 2D outline (u, v) to game axes, and which way it looks.
 _VIEWS = {
     "front": (lambda u, v, d: (u, v, d), (0, 0, 1)),
@@ -517,6 +535,83 @@ def export_all(path):
         print("PART", ob.name, n)
     bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", use_selection=False, export_yup=True,
                               export_apply=True, export_normals=True, export_texcoords=False, export_materials="EXPORT")
+
+
+# ── Plates, wing profiles, tubes, circles ─────────────────────────────────
+def plate(material, pts, t, x=0.0):
+    """A flat plate: outline (z, y) extruded t thick across x."""
+    b = bmesh.new()
+    a = [b.verts.new(G(x - t / 2, y, z)) for z, y in pts]
+    c = [b.verts.new(G(x + t / 2, y, z)) for z, y in pts]
+    b.faces.new(a); b.faces.new(list(reversed(c)))
+    n = len(pts)
+    for i in range(n):
+        j = (i + 1) % n
+        b.faces.new((a[i], a[j], c[j], c[i]))
+    bmesh.ops.recalc_face_normals(b, faces=b.faces)
+    ob = link("plate", b, material)
+    bv = ob.modifiers.new("bev", "BEVEL"); bv.width = min(0.008, t / 3); bv.segments = 1
+    apply_mod(ob, bv)
+    return ob
+
+
+def airfoil(material, x0, x1, z_le, y, chord, aoa, thick=0.12):
+    """A wing element across x0..x1: leading edge at z_le, height y,
+    pitched aoa radians (nose down for positive), thickness ratio thick."""
+    prof = []
+    for i in range(9):
+        t = i / 8
+        h = 5 * thick * (0.2969 * math.sqrt(t) - 0.126 * t - 0.3516 * t * t + 0.2843 * t ** 3 - 0.1036 * t ** 4)
+        prof.append((t, h))
+    loop = [(t, h) for t, h in prof] + [(t, -h * 0.4) for t, h in reversed(prof[1:-1])]
+    b = bmesh.new()
+    rings = []
+    for x in (x0, x1):
+        r = []
+        for t, h in loop:
+            dz, dy = -t * chord, h * chord
+            zz = z_le + dz * math.cos(aoa) - dy * math.sin(aoa)
+            yy = y + dz * math.sin(aoa) + dy * math.cos(aoa)
+            r.append(b.verts.new(G(x, yy, zz)))
+        rings.append(r)
+    n = len(loop)
+    A, B = rings
+    for i in range(n):
+        j = (i + 1) % n
+        b.faces.new((A[i], A[j], B[j], B[i]))
+    b.faces.new(A); b.faces.new(list(reversed(B)))
+    bmesh.ops.recalc_face_normals(b, faces=b.faces)
+    ob = link("foil", b, material)
+    smooth(ob)
+    sharpen(ob, 40)
+    return ob
+
+
+def tube(material, pts, r, segs=6):
+    """A round rod along a polyline (game points)."""
+    b = bmesh.new()
+    rings = []
+    for i, p in enumerate(pts):
+        a = Vector(pts[max(0, i - 1)]); c = Vector(pts[min(len(pts) - 1, i + 1)])
+        t = (c - a).normalized()
+        u = t.cross(Vector((0, 1, 0)))
+        if u.length < 1e-3: u = t.cross(Vector((1, 0, 0)))
+        u.normalize(); v = t.cross(u)
+        rings.append([b.verts.new(G(*(Vector(p) + (u * math.cos(2 * math.pi * k / segs) + v * math.sin(2 * math.pi * k / segs)) * r))) for k in range(segs)])
+    for A, B in zip(rings, rings[1:]):
+        for k in range(segs):
+            b.faces.new((A[k], A[(k + 1) % segs], B[(k + 1) % segs], B[k]))
+    b.faces.new(rings[0]); b.faces.new(list(reversed(rings[-1])))
+    bmesh.ops.recalc_face_normals(b, faces=b.faces)
+    ob = link("tube", b, material)
+    smooth(ob)
+    return ob
+
+
+def circle(cx, cy, r, n=20, ry=None):
+    """A round (or oval) outline."""
+    ry = r if ry is None else ry
+    return [(cx + r * math.cos(2 * math.pi * k / n), cy + ry * math.sin(2 * math.pi * k / n)) for k in range(n)]
 
 
 # ── Export ──────────────────────────────────────────────────────────────────

@@ -20,6 +20,11 @@ import furiaUrl from "../cars/furia.glb?url";
 import zenithUrl from "../cars/zenith.glb?url";
 import rigUrl from "../cars/rig.glb?url";
 import formulaUrl from "../cars/formula.glb?url";
+import brawlerUrl from "../cars/brawler.glb?url";
+import kazeUrl from "../cars/kaze.glb?url";
+import scramblerUrl from "../cars/scrambler.glb?url";
+import duneUrl from "../cars/dune.glb?url";
+import enduraUrl from "../cars/endura.glb?url";
 import wheelsUrl from "../cars/wheels.glb?url";
 
 export interface CarModel {
@@ -503,7 +508,84 @@ function formula(k: Kit, look: Look): Spec {
   return { wheels, rim: "covered", tyre: "slick", wing: { z: -2.3, y: 0.55, w: 0.68 }, roof: { z: -0.45, y: 1.04 }, exhausts: [[0, 0.56, -2.28]] };
 }
 
-const BUILDERS: Record<string, (k: Kit, look: Look) => Spec> = { coupe, furia, rig, zenith, formula };
+// ── The newer cars: a simple stand-in shape (shown for a moment while the
+// Blender model loads) and where their wheels, wings and pipes go ──
+const pair = (x: number, z: number, r: number, w: number, front: boolean): Wheel[] =>
+  [{ x, z, r, w, front }, { x: -x, z, r, w, front }];
+
+function brawler(k: Kit): Spec {
+  const wheels = [...pair(0.94, 1.45, 0.4, 0.3, true), ...pair(0.96, -1.4, 0.42, 0.34, false)];
+  loft(k, arches([
+    st(-2.32, 0.33, 0.58, 0.97, 0.94, 0.88, 0.95, 0.8),
+    st(-1.45, 0.26, 0.58, 1.06, 0.95, 1.0, 1.0, 0.82),
+    st(-0.9, 0.26, 0.58, 1.04, 0.94, 0.98, 1.13, 0.72, "glass", "paint"),
+    st(0.15, 0.26, 0.57, 0.99, 0.91, 0.95, 1.31, 0.7, "glass", "paint"),
+    st(0.55, 0.26, 0.57, 0.99, 0.9, 0.95, 1.18, 0.74, "paint", "glass"),
+    st(0.95, 0.26, 0.57, 0.99, 0.9, 0.96, 0.93, 0.84),
+    st(2.44, 0.33, 0.57, 0.92, 0.84, 0.9, 0.86, 0.84),
+  ], wheels), { cap: "paint" });
+  k.box("chrome", 1.94, 0.09, 0.12, 0, 0.42, 2.47);
+  k.box("chrome", 1.94, 0.09, 0.12, 0, 0.43, -2.37);
+  return { wheels, rim: "y5", tyre: "road", wing: { z: -2.1, y: 0.96, w: 0.92 }, roof: { z: -0.2, y: 1.31 }, exhausts: [[-0.6, 0.3, -2.38], [-0.45, 0.3, -2.38], [0.45, 0.3, -2.38], [0.6, 0.3, -2.38]] };
+}
+
+function kaze(k: Kit): Spec {
+  const wheels = [...pair(0.93, 1.45, 0.4, 0.3, true), ...pair(0.95, -1.38, 0.42, 0.34, false)];
+  loft(k, arches([
+    st(-2.28, 0.32, 0.52, 0.94, 0.9, 0.9, 0.9, 0.8),
+    st(-1.45, 0.25, 0.5, 1.04, 0.92, 0.99, 0.95, 0.8),
+    st(-0.95, 0.24, 0.49, 1.03, 0.9, 0.98, 1.06, 0.68, "glass", "paint"),
+    st(0.1, 0.24, 0.47, 0.99, 0.87, 0.94, 1.23, 0.62, "glass", "paint"),
+    st(0.55, 0.24, 0.47, 0.99, 0.86, 0.94, 1.1, 0.66, "paint", "glass"),
+    st(0.95, 0.24, 0.47, 1.0, 0.86, 0.96, 0.89, 0.74),
+    st(2.42, 0.3, 0.4, 0.82, 0.5, 0.78, 0.55, 0.56),
+  ], wheels), { cap: "paint" });
+  return { wheels, rim: "multi", tyre: "road", wing: { z: -2.0, y: 0.92, w: 0.92 }, roof: { z: -0.15, y: 1.24 }, exhausts: [[-0.5, 0.3, -2.34], [0.5, 0.3, -2.34]] };
+}
+
+function scrambler(k: Kit): Spec {
+  const wheels = [...pair(0.97, 1.42, 0.4, 0.32, true), ...pair(0.97, -1.38, 0.4, 0.32, false)];
+  loft(k, arches([
+    st(-2.0, 0.34, 0.6, 0.96, 0.95, 0.94, 1.2, 0.78),
+    st(-1.55, 0.26, 0.57, 1.08, 0.97, 1.04, 1.36, 0.77, "glass", "paint"),
+    st(0.0, 0.25, 0.55, 0.97, 0.93, 0.95, 1.43, 0.73, "glass", "paint"),
+    st(0.4, 0.25, 0.55, 0.97, 0.92, 0.95, 1.3, 0.75, "paint", "glass"),
+    st(0.72, 0.25, 0.55, 0.97, 0.91, 0.95, 0.99, 0.8),
+    st(2.16, 0.32, 0.5, 0.86, 0.7, 0.84, 0.74, 0.7),
+  ], wheels, "round", 0.06), { cap: "paint" });
+  return { wheels, rim: "y5", tyre: "road", wing: { z: -1.85, y: 1.3, w: 0.85 }, roof: { z: -0.45, y: 1.44 }, exhausts: [[0.62, 0.32, -2.02]] };
+}
+
+function dune(k: Kit): Spec {
+  const wheels = [...pair(1.02, 1.7, 0.5, 0.4, true), ...pair(1.02, -1.62, 0.5, 0.4, false)];
+  loft(k, arches([
+    st(-2.48, 0.82, 1.04, 1.0, 1.26, 0.98, 1.3, 0.92),
+    st(-0.62, 0.68, 1.02, 1.01, 1.32, 0.99, 1.36, 0.88),
+    st(-0.52, 0.68, 1.02, 1.0, 1.32, 0.98, 1.74, 0.82, "glass", "paint"),
+    st(0.25, 0.68, 1.02, 1.0, 1.31, 0.98, 1.88, 0.8, "glass", "paint"),
+    st(0.7, 0.68, 1.02, 1.0, 1.3, 0.98, 1.7, 0.82, "paint", "glass"),
+    st(1.05, 0.7, 1.02, 1.02, 1.28, 1.0, 1.33, 0.88),
+    st(2.55, 0.82, 0.98, 0.86, 1.13, 0.86, 1.18, 0.8),
+  ], wheels, "round", 0.1), { cap: "paint" });
+  k.box("trim", 1.34, 0.09, 0.12, 0, 1.95, 0.4);
+  return { wheels, rim: "multi", tyre: "off", wing: { z: -2.3, y: 1.32, w: 0.92 }, roof: { z: -0.1, y: 1.88 }, exhausts: [[-0.5, 0.86, -2.5], [0.5, 0.86, -2.5]] };
+}
+
+function endura(k: Kit): Spec {
+  const wheels = [...pair(0.93, 1.55, 0.4, 0.32, true), ...pair(0.95, -1.5, 0.42, 0.36, false)];
+  loft(k, arches([
+    st(-2.38, 0.28, 0.5, 0.96, 0.88, 0.92, 0.86, 0.46),
+    st(-1.5, 0.21, 0.47, 1.05, 0.92, 0.98, 0.92, 0.46),
+    st(-0.4, 0.2, 0.45, 1.0, 0.76, 0.92, 1.05, 0.56, "glass", "paint"),
+    st(0.2, 0.2, 0.44, 0.98, 0.72, 0.9, 1.08, 0.58, "glass", "glass"),
+    st(0.7, 0.2, 0.44, 0.98, 0.74, 0.9, 0.9, 0.56),
+    st(1.55, 0.2, 0.45, 1.02, 0.88, 0.94, 0.62, 0.56),
+    st(2.55, 0.2, 0.28, 0.8, 0.36, 0.76, 0.4, 0.5),
+  ], wheels), { cap: "paint" });
+  return { wheels, rim: "y5", tyre: "slick", wing: { z: -2.05, y: 0.92, w: 0.95 }, roof: { z: -0.1, y: 1.06 }, exhausts: [[-0.18, 0.68, -2.4], [0.18, 0.68, -2.4]] };
+}
+
+const BUILDERS: Record<string, (k: Kit, look: Look) => Spec> = { coupe, furia, rig, zenith, formula, brawler, kaze, scrambler, dune, endura };
 
 /** Wing options from the garage (cars with their own wings keep them). */
 function addWing(k: Kit, kind: string, wing: { z: number; y: number; w: number }) {
@@ -521,6 +603,20 @@ function addWing(k: Kit, kind: string, wing: { z: number; y: number; w: number }
     k.both((s) => k.box("trim", 0.05, 0.8, 0.12, s * 0.5, y + 0.4, z + 0.25, -0.45));
   } else if (kind === "low") {
     k.box("accent", w * 2, 0.06, 0.28, 0, y + 0.03, z, 0.3);
+  } else if (kind === "duck") {
+    // A body-coloured ducktail kicked up off the tail, with a black lip.
+    k.box("paint", w * 2.05, 0.07, 0.36, 0, y + 0.05, z - 0.02, 0.22);
+    k.box("gloss", w * 2.0, 0.035, 0.03, 0, y + 0.11, z - 0.19);
+  } else if (kind === "gt") {
+    // A big GT wing: a deep main plane with a gurney flap, tall end plates,
+    // two struts off the trunk.
+    const yy = y + 0.5;
+    k.box("accent", w * 2.35, 0.05, 0.56, 0, yy, z - 0.05, 0.06);
+    k.box("gloss", w * 2.3, 0.07, 0.025, 0, yy + 0.04, z - 0.33);
+    k.both((s) => {
+      k.plate("trim", [[z + 0.28, yy - 0.2], [z - 0.42, yy - 0.16], [z - 0.4, yy + 0.16], [z + 0.2, yy + 0.1]], 0.03, s * w * 1.19);
+      k.plate("trim", [[z + 0.06, y], [z - 0.1, y], [z - 0.04, yy], [z + 0.12, yy]], 0.04, s * 0.42);
+    });
   }
 }
 
@@ -534,6 +630,29 @@ function addExtra(k: Kit, kind: string, roof: { z: number; y: number }) {
     for (let i = -2; i <= 2; i++) k.box("lamp", 0.2, 0.08, 0.04, i * 0.27, y + 0.06, z + 0.31);
   } else if (kind === "fin") {
     k.plate("accent", [[z - 0.9, y - 0.05], [z + 0.1, y - 0.05], [z - 0.6, y + 0.42], [z - 0.9, y + 0.38]], 0.06, 0);
+  } else if (kind === "rack") {
+    // Roof rails on short legs, cross bars and a spare tyre lying on them.
+    const top = y + 0.1;
+    k.both((s) => {
+      k.rod("trim", [s * 0.58, top, z + 0.75], [s * 0.58, top, z - 0.75], 0.022);
+      for (const dz of [0.7, -0.7]) k.box("trim", 0.06, 0.1, 0.06, s * 0.58, y + 0.05, z + dz);
+    });
+    for (const dz of [-0.45, 0, 0.45]) k.rod("trim", [-0.6, top + 0.02, z + dz], [0.6, top + 0.02, z + dz], 0.018);
+    const t = new THREE.TorusGeometry(0.3, 0.1, 8, 18); t.rotateX(Math.PI / 2); t.translate(0, top + 0.13, z - 0.05); k.add("trim", t);
+    const h = new THREE.CylinderGeometry(0.21, 0.21, 0.1, 14); h.translate(0, top + 0.12, z - 0.05); k.add("metal", h);
+  } else if (kind === "pod") {
+    // A rally light pod: four big round lamps on a bar over the windscreen.
+    k.box("trim", 1.2, 0.05, 0.08, 0, y + 0.08, z + 0.55);
+    k.both((s) => k.box("trim", 0.04, 0.09, 0.04, s * 0.5, y + 0.03, z + 0.5));
+    for (const x of [-0.42, -0.14, 0.14, 0.42]) {
+      const c = new THREE.CylinderGeometry(0.11, 0.12, 0.12, 14); c.rotateX(Math.PI / 2); c.translate(x, y + 0.19, z + 0.58); k.add("trim", c);
+      const l = new THREE.CircleGeometry(0.095, 14); l.translate(x, y + 0.19, z + 0.645); k.add("lamp", l);
+    }
+  } else if (kind === "box") {
+    // A sleek roof box on two bars.
+    k.both((s) => k.rod("trim", [s * 0.55, y + 0.06, z + 0.45], [s * 0.55, y + 0.06, z - 0.45], 0.02));
+    for (const dz of [0.35, -0.35]) k.box("trim", 1.16, 0.04, 0.06, 0, y + 0.06, z + dz);
+    const b = new THREE.SphereGeometry(1, 16, 10); b.scale(0.42, 0.14, 0.82); b.translate(0, y + 0.19, z - 0.05); k.add("gloss", b);
   } else if (kind === "scoop") {
     k.plate("paint", [[z - 0.4, y - 0.04], [z + 0.45, y - 0.04], [z + 0.3, y + 0.24], [z - 0.2, y + 0.26]], 0.6, 0);
     k.box("trim", 0.5, 0.18, 0.03, 0, y + 0.11, z + 0.36);
@@ -607,7 +726,7 @@ function studioEnv(e?: CarEnv): THREE.Texture {
 }
 
 // ── Bodies made in Blender ──────────────────────────────────────────────────
-const BODY_URLS: Partial<Record<string, string>> = { coupe: coupeUrl, furia: furiaUrl, zenith: zenithUrl, rig: rigUrl, formula: formulaUrl };
+const BODY_URLS: Partial<Record<string, string>> = { coupe: coupeUrl, furia: furiaUrl, zenith: zenithUrl, rig: rigUrl, formula: formulaUrl, brawler: brawlerUrl, kaze: kazeUrl, scrambler: scramblerUrl, dune: duneUrl, endura: enduraUrl };
 const PARTS = new Set<string>(["paint", "accent", "trim", "gloss", "glass", "lamp", "tail", "metal", "chrome", "white"]);
 /** A Blender body: one geometry per part, plus the stock rear wing for cars
  * whose wing the garage can swap (shown only with the "stock" choice). */
@@ -825,14 +944,17 @@ export function buildCar(opts: CarOptions = {}): CarModel {
   }
   const tailM = M.tail as THREE.MeshBasicMaterial;
 
-  // Race numbers on the open-wheeler.
-  if (!ghost && def.id === "formula") {
+  // Race numbers on the racing cars: [x, y, z, size, lean in].
+  const number = ({ formula: [0.792, 0.42, -0.35, 0.34, 0], endura: [0.978, 0.52, 0.2, 0.25, 0.28] } as Record<string, number[]>)[def.id];
+  if (!ghost && number) {
+    const [nx, ny, nz, size, lean] = number;
     const rm = keep(new THREE.MeshBasicMaterial({ map: roundel(), transparent: true }));
-    const rg = new THREE.PlaneGeometry(0.34, 0.34); geos.push(rg);
+    const rg = new THREE.PlaneGeometry(size, size); geos.push(rg);
     for (const s of [1, -1]) {
       const m = new THREE.Mesh(rg, rm);
-      m.position.set(s * 0.792, 0.42, -0.35);
-      m.rotation.y = s * Math.PI / 2;
+      m.position.set(s * nx, ny, nz);
+      m.rotation.set(0, s * Math.PI / 2, 0, "YXZ");
+      m.rotateX(-lean);
       root.add(m);
     }
   }
