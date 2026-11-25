@@ -107,5 +107,19 @@ const [, annCh] = await join(ann, `typing:${dm}`);
 await annCh.send({ type: "broadcast", event: "typing", payload: { email: "ann@x.test" } });
 assert.equal(await Promise.race([typed, new Promise((r) => setTimeout(() => r("timeout"), 5000))]), "ann@x.test");
 
+// Reactions: members react as themselves, once per emoji; outsiders can't see or add.
+const rm = ok(await ann.from("messages").insert({ conversation_id: dm, body: "react to me" }).select().single());
+ok(await bob.from("message_reactions").insert({ message_id: rm.id, conversation_id: dm, emoji: "🔥", email: "ann@x.test" }));
+const rs = ok(await ann.from("message_reactions").select("*").eq("message_id", rm.id));
+assert.deepEqual(rs.map((r) => [r.email, r.emoji]), [["bob@x.test", "🔥"]], "reaction stamped with the real sender");
+bad(await bob.from("message_reactions").insert({ message_id: rm.id, conversation_id: dm, emoji: "🔥" }), "duplicate reaction");
+bad(await cy.from("message_reactions").insert({ message_id: rm.id, conversation_id: dm, emoji: "👍" }), "outsider reaction");
+assert.equal(ok(await cy.from("message_reactions").select("*").eq("message_id", rm.id)).length, 0, "outsider sees reactions");
+bad(await cy.from("message_reactions").insert({ message_id: rm.id, conversation_id: g, emoji: "👍" }), "reaction pointing at another chat");
+ok(await ann.from("message_reactions").delete().match({ message_id: rm.id, email: "bob@x.test" }));
+assert.equal(ok(await bob.from("message_reactions").select("*").eq("message_id", rm.id)).length, 1, "someone else removed my reaction");
+ok(await bob.from("message_reactions").delete().match({ message_id: rm.id, emoji: "🔥" }));
+assert.equal(ok(await bob.from("message_reactions").select("*").eq("message_id", rm.id)).length, 0);
+
 console.log("Chat rules: all checks passed");
 process.exit(0);

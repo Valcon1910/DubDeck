@@ -6,15 +6,18 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 const FN = process.env.CHAT_FN ?? "http://127.0.0.1:54321/functions/v1/vortex-login";
 const SECRET = process.env.CHAT_SECRET ?? "local-test-secret-0123456789abcdef0123456789";
 
+// A 2-frame 2×2 GIF (red, then blue).
+const GIF2 = Buffer.from("R0lGODlhAgACAPABAP8AAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQACgAAACwAAAAAAgACAAACAoRRACH5BAAKAAAALAAAAAACAAIAgAAA/wAAAAIChFEAOw==", "base64");
 // A 2×2 red PNG.
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEklEQVR4nGP4z8DAwMDAwMAAAA0BAf9mBnsAAAAASUVORK5CYII=", "base64");
 
 test.skip(!process.env.CHAT_E2E, "needs a local Supabase (CHAT_E2E=1)");
 
 /** A browser signed in as `email`; /chat-login plays the here.now proxy route. */
-async function as(browser: Browser, email: string, viewport?: { width: number; height: number }): Promise<Page> {
+async function as(browser: Browser, email: string, viewport?: { width: number; height: number }, tour = false): Promise<Page> {
   const ctx = await browser.newContext(viewport ? { viewport } : {});
   const page = await ctx.newPage();
+  if (!tour) await page.addInitScript(() => { try { localStorage.setItem("vortex.chatTour", "1"); } catch { /* */ } });
   await page.route("**/.herenow/me", (r) => r.fulfill({ json: { email } }));
   await page.route("**/chat-login", async (r) => {
     const res = await fetch(FN, { method: "POST", headers: { "x-vortex-email": email, "x-vortex-secret": SECRET } });
@@ -204,4 +207,65 @@ test("popups, media players, and swiping a chat away", async ({ browser }, info)
   await row.click();
   await expect(cy.locator(".vx-msg").last()).toContainText(`again-${word}`);
   await expect(cy.locator(".vx-msg", { hasText: word }).filter({ hasNotText: "again" })).toHaveCount(0);
+});
+
+test("first visit tour, emoji reactions live, and a cropped GIF picture", async ({ browser }, info) => {
+  test.skip(info.project.name !== "desktop", "desktop only");
+  const ann = await as(browser, "ann@x.test", undefined, true);
+  const bob = await as(browser, "bob@x.test");
+
+  // The tour lights up your picture, then the picture and name in Settings.
+  await ann.goto("/#/chat");
+  const tour = ann.locator(".vx-tour");
+  await expect(tour).toContainText("Your profile");
+  await tour.getByRole("button", { name: "Next" }).click();
+  await expect(tour).toContainText("Change your picture");
+  await expect(ann.locator("#vx-settings-title")).toBeVisible();
+  await tour.getByRole("button", { name: "Next" }).click();
+  await expect(tour).toContainText("Change your name");
+  await tour.getByRole("button", { name: "Next" }).click();
+  await expect(tour).toContainText("Find it again");
+  await expect(ann.locator("#vx-settings-title")).toHaveCount(0);
+  await tour.getByRole("button", { name: "Next" }).click();
+  await tour.getByRole("button", { name: "Got it" }).click();
+  await expect(tour).toHaveCount(0);
+  await ann.reload();
+  await expect(ann.locator(".vx-chat-list-head")).toBeVisible();
+  await expect(tour).toHaveCount(0);
+
+  // Ann reacts to her own message; Bob sees it live and adds his.
+  await ann.getByRole("button", { name: "New chat" }).click();
+  await ann.getByRole("dialog").getByRole("button", { name: /Bob/ }).click();
+  const word = `react-${Date.now()}`;
+  await ann.getByLabel("Message", { exact: true }).fill(word);
+  await ann.keyboard.press("Enter");
+  const annMsg = ann.locator(".vx-msg", { hasText: word });
+  await annMsg.hover();
+  await annMsg.getByRole("button", { name: "React" }).click();
+  await ann.getByRole("menuitem", { name: "🔥" }).click();
+  await expect(annMsg.locator(".vx-react.mine")).toContainText("1");
+
+  await bob.goto("/#/chat");
+  await bob.locator(".vx-chat-item").filter({ has: bob.locator("strong", { hasText: /^Ann$/ }) }).click();
+  const bobMsg = bob.locator(".vx-msg", { hasText: word });
+  await expect(bobMsg.locator(".vx-reacts .vx-react")).toContainText("🔥1");
+  await bobMsg.locator(".vx-react", { hasText: "🔥" }).click();
+  await expect(annMsg.locator(".vx-reacts .vx-react")).toContainText("🔥2");
+  await bobMsg.locator(".vx-react", { hasText: "🔥" }).click();
+  await expect(annMsg.locator(".vx-reacts .vx-react")).toContainText("🔥1");
+
+  // A GIF picture is cropped in place and stays a GIF (so it keeps moving).
+  await ann.locator(".vx-chat-me").click();
+  const chooser = ann.waitForEvent("filechooser");
+  await ann.getByRole("button", { name: "Change picture" }).click();
+  await (await chooser).setFiles({ name: "me.gif", mimeType: "image/gif", buffer: GIF2 });
+  await expect(ann.getByRole("heading", { name: "Crop your picture" })).toBeVisible();
+  await ann.getByLabel("Zoom").fill("2");
+  await ann.getByRole("button", { name: "Use picture" }).click();
+  const img = ann.locator(".vx-set-profile .vx-avatar img");
+  await expect(img).toHaveAttribute("src", /^data:image\/gif/);
+  await expect(img).toHaveCSS("transform", /matrix\(2, 0, 0, 2/);
+  // Everyone gets the uploaded GIF, with the same crop.
+  await expect(bob.locator(".vx-chat-head .vx-avatar img")).toHaveAttribute("src", /\/pics\/.*\.gif$/, { timeout: 15_000 });
+  await expect(bob.locator(".vx-chat-head .vx-avatar img")).toHaveCSS("transform", /matrix\(2, 0, 0, 2/);
 });
