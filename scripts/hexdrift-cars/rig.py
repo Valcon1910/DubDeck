@@ -155,8 +155,8 @@ side_decal(body, "glass", win, 0.008)
 side_decal(body, "gloss", strip([(0.0, bl(0.0) - 0.01), (-0.04, rail_y(-0.04) - 0.06)], 0.07), 0.01)
 
 # ── Front: the light bar along the nose edge, black lower bumper ──
-front_decal(body, "gloss", [(-1.0, 0.975), (1.0, 0.975), (1.0, 1.03), (-1.0, 1.03)], 0.004)
-front_decal(body, "lamp", strip([(-0.98, 1.003), (0.98, 1.003)], 0.018), 0.008)
+front_decal(body, "gloss", [(-0.90, 0.975), (0.90, 0.975), (0.88, 1.025), (-0.88, 1.025)], 0.004)
+front_decal(body, "lamp", strip([(-0.86, 1.0), (0.86, 1.0)], 0.018), 0.008)
 front_decal(body, "trim", [(-1.0, 0.56), (1.0, 0.56), (0.96, 0.76), (-0.96, 0.76)], 0.005)
 front_decal(body, "gloss", [(-0.55, 0.62), (0.55, 0.62), (0.55, 0.70), (-0.55, 0.70)], 0.008)
 for s in (1, -1):

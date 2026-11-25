@@ -58,12 +58,9 @@ pods = loft("Pods", P, cap_front=0.40, cap_rear=-1.80, creases={4: 0.7, 3: 0.6, 
 subdivide(pods, 3)
 under_trim(pods)
 sharpen(pods, 50)
-# The intakes: the blunt fronts of the pods, in black (beside the chassis).
-pods.data.materials.append(mat("gloss"))
-gi = list(pods.data.materials).index(mat("gloss"))
-for p in pods.data.polygons:
-    if p.normal.y < -0.55 and abs(p.center.x) > 0.36:
-        p.material_index = gi
+# The intakes, cut into the blunt fronts of the pods (beside the chassis).
+for k in (1, -1):
+    region(pods, "gloss", curve([(k * 0.40, 0.25), (k * 0.74, 0.25), (k * 0.77, 0.40), (k * 0.72, 0.52), (k * 0.43, 0.52), (k * 0.38, 0.40)]), "front")
 side_decal(pods, "accent", strip([(0.25, 0.30), (-1.0, 0.30), (-1.6, 0.36)], 0.06), 0.006)
 
 # ── Details on the chassis ──

@@ -293,6 +293,162 @@ def side_decal(body, material, pts, offset, ring=0.0):
         _decal(body, material, pts, offset, lambda z, y, s=s: G(s * 2.0, y, z), "x", s < 0, ring)
 
 
+# ── Curves and painted regions ─────────────────────────────────────────────
+def curve(pts, closed=True, per=6, sharp=()):
+    """A smooth line through the points (centripetal Catmull-Rom). sharp:
+    indices of points that stay corners."""
+    P = [Vector(p) for p in pts]
+    n = len(P)
+    out = []
+    segs = n if closed else n - 1
+    for i in range(segs):
+        p1, p2 = P[i], P[(i + 1) % n]
+        if (not closed and i == 0) or i in sharp:
+            p0 = p1 - (p2 - p1)
+        else:
+            p0 = P[i - 1]
+        j = (i + 2) % n
+        if (not closed and i + 2 >= n) or (i + 1) % n in sharp:
+            p3 = p2 + (p2 - p1)
+        else:
+            p3 = P[j]
+        def tj(ti, a, b):
+            return ti + max((b - a).length, 1e-6) ** 0.5
+        t0 = 0; t1 = tj(t0, p0, p1); t2 = tj(t1, p1, p2); t3 = tj(t2, p2, p3)
+        for k in range(per):
+            t = t1 + (t2 - t1) * k / per
+            a1 = p0 * ((t1 - t) / (t1 - t0)) + p1 * ((t - t0) / (t1 - t0))
+            a2 = p1 * ((t2 - t) / (t2 - t1)) + p2 * ((t - t1) / (t2 - t1))
+            a3 = p2 * ((t3 - t) / (t3 - t2)) + p3 * ((t - t2) / (t3 - t2))
+            b1 = a1 * ((t2 - t) / (t2 - t0)) + a2 * ((t - t0) / (t2 - t0))
+            b2 = a2 * ((t3 - t) / (t3 - t1)) + a3 * ((t - t1) / (t3 - t1))
+            c = b1 * ((t2 - t) / (t2 - t1)) + b2 * ((t - t1) / (t2 - t1))
+            out.append((c.x, c.y))
+    if not closed:
+        out.append(tuple(P[-1]))
+    return out
+
+
+# How each view maps a 2D outline (u, v) to game axes, and which way it looks.
+_VIEWS = {
+    "front": (lambda u, v, d: (u, v, d), (0, 0, 1)),
+    "rear": (lambda u, v, d: (u, v, d), (0, 0, -1)),
+    "top": (lambda u, v, d: (u, d, v), (0, 1, 0)),
+    "side": (lambda u, v, d: (d, v, u), (1, 0, 0)),     # both sides
+}
+
+
+def _uv(view, co):
+    """Blender coordinate -> the view's 2D coordinates."""
+    x, y, z = co.x, co.z, -co.y   # game axes
+    return {"front": (x, y), "rear": (x, y), "top": (x, z), "side": (z, y)}[view]
+
+
+def _inside(p, poly):
+    c = False
+    for i in range(len(poly)):
+        a, b = poly[i], poly[i - 1]
+        if (a[1] > p[1]) != (b[1] > p[1]) and p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0]:
+            c = not c
+    return c
+
+
+def onto(body, pts, src, dst):
+    """Lays an outline drawn in one view (src) onto the body, and returns it
+    in another view's coordinates (dst): e.g. a windscreen drawn from the
+    front, cut from above where the raked glass is seen square on."""
+    from mathutils.bvhtree import BVHTree
+    bm = bmesh.new(); bm.from_mesh(body.data)
+    tree = BVHTree.FromBMesh(bm); bm.free()
+    to3, look = _VIEWS[src]
+    d = G(*look)
+    out = []
+    for u, v in pts:
+        o = G(*to3(u, v, 0.0)) + d * 8.0
+        loc, *_ = tree.ray_cast(o, -d)
+        if loc is not None:
+            out.append(_uv(dst, loc))
+    return out
+
+
+def region(body, material, pts, view, ring=0.0, ring_material="gloss", min_facing=0.08):
+    """Paints the part of the body inside an outline (seen from `view`) in
+    another material. The outline is cut into the body's own surface, so the
+    region follows every curve exactly: nothing floats, overlaps or hangs
+    over an edge. ring > 0 also paints a frame that wide around it."""
+    from mathutils.bvhtree import BVHTree
+    to3, look = _VIEWS[view]
+    dirs = [Vector(look)] if view != "side" else [Vector((1, 0, 0)), Vector((-1, 0, 0))]
+    dirs_b = [G(d.x, d.y, d.z) for d in dirs]
+    outlines = [(material, list(pts))]
+    if ring:
+        outlines.insert(0, (ring_material, outline_grow(list(pts), ring)))
+    bm = bmesh.new(); bm.from_mesh(body.data)
+
+    def facing(f):
+        return max(f.normal.dot(d) for d in dirs_b)
+
+    for _, poly in outlines:
+        us = [p[0] for p in poly]; vs = [p[1] for p in poly]
+        box2 = (min(us) - 0.05, max(us) + 0.05, min(vs) - 0.05, max(vs) + 0.05)
+        def bb(f):
+            c = [_uv(view, v.co) for v in f.verts]
+            return min(a for a, _ in c), max(a for a, _ in c), min(b for _, b in c), max(b for _, b in c)
+        pool = [f for f in bm.faces if facing(f) > min_facing * 0.5]
+        pool = [f for f in pool if (lambda q: q[1] >= box2[0] and q[0] <= box2[1] and q[3] >= box2[2] and q[2] <= box2[3])(bb(f))]
+        for i in range(len(poly)):
+            a, b = Vector(poly[i]), Vector(poly[(i + 1) % len(poly)])
+            if (b - a).length < 1e-5:
+                continue
+            lo_u, hi_u = min(a.x, b.x) - 0.004, max(a.x, b.x) + 0.004
+            lo_v, hi_v = min(a.y, b.y) - 0.004, max(a.y, b.y) + 0.004
+            hit = []
+            for f in pool:
+                if not f.is_valid:
+                    continue
+                q = bb(f)
+                if q[1] >= lo_u and q[0] <= hi_u and q[3] >= lo_v and q[2] <= hi_v:
+                    hit.append(f)
+            if not hit:
+                continue
+            t = (b - a).normalized()
+            n2 = Vector((-t.y, t.x))
+            co = G(*to3(a.x, a.y, 0.0)); no = G(*to3(n2.x, n2.y, 0.0))
+            geom = set(hit)
+            for f in hit:
+                geom.update(f.edges); geom.update(f.verts)
+            res = bmesh.ops.bisect_plane(bm, geom=list(geom), plane_co=co, plane_no=no, dist=1e-6)
+            newf = [g for g in res["geom"] if isinstance(g, bmesh.types.BMFace)]
+            keep = set(hit)
+            pool = [f for f in pool if f.is_valid and f not in keep] + newf
+    bm.normal_update()
+    bm.faces.ensure_lookup_table(); bm.faces.index_update()
+    tree = BVHTree.FromBMesh(bm)
+    for mname, poly in outlines:
+        if not body.data.materials.get(mname):
+            body.data.materials.append(mat(mname))
+        mi = list(body.data.materials).index(mat(mname))
+        for f in bm.faces:
+            if facing(f) <= min_facing:
+                continue
+            c = f.calc_center_median()
+            if not _inside(_uv(view, c), poly):
+                continue
+            # Only what is actually seen from that side (not a surface
+            # hidden behind another part of the body).
+            seen = False
+            for d in dirs_b:
+                if f.normal.dot(d) <= 0:
+                    continue
+                loc, _, idx, _ = tree.ray_cast(c + d * 6.0, -d)
+                if loc is not None and (idx == f.index or (loc - c).length < 0.004):
+                    seen = True
+            if seen:
+                f.material_index = mi
+    bm.to_mesh(body.data); bm.free()
+    smooth(body)
+
+
 # ── Small solid parts ───────────────────────────────────────────────────────
 def box(material, c, size, bevel=0.0, sub=0):
     bm = bmesh.new()
