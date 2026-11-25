@@ -230,6 +230,7 @@ export function landAt(L: LandDef, x: number, z: number): { h: number; mat: numb
  *   X+ X-    the road is the ground itself on / off
  *   Mdirt    surface from here (asphalt, dirt, ice, metal, sand)
  *   O14      a loop of 14 m radius here (the road goes on beside it)
+ *   O14/32   the same, going on 32 m to the right
  */
 export function buildRoad(def: RoadDef): Road {
   const L = def.land;
@@ -325,9 +326,9 @@ export function buildRoad(def: RoadDef): Road {
     else if (c === "X") flags = rest === "+" ? flags | FLUSH : flags & ~FLUSH;
     else if (c === "M") surf = rest as Surf;
     else if (c === "O") {
-      const r = num(rest);
+      const [r, o] = rest.split("/").map(num);
       if (r < LOOP_R[0] || r > LOOP_R[1]) throw new Error(`Bad loop ${tok}`);
-      const fx = dsin(yaw), fz = dcos(yaw), off = 2 * hw + 4;
+      const fx = dsin(yaw), fz = dcos(yaw), off = o === undefined ? 2 * hw + 4 : o < 2 * hw + 2 ? 2 * hw + 2 : o > 80 ? 80 : o;
       loops.push({ x, y, z, yaw, fx, fz, rx: -fz, rz: fx, r, hw, off });
       main[main.length - 1].flags |= GAP | LOOPJ;
       x += -fz * off; z += fx * off;
