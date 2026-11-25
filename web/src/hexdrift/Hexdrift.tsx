@@ -1,8 +1,11 @@
 // Hexdrift: a fast time-trial racer built into Vortex. This file is the menu,
 // the HUD, the finish screen and Gaming Mode; the game itself is in game.ts.
 // Loaded only when someone opens it, so it adds nothing to the rest of the site.
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { ALL_MAPS, MAPS, BIOMES, medalFor, type MapDef, type Medal } from "./maps.ts";
+import { Editor, MyMaps } from "./editor.tsx";
+import { authorOf, bestInputs, finishOn, mapDefOf, myBest, myMap } from "./mymaps.ts";
+import { medalsOf, type CustomMap } from "./sim/custom.ts";
 import { formatTime } from "./sim/race.ts";
 import { Controls, type Action } from "./input.ts";
 import { Game } from "./game.ts";
@@ -35,16 +38,22 @@ type View =
   | { kind: "play"; map: MapDef }
   | { kind: "records"; map: MapDef }
   | { kind: "player"; email: string }
-  | { kind: "garage" };
+  | { kind: "garage" }
+  | { kind: "mymaps" }
+  | { kind: "edit"; id: string }
+  | { kind: "test"; id: string };
 
 /**
  * #/hexdrift (title), #/hexdrift/maps, #/hexdrift/map/<map> (its page),
- * #/hexdrift/<map> (race), #/hexdrift/<map>/records, #/hexdrift/player/<email>
+ * #/hexdrift/<map> (race), #/hexdrift/<map>/records, #/hexdrift/player/<email>,
+ * #/hexdrift/editor (my maps), #/hexdrift/editor/<id> (editing), #/hexdrift/test/<id> (driving one)
  */
 function readView(): View {
   const parts = location.hash.replace(/^#\/?/, "").split("/");
   if (parts[1] === "garage") return { kind: "garage" };
   if (parts[1] === "maps") return { kind: "maps" };
+  if (parts[1] === "editor") return parts[2] ? { kind: "edit", id: parts[2] } : { kind: "mymaps" };
+  if (parts[1] === "test" && parts[2]) return { kind: "test", id: parts[2] };
   if (parts[1] === "map") { const m = MAPS.find((x) => x.id === parts[2]); return m ? { kind: "map", map: m } : { kind: "maps" }; }
   if (parts[1] === "player" && parts[2]) return { kind: "player", email: decodeURIComponent(parts[2]).toLowerCase() };
   // Maps still being built open by address on the dev server only.
@@ -113,11 +122,11 @@ export function Hexdrift() {
   // Every press in the menus gets a sound; every screen change a whoosh.
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => wireUiSounds(root.current!), []);
-  const viewKey = view.kind + ("map" in view ? `:${view.map.id}` : "email" in view ? `:${view.email}` : "");
+  const viewKey = view.kind + ("map" in view ? `:${view.map.id}` : "email" in view ? `:${view.email}` : "id" in view ? `:${view.id}` : "");
   const firstView = useRef(true);
   useEffect(() => {
     if (firstView.current) { firstView.current = false; return; }
-    if (view.kind !== "play") play("whoosh");
+    if (view.kind !== "play" && view.kind !== "test") play("whoosh");
   }, [viewKey]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <Online.Provider value={{ sb, me, profiles, sync, rev }}>
@@ -127,6 +136,9 @@ export function Hexdrift() {
             : view.kind === "records" ? <Records map={view.map} />
             : view.kind === "player" ? <Player email={view.email} />
             : view.kind === "garage" ? <Garage />
+            : view.kind === "mymaps" ? <MyMaps />
+            : view.kind === "edit" ? <Editor id={view.id} />
+            : view.kind === "test" ? <TestDrive id={view.id} />
             : view.kind === "maps" ? <MapSelect />
             : view.kind === "map" ? <MapDetail map={view.map} />
             : <Title />}
@@ -272,6 +284,7 @@ function Title() {
           <div className="hx-cta">
             <a className="hx-big" href="#/hexdrift/maps" data-sound="confirm"><IconPlay size={22} /><span>Play</span></a>
             <a className="hx-big hx-big-2" href="#/hexdrift/garage"><IconGarage size={22} /><span>Garage</span></a>
+            <a className="hx-big hx-big-2" href="#/hexdrift/editor"><IconRoute size={22} /><span>Create</span></a>
           </div>
           <dl className="hx-stats">
             <div><dt>Medal points</dt><dd>{points ?? "…"}<small>/{MAX_POINTS}</small></dd></div>
@@ -515,10 +528,18 @@ function IphoneTip() {
   );
 }
 
-interface Result { ticks: number; best: Best | null; isBest: boolean; online?: "sending" | "waiting" | Submitted }
+interface Result { ticks: number; best: Best | null; isBest: boolean; online?: "sending" | "waiting" | Submitted; author?: boolean }
 type Over = null | "pause" | "restored" | Result;
 
-function Play({ map }: { map: MapDef }) {
+/** Driving one of your maps: times stay on this device; your fastest sets the author time. */
+function TestDrive({ id }: { id: string }) {
+  const [cm] = useState(() => myMap(id));
+  const map = useMemo(() => cm ? mapDefOf(cm) : null, [cm]);
+  if (!cm || !map) return <div className="hx-menu"><a className="hx-back" href="#/hexdrift/editor">My maps</a><p>That map isn't on this device.</p></div>;
+  return <Play map={map} custom={cm} />;
+}
+
+function Play({ map, custom }: { map: MapDef; custom?: CustomMap }) {
   const host = useRef<HTMLDivElement>(null);
   const time = useRef<HTMLSpanElement>(null);
   const speed = useRef<HTMLSpanElement>(null);
@@ -531,7 +552,11 @@ function Play({ map }: { map: MapDef }) {
   const overRef = useRef<Over>(null);
   overRef.current = over;
   const [touch, setTouch] = useState(() => typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches);
-  const [best, setBest] = useState<Best | null>(() => bestTimeNow(map.id));
+  // Your own maps: the latest copy (the author time can change while you drive).
+  const cmRef = useRef(custom);
+  const [medals, setMedals] = useState(map.medals);
+  const myTime = () => { const b = cmRef.current && myBest(cmRef.current); return b ? { t: b.t, legacy: false } : null; };
+  const [best, setBest] = useState<Best | null>(() => custom ? myTime() : bestTimeNow(map.id));
   const [error, setError] = useState("");
   const gaming = useGaming();
   const { sb, me, profiles, sync } = useOnlineRecords();
@@ -575,6 +600,17 @@ function Play({ map }: { map: MapDef }) {
         onFinish(ticks, inputs) {
           clearLive();
           bootLive = null;
+          if (cmRef.current) {
+            const prev = myTime();
+            const res = finishOn(cmRef.current, ticks, inputs);
+            cmRef.current = res.map;
+            const a = authorOf(res.map);
+            if (a) setMedals(medalsOf(a.ticks));
+            setOver({ ticks, best: prev, isBest: res.best, author: res.author });
+            setBest(myTime());
+            if (res.best) game.current?.setGhost(Uint8Array.from(inputs), ticks);
+            return;
+          }
           const prev = bestTimeNow(map.id);
           const isBest = !prev || ticks < prev.t;
           setOver({ ticks, best: prev, isBest });
@@ -599,14 +635,17 @@ function Play({ map }: { map: MapDef }) {
     }
     game.current = g;
     g.setGraphics(gfxPref());
-    void allBests().then(() => {
+    if (cmRef.current) {
+      const b = myBest(cmRef.current);
+      if (b) g.setGhost(bestInputs(b), b.t);
+    } else void allBests().then(() => {
       if (game.current !== g) return;
       const b = bestNow(map.id);
       setBest(bestTimeNow(map.id));
       loadGhost(b);
     });
     // Carry on a run the page was reloaded in the middle of.
-    if (bootLive && bootLive.map === map.id && bootLive.inputs.length > 0) {
+    if (!cmRef.current && bootLive && bootLive.map === map.id && bootLive.inputs.length > 0) {
       g.restore(bootLive.inputs);
       g.setPaused(true);
       setOver("restored");
@@ -617,7 +656,7 @@ function Play({ map }: { map: MapDef }) {
     // Save the run in progress every 2 seconds and when the page is closing.
     const keep = () => {
       const r = g.race;
-      if (r.phase === "running" && r.inputs.length > 0 && !g.autopilot) saveLive(map.id, r.inputs);
+      if (r.phase === "running" && r.inputs.length > 0 && !g.autopilot && !cmRef.current) saveLive(map.id, r.inputs);
     };
     const every = window.setInterval(keep, 2000);
     window.addEventListener("pagehide", keep);
@@ -636,7 +675,7 @@ function Play({ map }: { map: MapDef }) {
 
   // The world record's gold ghost (unless it's yours).
   useEffect(() => {
-    if (!sb) return;
+    if (!sb || custom) return;
     let alive = true;
     void recordRun(sb, map.id).then((r) => {
       const g = game.current;
@@ -675,8 +714,8 @@ function Play({ map }: { map: MapDef }) {
           </span>
         </div>
         <div className="hx-targets">
-          {best && <span><MedalIcon m={medalFor(map, best.t)} size={12} />Best {formatTime(best.t)}</span>}
-          <span><MedalIcon m="gold" size={12} />{formatTime(map.medals.gold)}</span>
+          {best && <span><MedalIcon m={medals.vortex ? medalFor({ ...map, medals }, best.t) : null} size={12} />Best {formatTime(best.t)}</span>}
+          {medals.vortex ? <span><MedalIcon m="gold" size={12} />{formatTime(medals.gold)}</span> : <span>Finish to set the author time</span>}
           {wrName && <span className="hx-wr-chip"><IconCrown size={13} />{wrName}</span>}
         </div>
         <div className="hx-split" ref={split} />
@@ -693,13 +732,13 @@ function Play({ map }: { map: MapDef }) {
           <div className="hx-row">
             <button type="button" className="hx-btn hx-btn-main" onClick={() => pause(false)} autoFocus>{over === "restored" ? "Carry on" : "Resume"}</button>
             <button type="button" className="hx-btn" onClick={restart}>Restart</button>
-            <a className="hx-btn" href={`#/hexdrift/map/${map.id}`}>Maps</a>
+            <a className="hx-btn" href={custom ? `#/hexdrift/editor/${custom.id}` : `#/hexdrift/map/${map.id}`}>{custom ? "Editor" : "Maps"}</a>
           </div>
           {over === "pause" && <GraphicsPicker game={game.current} />}
           {gaming && <p className="hx-dim hx-small">Gaming Mode is on: hold its button for 3 seconds to turn it off.</p>}
         </div></div>
       )}
-      {over && typeof over === "object" && <Finish map={map} result={over} next={next} onRestart={restart} signedIn={!!sb} />}
+      {over && typeof over === "object" && <Finish map={{ ...map, medals }} result={over} next={next} onRestart={restart} signedIn={!!sb} editor={custom?.id} />}
     </div>
   );
 }
@@ -737,14 +776,14 @@ function Intro({ map, stage, best }: { map: MapDef; stage: IntroStage; best: Bes
       <div className="hx-bars" aria-hidden="true"><i /><i /></div>
       {stage === "fly" && (
         <div className="hx-intro-title">
-          <p className="hx-kicker">{String(idx + 1).padStart(2, "0")} · {b.name} · {map.difficulty}</p>
+          <p className="hx-kicker">{idx < 0 ? `${b.name} · your map` : <>{String(idx + 1).padStart(2, "0")} · {b.name} · {map.difficulty}</>}</p>
           <h2>{map.name}</h2>
         </div>
       )}
       {stage === "car" && (
         <div className="hx-intro-targets">
           {best ? <span><MedalIcon m={medalFor(map, best.t)} size={16} />Your best {formatTime(best.t)}</span> : <span>First run</span>}
-          <span><MedalIcon m="gold" size={16} />Gold {formatTime(map.medals.gold)}</span>
+          {map.medals.gold > 0 ? <span><MedalIcon m="gold" size={16} />Gold {formatTime(map.medals.gold)}</span> : <span>Finish to set the author time</span>}
         </div>
       )}
       <p className="hx-intro-skip">Tap or press any key to skip</p>
@@ -766,7 +805,7 @@ function OnlineLine({ map, online, signedIn }: { map: MapDef; online: Result["on
   );
 }
 
-function Finish({ map, result, next, onRestart, signedIn }: { map: MapDef; result: Result; next: MapDef; onRestart: () => void; signedIn: boolean }) {
+function Finish({ map, result, next, onRestart, signedIn, editor }: { map: MapDef; result: Result; next: MapDef; onRestart: () => void; signedIn: boolean; editor?: string }) {
   const medal = medalFor(map, result.ticks);
   // The results slide in after the celebration; a chime if there's a medal.
   useEffect(() => {
@@ -782,6 +821,7 @@ function Finish({ map, result, next, onRestart, signedIn }: { map: MapDef; resul
         ? <p className="hx-pb">{result.best ? `New best! −${formatTime(result.best.t - result.ticks)}` : "First finish!"}</p>
         : <p className="hx-dim">Best {formatTime(result.best!.t)} (+{formatTime(result.ticks - result.best!.t)})</p>}
       <OnlineLine map={map} online={result.online} signedIn={signedIn} />
+      {result.author && <p className="hx-pb">New author time: the medals now go by it.</p>}
       <p className="hx-got">{medal ? <><MedalIcon m={medal} size={28} />{MEDAL_NAME[medal]} medal</> : "No medal yet"}</p>
       <ul className="hx-medals">
         {order.map((m) => (
@@ -790,8 +830,10 @@ function Finish({ map, result, next, onRestart, signedIn }: { map: MapDef; resul
       </ul>
       <div className="hx-row">
         <button type="button" className="hx-btn hx-btn-main" onClick={onRestart} autoFocus>Restart</button>
-        <a className="hx-btn" href={`#/hexdrift/${next.id}`}>Next map</a>
-        <a className="hx-btn" href="#/hexdrift/maps">Maps</a>
+        {editor ? <a className="hx-btn" href={`#/hexdrift/editor/${editor}`}>Back to editor</a> : <>
+          <a className="hx-btn" href={`#/hexdrift/${next.id}`}>Next map</a>
+          <a className="hx-btn" href="#/hexdrift/maps">Maps</a>
+        </>}
       </div>
     </div></div>
   );

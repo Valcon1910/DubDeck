@@ -422,3 +422,69 @@ a.hx-pl-name:hover { text-decoration: underline; }
   .hx-play.hx-boosting::after { animation: none; }
   .hx-finish .hx-final, .hx-finish .hx-got, .hx-finish .hx-pb, .hx-finish .hx-medals li.got { animation: none; }
 }
+
+/* ── Map editor ── */
+.hx-ed-new h2, .hx-ed-import label { font-size: 16px; margin: 0 0 8px; display: block; }
+.hx-ed-new, .hx-ed-list, .hx-ed-import { max-width: 980px; margin: 0 auto 18px; }
+.hx-ed-themes { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+.hx-ed-theme { display: grid; gap: 6px; padding: 0 0 10px; border-radius: 14px; overflow: hidden; cursor: pointer; font-weight: 700;
+  background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.12); }
+.hx-ed-theme span { height: 56px; background: linear-gradient(180deg, var(--hx-sky), var(--hx-g)); border-bottom: 3px solid var(--hx-a); }
+.hx-ed-theme:hover, .hx-ed-theme:focus-visible { border-color: var(--hx-a); outline: none; }
+.hx-ed-list { list-style: none; padding: 0; display: grid; gap: 8px; }
+.hx-ed-list li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.1); }
+.hx-ed-list li > a:first-child { flex: 1; display: grid; gap: 2px; text-decoration: none; min-width: 0; }
+.hx-ed-list strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hx-ed-list span { font-size: 13px; }
+.hx-ed-import .hx-row { justify-content: flex-start; margin-top: 0; flex-wrap: nowrap; }
+.hx .hx-ed-import input, .hx .hx-ed-name { min-width: 0; flex: 1; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.3) !important; color: inherit !important; font: inherit; width: auto !important; min-height: 0 !important; user-select: text; -webkit-user-select: text; }
+
+.hx-ed { position: absolute; inset: 0; display: grid; grid-template-rows: auto minmax(160px, 1fr) auto auto auto; background: #0d0b1f;
+  padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); gap: 6px; }
+.hx-ed-bar { display: flex; gap: 6px; align-items: center; }
+.hx-ed-bar .hx-icon { display: grid; place-items: center; flex: none; }
+.hx-ed-bar .hx-icon:disabled { opacity: 0.35; }
+.hx-ed-name { padding: 8px 10px; font-weight: 700; }
+.hx-off { opacity: 0.4; pointer-events: none; }
+.hx-ed-view { width: 100%; height: 100%; border-radius: 14px; display: block; touch-action: none; min-height: 0; }
+.hx-ed-info { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; opacity: 0.85; font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.hx-ed-problems { list-style: none; margin: 0; padding: 6px 10px; border-radius: 10px; background: rgba(255, 77, 94, 0.18); font-size: 13px; }
+.hx-ed-problems button { border: 0; background: rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 1px 6px; cursor: pointer; }
+.hx-ed-panel { display: grid; grid-auto-rows: max-content; align-content: start; gap: 8px; max-height: 52vh; overflow-y: auto; touch-action: pan-y; padding-right: 2px; }
+.hx-ed-strip { min-height: 52px; display: flex; gap: 6px; overflow-x: auto; touch-action: pan-x; padding-bottom: 4px; scrollbar-width: thin; }
+.hx-ed-piece { flex: none; display: grid; justify-items: center; min-width: 58px; padding: 5px 8px; border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 13px;
+  border: 1px solid rgba(255, 255, 255, 0.14); background: rgba(255, 255, 255, 0.06); font-variant-numeric: tabular-nums; }
+.hx-ed-piece small { font-size: 10px; opacity: 0.55; font-weight: 500; }
+.hx-ed-piece.k-C { background: rgba(255, 210, 61, 0.15); }
+.hx-ed-piece.k-G { background: rgba(35, 229, 255, 0.12); }
+.hx-ed-piece.on { border-color: #23e5ff; box-shadow: 0 0 0 2px rgba(35, 229, 255, 0.4); }
+.hx-ed-piece.bad { border-color: #ff4d5e; }
+.hx-ed-add, .hx-ed-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.hx-ed-row > .hx-dim, .hx-ed-add > .hx-dim { width: 64px; flex: none; font-size: 13px; }
+.hx-ed-chips { display: flex; gap: 5px; flex-wrap: wrap; flex: 1; align-items: center; }
+.hx-chip-btn { min-height: 36px; min-width: 36px; padding: 6px 11px; border-radius: 99px; border: 1px solid rgba(255, 255, 255, 0.16); background: rgba(255, 255, 255, 0.07);
+  cursor: pointer; font-weight: 600; font-size: 14px; text-transform: capitalize; }
+.hx-chip-btn.on { background: linear-gradient(90deg, #23b8ff, #b33dff); border-color: transparent; }
+.hx-ed-val { font-weight: 700; font-variant-numeric: tabular-nums; padding: 0 4px; }
+.hx-ed-inspect { display: grid; gap: 8px; padding: 10px; border-radius: 14px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); }
+.hx-ed-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.hx-ed-head span { display: flex; gap: 4px; }
+.hx-ed-head .hx-icon:disabled { opacity: 0.35; }
+.hx-ed-inspect p { margin: 0; font-size: 13px; }
+.hx-tabs { display: flex; gap: 4px; padding: 3px; border-radius: 12px; background: rgba(0, 0, 0, 0.3); }
+.hx-tabs button { flex: 1; padding: 7px; border: 0; border-radius: 9px; background: none; cursor: pointer; font-weight: 600; }
+.hx-tabs button.on { background: rgba(255, 255, 255, 0.14); }
+.hx-danger { color: #ff8a94 !important; }
+.hx-ed-more summary { cursor: pointer; padding: 6px 0; opacity: 0.8; }
+.hx-ed-more { display: grid; gap: 8px; }
+.hx-small { font-size: 12px; }
+/* Landscape phones and the computer studio: the map left, the tools right. */
+@media (orientation: landscape) and (min-width: 560px) {
+  .hx-ed { grid-template-columns: minmax(0, 1fr) min(380px, 46vw); grid-template-rows: auto auto auto minmax(0, 1fr); }
+  .hx-ed-bar { grid-column: 1 / -1; }
+  .hx-ed-view { grid-column: 1; grid-row: 2 / 5; }
+  .hx-ed-info, .hx-ed-problems { grid-column: 2; }
+  .hx-ed-panel { grid-column: 2; max-height: none; min-height: 0; }
+}
+.hx-ed-wide { grid-template-columns: minmax(0, 1fr) 440px; }
