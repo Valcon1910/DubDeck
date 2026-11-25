@@ -53,7 +53,7 @@ const CAMS = [
   { dist: -0.2, height: 1.45, look: 1.25, fov: 78 },
 ];
 
-interface Snap { x: number; y: number; z: number; yaw: number; nx: number; ny: number; nz: number }
+interface Snap { x: number; y: number; z: number; yaw: number; nx: number; ny: number; nz: number; loop: boolean; tx: number; ty: number; tz: number }
 /** The best run replayed next to you: see-through, no collisions. */
 interface Ghost {
   inputs: Uint8Array;
@@ -66,7 +66,7 @@ interface Ghost {
   n: THREE.Vector3;
 }
 
-const snap = (r: Race): Snap => ({ x: r.car.x, y: r.car.y, z: r.car.z, yaw: r.car.yaw, nx: r.car.nx, ny: r.car.ny, nz: r.car.nz });
+const snap = (r: Race): Snap => ({ x: r.car.x, y: r.car.y, z: r.car.z, yaw: r.car.yaw, nx: r.car.nx, ny: r.car.ny, nz: r.car.nz, loop: r.car.loop >= 0, tx: r.car.tx, ty: r.car.ty, tz: r.car.tz });
 
 export class Game {
   race: Race;
@@ -115,6 +115,10 @@ export class Game {
   private camYaw: number;
   private camPos = new THREE.Vector3();
   private camLook = new THREE.Vector3();
+  /** How far the camera has turned to follow a loop (0 to 1), and the loop's way forward. */
+  private loopK = 0;
+  private loopT = new THREE.Vector3(0, 0, 1);
+  private upV = new THREE.Vector3();
   private camInit = false;
   private respawnHeld = false;
   private botAt = { i: 0 };
@@ -575,6 +579,18 @@ export class Game {
     else this.camPos.lerp(want, Math.min(1, dt * (this.cam === 2 ? 40 : 12)));
     if (this.cam === 2) this.camPos.copy(want);
     this.camLook.set(x + fx * 6, y + c.look, z + fz * 6);
+    // Round a loop: behind the car along the loop and above it toward the loop's middle,
+    // turning with it, so the camera stays inside the loop instead of cutting through it.
+    const inLoop = this.cur.loop && !jump;
+    this.loopK += ((inLoop ? 1 : 0) - this.loopK) * Math.min(1, dt * (inLoop ? 10 : 3));
+    if (inLoop) this.loopT.set(this.cur.tx, this.cur.ty, this.cur.tz);
+    if (inLoop && this.cam !== 2) {
+      const n = this.smoothN, L = this.loopT, d = c.dist * 0.7, h = c.height + 0.4;
+      this.camPos.lerp(this.vy.set(x - L.x * d + n.x * h, y - L.y * d + n.y * h, z - L.z * d + n.z * h), Math.min(1, dt * 20));
+      this.camLook.set(x + L.x * 6 + n.x * c.look, y + L.y * 6 + n.y * c.look, z + L.z * 6 + n.z * c.look);
+    }
+    this.upV.set(0, 1, 0).lerp(this.smoothN, this.loopK);
+    if (this.upV.lengthSq() > 0.01) this.camera.up.copy(this.upV.normalize());
     if (this.race.phase === "finished") {
       // The finish shot: a low sweep beside the car that cranes up and out
       // into a slow orbit while the celebration plays.
@@ -878,8 +894,10 @@ export class Game {
   /** Places a car model: forward along yaw, up along the (smoothed) road normal. */
   private pose(model: CarModel, n: THREE.Vector3, b: Snap, jump: boolean, x: number, y: number, z: number, yaw: number, dt: number) {
     n.lerp(this.vy.set(b.nx, b.ny, b.nz), Math.min(1, dt * 10)).normalize();
-    if (jump) n.set(b.nx, b.ny, b.nz);
-    this.vz.set(Math.sin(yaw), 0, Math.cos(yaw));
+    if (jump || b.loop) n.set(b.nx, b.ny, b.nz);
+    // Round a loop the car points along it (its heading alone can't say which way up it's going).
+    if (b.loop) this.vz.set(b.tx, b.ty, b.tz);
+    else this.vz.set(Math.sin(yaw), 0, Math.cos(yaw));
     this.vx.crossVectors(n, this.vz).normalize();
     this.vz.crossVectors(this.vx, n).normalize();
     this.tmpM.makeBasis(this.vx, n, this.vz).setPosition(x, y, z);

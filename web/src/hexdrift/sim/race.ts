@@ -4,7 +4,8 @@
 // record checks on the server later).
 import { clamp, dcos, dsin } from "./math.ts";
 import { CELL, DIRV, groundAt, HALF_W, heightAlong, key, local, CURVE_IN, CURVE_OUT, LEVEL, THICK, WALL_H, WALL_T, yawOf, type Piece, type Spot, type Track } from "./track.ts";
-import { roadSolids } from "./road.ts";
+import { roadSolids, type Loop } from "./road.ts";
+import { hitParts, type Mat } from "./parts.ts";
 import { NO_GROUND, terrainAt } from "./terrain.ts";
 import { hitSolids } from "./props.ts";
 
@@ -12,7 +13,7 @@ import { hitSolids } from "./props.ts";
  * Bump whenever the handling or track physics change: runs from older
  * physics can't be replayed exactly, so their records and ghosts are dropped.
  */
-export const PHYSICS_V = 6;
+export const PHYSICS_V = 7;
 
 export const HZ = 60;
 const DT = 1 / HZ;
@@ -55,6 +56,12 @@ export interface Car {
   land: number; // speed downwards when it landed this step
   /** Top speed on the ground it's driving on (off the road). */
   rough: number;
+  /** Going round a loop (its index; -1 when not): distance round it, and across it. */
+  loop: number; ls: number; ll: number;
+  /** Which way the car points in a loop (for drawing it). */
+  tx: number; ty: number; tz: number;
+  /** The material of the part it stands on ("" when not on a part). */
+  part: Mat | "";
 }
 
 function place(car: Car, p: Spot) {
@@ -64,6 +71,7 @@ function place(car: Car, p: Spot) {
   car.rough = VMAX_OFF;
   car.grounded = true; car.nx = 0; car.ny = 1; car.nz = 0;
   car.speed = 0; car.slip = 0; car.boosting = 0; car.offroad = false; car.drift = 0; car.hit = 0; car.land = 0;
+  car.loop = -1; car.ls = 0; car.ll = 0; car.tx = 0; car.ty = 0; car.tz = 0; car.part = "";
 }
 
 export type Phase = "countdown" | "running" | "finished";
@@ -105,13 +113,14 @@ export function step(r: Race, byte: number) {
   car.hit = 0; car.land = 0;
 
   if (byte & 128) { respawn(r); return; }
+  if (car.loop >= 0) { loopStep(r, steer, gas, brake); return; }
 
   const fx = dsin(car.yaw), fz = dcos(car.yaw);
   const grav = GRAVITY * r.track.grav;
   if (car.grounded) {
     const off = car.offroad;
     const g = off ? null : groundAt(r.track, car.x, car.y, car.z, 0.6);
-    const ice = g?.ice === true;
+    const ice = g?.ice === true || car.part === "ice";
     const nx = car.nx, ny = car.ny, nz = car.nz;
     // Forward and right along the road's surface.
     let tx = fx - nx * (fx * nx + fz * nz), ty = -ny * (fx * nx + fz * nz), tz = fz - nz * (fx * nx + fz * nz);
@@ -197,6 +206,21 @@ export function step(r: Race, byte: number) {
     car.offroad = false;
     car.nx = 0; car.ny = 1; car.nz = 0;
   }
+  // Into a loop: the car crosses the line where one stands on the road.
+  if (r.track.road?.loops.length && car.grounded && !car.offroad) {
+    const loops = r.track.road.loops;
+    for (let i = 0; i < loops.length; i++) {
+      const L = loops[i];
+      const a0 = (px - L.x) * L.fx + (pz - L.z) * L.fz, a1 = (car.x - L.x) * L.fx + (car.z - L.z) * L.fz;
+      const lat = (car.x - L.x) * L.rx + (car.z - L.z) * L.rz;
+      if (a0 < 0 && a1 >= 0 && lat > -L.hw && lat < L.hw && car.y - L.y < 2 && L.y - car.y < 2) {
+        car.loop = i; car.ls = a1; car.ll = lat;
+        car.speed = car.vx * L.fx + car.vz * L.fz;
+        loopPose(car, L);
+        return;
+      }
+    }
+  }
   if (r.track.road) {
     const w = roadSolids(r.track.road, car, px, pz, CAR_R, CAR_H);
     if (w > car.hit) car.hit = w;
@@ -205,7 +229,79 @@ export function step(r: Race, byte: number) {
   } else solids(r, px, pz);
   const hard = hitSolids(r.track, car, CAR_R, CAR_H);
   if (hard > car.hit) car.hit = hard;
+  if (r.track.parts) {
+    const h = hitParts(r.track.parts, car, car.part !== "");
+    if (h.touch === "kill") { respawn(r); return; }
+    car.part = h.ground;
+    if (h.ground) {
+      car.grounded = true; car.offroad = false;
+      car.nx = h.nx; car.ny = h.ny; car.nz = h.nz;
+    }
+    if (h.land > car.land) car.land = h.land;
+    if (h.hit > car.hit) car.hit = h.hit;
+    if (h.touch === "boost" || h.ground === "boost") {
+      const bx = dsin(car.yaw), bz = dcos(car.yaw);
+      if (car.vx * bx + car.vz * bz < VMAX * 1.45) { car.vx += bx * BOOST * DT; car.vz += bz * BOOST * DT; }
+      car.boosting = 40;
+    }
+  }
   if (car.y < r.track.minY - 30) respawn(r);
+}
+
+const TAU = 6.283185307179586;
+
+/** Where the car is in its loop (from car.ls, car.ll), its heading, and its velocity. */
+function loopPose(car: Car, L: Loop) {
+  const th = car.ls / L.r, sn = dsin(th), cs = dcos(th);
+  const side = L.off * th / TAU + car.ll;
+  car.x = L.x + L.r * L.fx * sn + L.rx * side;
+  car.y = L.y + L.r - L.r * cs;
+  car.z = L.z + L.r * L.fz * sn + L.rz * side;
+  car.tx = L.fx * cs; car.ty = sn; car.tz = L.fz * cs;
+  car.nx = -L.fx * sn; car.ny = cs; car.nz = -L.fz * sn;
+  car.vx = car.tx * car.speed; car.vy = car.ty * car.speed; car.vz = car.tz * car.speed;
+  car.grounded = true; car.offroad = false; car.slip = 0; car.yawRate = 0; car.part = "";
+}
+
+/**
+ * Going round a loop: speed along it (engine, brakes, drag and the slope of
+ * gravity), steering slides across it. Too slow and it falls off; at the end
+ * it drives on along the road beside the way in.
+ */
+function loopStep(r: Race, steer: number, gas: boolean, brake: boolean) {
+  const car = r.car, L = r.track.road!.loops[car.loop];
+  const g = GRAVITY * r.track.grav;
+  let vf = car.speed;
+  if (gas) vf += ENGINE * (1 - vf / VMAX) * DT;
+  if (brake) vf -= 30 * DT;
+  vf -= vf * (vf < 0 ? -vf : vf) * 0.0006 * DT;
+  const th = car.ls / L.r;
+  vf -= g * dsin(th) * DT;
+  const lim = L.hw - 1.5;
+  car.ll += steer * 9 * DT;
+  if (car.ll > lim) car.ll = lim; else if (car.ll < -lim) car.ll = -lim;
+  if (car.boosting > 0) car.boosting--;
+  car.speed = vf;
+  car.ls += vf * DT;
+  const end = TAU * L.r;
+  if (car.ls >= end || car.ls < 0) {
+    // Out onto the road: beyond the way out, or back past the way in.
+    const along = car.ls >= end ? car.ls - end : car.ls, side = (car.ls >= end ? L.off : 0) + car.ll;
+    car.x = L.x + L.fx * along + L.rx * side;
+    car.y = L.y;
+    car.z = L.z + L.fz * along + L.rz * side;
+    car.vx = L.fx * vf; car.vy = 0; car.vz = L.fz * vf;
+    car.nx = 0; car.ny = 1; car.nz = 0;
+    car.grounded = true; car.offroad = false;
+    car.loop = -1; car.tx = car.ty = car.tz = 0;
+    return;
+  }
+  loopPose(car, L);
+  // The track has to push the car in to hold it: too slow at the top and it drops.
+  if (vf * vf / L.r + g * dcos(car.ls / L.r) < 0 || (vf < 1 && car.ls > L.r)) {
+    car.loop = -1; car.grounded = false; car.tx = car.ty = car.tz = 0;
+    car.nx = 0; car.ny = 1; car.nz = 0;
+  }
 }
 
 /** Stands the car on a surface with this normal. */

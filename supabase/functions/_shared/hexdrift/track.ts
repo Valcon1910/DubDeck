@@ -4,6 +4,7 @@
 // high is the road here?" exactly (no triangle meshes), which keeps the
 // physics fast and identical everywhere.
 
+import { buildParts, type Parts } from "./parts.ts";
 import { dcos, dsin } from "./math.ts";
 import { buildRoad, roadGround, type Road, type RoadDef } from "./road.ts";
 
@@ -60,6 +61,8 @@ export interface Track {
   sky?: boolean;
   /** The map's setting (city, canyon...), which decides what stands beside the road. */
   theme?: string;
+  /** Free parts (studio editor), with their grid. */
+  parts?: Parts;
 }
 
 export const key = (x: number, z: number) => (x + 2048) * 4096 + (z + 2048);
@@ -242,6 +245,7 @@ export function buildRoadTrack(def: RoadDef, theme: string): Track {
   const s0 = main[0];
   return {
     pieces: [], cells: new Map(), checkpoints: road.gates.length, line, gaps: [], theme, road,
+    parts: def.parts?.length ? buildParts(def.parts) : undefined,
     sky: def.land.kind === "isles" || def.land.kind === "void",
     spawn: { x: s0.x, y: s0.y, z: s0.z, yaw: s0.yaw }, grav: road.grav, minY: road.minY,
   };

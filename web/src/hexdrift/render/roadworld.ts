@@ -6,7 +6,8 @@
 import * as THREE from "three";
 import { groundAt, type Track } from "../sim/track.ts";
 import { terrainAt } from "../sim/terrain.ts";
-import { BOOST, FLUSH, GAP, landAt, MAT, roadDist, TUN, WALL_H, WALL_T, WL, WR, THICK, type Road, type Sample } from "../sim/road.ts";
+import { buildLoops, buildParts } from "./parts.ts";
+import { BOOST, FLUSH, GAP, LOOPJ, landAt, MAT, roadDist, TUN, WALL_H, WALL_T, WL, WR, THICK, type Road, type Sample } from "../sim/road.ts";
 import type { Biome, BiomeId } from "../maps.ts";
 import { buildProps } from "./props.ts";
 import { buildKit } from "./kit.ts";
@@ -154,6 +155,8 @@ export function buildRoadWorld(track: Track, biome: Biome, id: BiomeId): World {
   const ground = road.land.kind !== "void" ? terrain(group, track, look, geos, mats) : null;
   if (road.land.sea !== undefined && look.sea) water(group, road, look, geos, mats, time);
   roadSurface(group, road, look, geos, mats, time);
+  buildLoops(group, road, geos, mats, look.asphalt, look.line);
+  buildParts(group, track.parts, geos, mats);
   const misc = new Builder();
   const glow = new Builder();
   edges(misc, track, look);
@@ -491,7 +494,7 @@ function roadSurface(group: THREE.Group, road: Road, L: Look, geos: THREE.Buffer
     });
     // Ramps: the last 20 m before a gap.
     const gapAt: number[] = [];
-    pts.forEach((p) => { if (p.flags & GAP) gapAt.push(p.s); });
+    pts.forEach((p) => { if (p.flags & GAP && !(p.flags & LOOPJ)) gapAt.push(p.s); });
     for (let i = 0; i < pts.length - 1; i++) {
       const a = pts[i], b = pts[i + 1];
       if (a.flags & GAP) continue;

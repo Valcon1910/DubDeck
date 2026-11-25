@@ -4,6 +4,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { ALL_MAPS, MAPS, BIOMES, medalFor, type MapDef, type Medal } from "./maps.ts";
 import { Editor, MyMaps } from "./editor.tsx";
+import { GridEditor } from "./gridedit.tsx";
 import { Community, CommunityMap } from "./communityview.tsx";
 import { getMap, isCommunity, mapDefFrom, markPlayed } from "./community.ts";
 import { profileHref } from "../vortex/profileLink.ts";
@@ -147,7 +148,7 @@ export function Hexdrift() {
             : view.kind === "player" ? <Player email={view.email} />
             : view.kind === "garage" ? <Garage />
             : view.kind === "mymaps" ? <MyMaps />
-            : view.kind === "edit" ? <Editor id={view.id} sb={sb} me={me} />
+            : view.kind === "edit" ? (myMap(view.id)?.grid ? <GridEditor id={view.id} sb={sb} me={me} /> : <Editor id={view.id} sb={sb} me={me} />)
             : view.kind === "community" ? <Community sb={sb} me={me} who={(e) => nameOf(profiles, e)} offline={<NeedOnlineText />} />
             : view.kind === "cmap" ? <CommunityMap id={view.id} sb={sb} me={me} who={(e) => nameOf(profiles, e)} offline={<NeedOnlineText />} />
             : view.kind === "crace" || view.kind === "crecords" ? <CommunityRun id={view.id} records={view.kind === "crecords"} />

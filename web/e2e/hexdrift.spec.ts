@@ -174,16 +174,18 @@ test("Map editor: make a map, add pieces, undo, drive it and set the author time
   await expect(page.getByRole("heading", { name: "My maps" })).toBeVisible();
   await page.locator(".hx-ed-theme", { hasText: "Baja" }).click();
   await expect(page).toHaveURL(/#\/hexdrift\/editor\/u[0-9a-z]+$/);
-  const pieces = page.locator(".hx-ed-piece");
-  await expect(pieces).toHaveCount(6);
-  await page.locator(".hx-ed-add").getByRole("button", { name: "Right" }).click();
-  await page.locator(".hx-ed-add").getByRole("button", { name: "Straight" }).click();
-  await expect(pieces).toHaveCount(8);
+  // A starter track on the grid: tiles go in where the arrow is, before the finish.
+  const info = page.locator(".hx-ed-info");
+  await expect(info).toContainText("7 tiles");
+  await page.getByRole("button", { name: "Curve right", exact: true }).click();
+  await page.getByRole("button", { name: "Straight", exact: true }).click();
+  await expect(info).toContainText("9 tiles");
   await page.getByRole("button", { name: "Undo" }).click();
-  await expect(pieces).toHaveCount(7);
+  await expect(info).toContainText("8 tiles");
   // Edits are kept on the device.
   await page.reload();
-  await expect(pieces).toHaveCount(7);
+  await expect(info).toContainText("8 tiles");
+  await expect(page.locator(".hx-ed-problems")).toHaveCount(0);
   await expect(page.locator(".hx-ed-info")).toContainText("Drive to the finish");
   await page.getByRole("link", { name: "Drive" }).click();
   await expect(page).toHaveURL(/#\/hexdrift\/test\/u/);
@@ -192,4 +194,14 @@ test("Map editor: make a map, add pieces, undo, drive it and set the author time
   await expect(page.locator(".hx-finish")).toContainText("New author time", { timeout: 120_000 });
   await page.getByRole("link", { name: "Back to editor" }).click();
   await expect(page.locator(".hx-ed-info")).toContainText("Author");
+});
+
+test("Map editor: maps made from pieces still open in the piece editor", async ({ page }) => {
+  await page.goto("/#/hexdrift");
+  await page.evaluate(() => localStorage.setItem("hexdrift.mymaps.v1", JSON.stringify([{ v: 1, id: "upieces01", name: "Old map", theme: "miami", updated: 1,
+    pieces: [{ k: "S", len: 80 }, { k: "R", a: 90, r: 60 }, { k: "S", len: 100 }, { k: "C" }, { k: "O", r: 14 }, { k: "S", len: 120 }] }])));
+  await page.goto("/#/hexdrift/editor/upieces01");
+  await expect(page.locator(".hx-ed-piece")).toHaveCount(6);
+  await expect(page.locator(".hx-ed-piece").nth(4)).toContainText("Loop 14 m");
+  await page.evaluate(() => localStorage.removeItem("hexdrift.mymaps.v1"));
 });

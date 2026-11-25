@@ -2,7 +2,7 @@
 // Made for phones first (thumb-sized chips, one piece at a time); the studio
 // layout on computers adds keyboard keys and more room.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { checkMap, decodeMap, encodeMap, LIMITS, medalsOf, newMap, pieceAt, pieceLen, THEMES, type CustomMap, type Piece, type ThemeId } from "./sim/custom.ts";
+import { checkMap, decodeMap, encodeMap, LIMITS, medalsOf, newGridMap, pieceAt, pieceLen, THEMES, type CustomMap, type Piece, type ThemeId } from "./sim/custom.ts";
 import { GAP, type Surf } from "./sim/road.ts";
 import { BIOMES } from "./maps.ts";
 import { formatTime } from "./sim/race.ts";
@@ -21,7 +21,7 @@ export function MyMaps() {
   const [code, setCode] = useState("");
   const [msg, setMsg] = useState("");
   const create = (theme: ThemeId) => {
-    const m = newMap(theme);
+    const m = newGridMap(theme);
     m.name = `${THEMES[theme].name} ${maps.length + 1}`;
     if (!saveMap(m)) { setMsg("This device's storage is full."); return; }
     location.hash = `#/hexdrift/editor/${m.id}`;
@@ -111,11 +111,12 @@ function carried(m: CustomMap, i: number) {
   return { hw, surf, walls, tunnel };
 }
 
-const NAMES: Record<Piece["k"], string> = { S: "Straight", L: "Left", R: "Right", C: "Checkpoint", G: "Jump gap" };
+const NAMES: Record<Piece["k"], string> = { S: "Straight", L: "Left", R: "Right", C: "Checkpoint", G: "Jump gap", O: "Loop" };
 function label(p: Piece) {
   if (p.k === "S") return `${p.len} m`;
   if (p.k === "L" || p.k === "R") return `${p.k === "L" ? "←" : "→"} ${p.a}°`;
   if (p.k === "G") return `Gap ${p.len} m`;
+  if (p.k === "O") return `Loop ${p.r} m`;
   return "CP";
 }
 
@@ -337,13 +338,17 @@ export function Editor({ id, sb, me }: { id: string; sb: SupabaseClient | null; 
                 <button type="button" className="hx-icon hx-danger" aria-label="Delete piece" title="Delete" onClick={remove}>✕</button>
               </span>
             </div>
-            {p.k !== "C" && p.k !== "G" && (
+            {p.k !== "C" && p.k !== "G" && p.k !== "O" && (
               <div className="hx-tabs" role="tablist">
                 {(["shape", "road", "extras"] as const).map((t) => (
                   <button key={t} type="button" role="tab" aria-selected={tab === t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>{t === "shape" ? "Shape" : t === "road" ? "Road" : "Extras"}</button>
                 ))}
               </div>
             )}
+            {p.k === "O" && <>
+              <Chips label="Size" values={[["Small", 10], ["Medium", 14], ["Big", 20]]} value={p.r} onPick={(v) => edit({ r: v })} step={1} min={8} max={40} />
+              <p className="hx-dim">A loop the loop: the road goes on beside it. It needs speed, so put a long straight or a boost before it.</p>
+            </>}
             {p.k === "C" && <p className="hx-dim">A checkpoint gate. Crash after it and you come back here.</p>}
             {p.k === "G" && <>
               <Chips label="Gap" values={GAPS.map((v) => [`${v} m`, v])} value={p.len} onPick={(v) => edit({ len: v })} />

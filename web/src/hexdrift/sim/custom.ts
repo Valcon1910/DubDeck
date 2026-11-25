@@ -2,7 +2,8 @@
 // checkpoints) on one of the road themes; it turns into the same road the
 // built-in maps use (road.ts). Pure and deterministic, so the server can
 // rebuild a map and replay a run on it.
-import { buildRoad, type RoadDef, type LandDef, type Strip, type Surf, type Road } from "./road.ts";
+import { buildRoad, LOOP_R, type RoadDef, type LandDef, type Strip, type Surf, type Road } from "./road.ts";
+import { chainOf, cleanGrid, piecesOfGrid, starterGrid, type Tile } from "./grid.ts";
 
 export type ThemeId = "miami" | "storm" | "alpine" | "baja" | "sky" | "space";
 
@@ -60,10 +61,13 @@ export const THEMES: Record<ThemeId, Theme> = {
 
 /** One piece of road. Bends turn by `a` degrees on a radius of `r` m. */
 export interface Piece {
-  k: "S" | "L" | "R" | "C" | "G";
+  /** Straight, left, right, checkpoint, gap, loop. */
+  k: "S" | "L" | "R" | "C" | "G" | "O";
   /** Straight length, or the gap's length (G). */
   len?: number;
   a?: number; r?: number;
+  /** A loop's sideways step: the road goes on this far to the right of where it went in (m). */
+  off?: number;
   /** Climb (+) or drop (−) over the piece (m); for a gap, how much higher the landing is. */
   rise?: number;
   /** Half the road's width from this piece on (m). */
@@ -84,6 +88,8 @@ export interface CustomMap {
   name: string;
   theme: ThemeId;
   pieces: Piece[];
+  /** Made on the phone grid: the tiles (the pieces are worked out from them). */
+  grid?: Tile[];
   /** The maker's own finish on the current version: proves it can be done and sets the medals. */
   author?: { ticks: number; inputs: string; hash: string };
   updated: number;
@@ -97,6 +103,15 @@ export const newMap = (theme: ThemeId = "miami"): CustomMap => ({
   pieces: [{ k: "S", len: 80 }, { k: "R", a: 90, r: 60 }, { k: "S", len: 100 }, { k: "C" }, { k: "L", a: 90, r: 60 }, { k: "S", len: 120 }],
   updated: Date.now(),
 });
+
+/** A new map for the phone grid editor. */
+export const newGridMap = (theme: ThemeId = "miami"): CustomMap => {
+  const grid = starterGrid();
+  return { ...newMap(theme), grid, pieces: piecesOfGrid(grid).pieces };
+};
+
+/** The map with new tiles (and the pieces they make). */
+export const withGrid = (m: CustomMap, grid: Tile[]): CustomMap => ({ ...m, grid, pieces: piecesOfGrid(grid).pieces, updated: Date.now() });
 
 /** Metres a piece adds along the road. */
 export function pieceLen(p: Piece): number {
@@ -121,6 +136,7 @@ export function routeOf(m: CustomMap): string {
     if (p.walls !== undefined && p.walls !== walls) { walls = p.walls; out.push(`W${walls || "0"}`); }
     if (p.tunnel !== undefined && p.tunnel !== tun) { tun = p.tunnel; out.push(tun ? "T+" : "T-"); }
     if (p.k === "G") { out.push(`G${num(p.len ?? 20)}/${num(p.rise ?? 0)}`); continue; }
+    if (p.k === "O") { out.push(p.off ? `O${num(p.r ?? 14)}/${num(p.off)}` : `O${num(p.r ?? 14)}`); continue; }
     if (p.rise) out.push(p.rise > 0 ? `U${num(p.rise)}` : `D${num(-p.rise)}`);
     if (p.boost) out.push(p.boost === "A" ? "B" : `B${p.boost}`);
     if (p.ramp) out.push(`J${num(p.ramp)}`);
@@ -173,7 +189,13 @@ export function checkMap(m: CustomMap): Check {
     if ((p.k === "L" || p.k === "R") && ((p.r ?? 0) < 15 || (p.a ?? 0) <= 0 || (p.a ?? 0) > 270)) problems.push({ piece: i, text: "Bends need a radius of 15 m or more and up to 270°." });
     if (p.k === "S" && ((p.len ?? 0) < 5 || (p.len ?? 0) > 800)) problems.push({ piece: i, text: "Straights are 5 to 800 m." });
     if (p.k === "G" && ((p.len ?? 0) < 5 || (p.len ?? 0) > 120)) problems.push({ piece: i, text: "Gaps are 5 to 120 m." });
+    if (p.k === "O" && ((p.r ?? 0) < LOOP_R[0] || (p.r ?? 0) > LOOP_R[1])) problems.push({ piece: i, text: `Loops have a radius of ${LOOP_R[0]} to ${LOOP_R[1]} m.` });
     if (p.rise && Math.abs(p.rise) > Math.max(2, pieceLen(p) * 0.3)) problems.push({ piece: i, text: "Too steep: climb at most 3 m per 10 m." });
+  }
+  if (m.grid) {
+    for (const t of chainOf(m.grid).problems) problems.push({ piece: -1, text: t });
+    // Checkpoints and loops make three pieces each: the limit is on pieces.
+    if (piecesOfGrid(m.grid).pieces.length > LIMITS.pieces) problems.push({ piece: -1, text: "This track is too long: take some tiles out." });
   }
   let road: Road | null = null;
   try { road = buildRoad(roadDefOf(m)); } catch (e) { problems.push({ piece: -1, text: e instanceof Error ? e.message : "This road can't be built." }); }
@@ -222,7 +244,7 @@ export function medalsOf(author: number) {
 
 // ── Share codes: the map as text (for Community Maps and copy-paste) ──
 export function encodeMap(m: CustomMap): string {
-  const json = JSON.stringify({ v: 1, name: m.name, theme: m.theme, pieces: m.pieces });
+  const json = JSON.stringify(m.grid ? { v: 1, name: m.name, theme: m.theme, grid: m.grid } : { v: 1, name: m.name, theme: m.theme, pieces: m.pieces });
   return "HX1." + btoa(unescape(encodeURIComponent(json))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
@@ -239,13 +261,16 @@ export function cleanMap(o: unknown, id: string): CustomMap | null {
   if (!o || typeof o !== "object") return null;
   const r = o as Record<string, unknown>;
   const theme = (typeof r.theme === "string" && r.theme in THEMES ? r.theme : "miami") as ThemeId;
+  // A grid map: its pieces always come from its tiles.
+  const grid = cleanGrid(r.grid);
+  if (grid) r.pieces = piecesOfGrid(grid).pieces;
   if (!Array.isArray(r.pieces)) return null;
   const n = (v: unknown, lo: number, hi: number) => typeof v === "number" && v === v ? Math.min(hi, Math.max(lo, v)) : undefined;
   const pieces: Piece[] = [];
   for (const raw of r.pieces.slice(0, LIMITS.pieces)) {
     if (!raw || typeof raw !== "object") continue;
     const q = raw as Record<string, unknown>;
-    if (!["S", "L", "R", "C", "G"].includes(q.k as string)) continue;
+    if (!["S", "L", "R", "C", "G", "O"].includes(q.k as string)) continue;
     const p: Piece = { k: q.k as Piece["k"] };
     const len = n(q.len, 0, 800), a = n(q.a, 0, 270), rr = n(q.r, 0, 2000), rise = n(q.rise, -80, 80), hw = n(q.hw, 3, 16), ramp = n(q.ramp, 0, 8);
     if (len !== undefined) p.len = len;
@@ -254,6 +279,8 @@ export function cleanMap(o: unknown, id: string): CustomMap | null {
     if (rise) p.rise = rise;
     if (hw !== undefined) p.hw = hw;
     if (ramp) p.ramp = ramp;
+    const off = n(q.off, 0, 80);
+    if (p.k === "O" && off) p.off = off;
     if (SURFS.includes(q.surf as Surf)) p.surf = q.surf as Surf;
     if (q.walls === "B" || q.walls === "L" || q.walls === "R" || q.walls === "") p.walls = q.walls;
     if (q.boost === "A" || q.boost === "L" || q.boost === "R") p.boost = q.boost;
@@ -266,7 +293,7 @@ export function cleanMap(o: unknown, id: string): CustomMap | null {
   return {
     v: 1, id: typeof r.id === "string" && /^u[0-9a-z]{4,12}$/.test(r.id) ? r.id : id,
     name: (typeof r.name === "string" ? r.name : "My map").slice(0, LIMITS.nameLen) || "My map",
-    theme, pieces, updated: typeof r.updated === "number" ? r.updated : Date.now(),
+    theme, pieces, ...(grid ? { grid } : {}), updated: typeof r.updated === "number" ? r.updated : Date.now(),
     author: au && typeof au.ticks === "number" && typeof au.inputs === "string" && typeof au.hash === "string" ? { ticks: au.ticks, inputs: au.inputs, hash: au.hash } : undefined,
   };
 }
