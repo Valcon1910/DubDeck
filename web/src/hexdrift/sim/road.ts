@@ -75,6 +75,20 @@ export interface RoadDef {
   hug?: boolean;
   /** Gravity as a share of normal. */
   grav?: number;
+  /** How the land round the roads is dressed (scenery only; see kit.ts). */
+  dress?: Dress;
+}
+
+/** Roadside strips: what lines a stretch of road (kit.ts knows what each holds). */
+export type Strip = "beach" | "boulevard" | "downtown" | "shops" | "park" | "none";
+
+export interface Dress {
+  /** The scenery kit. */
+  kit: string;
+  /** Stretches of the main road: [from m, to m, left strip, right strip]. */
+  zones: [number, number, Strip, Strip][];
+  /** Hand-placed pieces: kit object, metres along the main road, side (-1 left, 1 right), gap from the road's edge, shift along. */
+  set?: [string, number, number, number, number?][];
 }
 
 /** Flags of the segment that starts at a sample. */
@@ -127,6 +141,7 @@ export interface Road {
   runout: number;
   x0: number; x1: number; z0: number; z1: number;
   minY: number;
+  dress?: Dress;
 }
 
 // ── The land ────────────────────────────────────────────────────────────────
@@ -377,7 +392,7 @@ export function buildRoad(def: RoadDef): Road {
   const fi = main.reduce((bi, p, i) => ((p.x - finish!.x) * (p.x - finish!.x) + (p.z - finish!.z) * (p.z - finish!.z) < (main[bi].x - finish!.x) * (main[bi].x - finish!.x) + (main[bi].z - finish!.z) * (main[bi].z - finish!.z) ? i : bi), 0);
   if (L.sea !== undefined && L.sea < minY) minY = L.sea;
   return {
-    strands, segs, grid, tgrid, gates, finish, land: L, grav: def.grav ?? 1,
+    strands, segs, grid, tgrid, gates, finish, land: L, grav: def.grav ?? 1, dress: def.dress,
     runout: main[main.length - 1].s - main[fi].s, x0, x1, z0, z1, minY,
   };
 }
@@ -651,6 +666,26 @@ export function roadDist(road: Road, x: number, z: number, max: number): number 
     }
   }
   // Gaps count as road (the ravine beside them).
+  return best;
+}
+
+/** The nearest road segment to (x, z) within max of its edge: the segment, distance beyond its edge, side (+ right) and the share along it. */
+export function roadNear(road: Road, x: number, z: number, max: number): { seg: Seg; d: number; lat: number; t: number } | null {
+  let best: { seg: Seg; d: number; lat: number; t: number } | null = null;
+  let bd = max;
+  const i0 = Math.floor((x - max) / RB), i1 = Math.floor((x + max) / RB);
+  const j0 = Math.floor((z - max) / RB), j1 = Math.floor((z + max) / RB);
+  for (let i = i0; i <= i1; i++) {
+    for (let j = j0; j <= j1; j++) {
+      const list = road.grid.get(bkey(i, j));
+      if (!list) continue;
+      for (const sg of list) {
+        const q = near(sg, x, z);
+        const d = q.d - (sg.hw0 + (sg.hw1 - sg.hw0) * q.t);
+        if (d < bd) { bd = d; best = { seg: sg, d, lat: q.lat, t: q.t }; }
+      }
+    }
+  }
   return best;
 }
 

@@ -61,6 +61,11 @@ export const ALL_MAPS: MapDef[] = [
         { from: "a", to: "b", via: [[0.3, 7], [0.7, 7]], hw: 6, surf: "sand", flush: true },
         { from: "c", to: "d", via: [[0.5, -6]], hw: 4.5 },
       ],
+      dress: {
+        kit: "miami",
+        zones: [[0, 300, "boulevard", "beach"], [300, 860, "boulevard", "park"], [860, 2150, "downtown", "downtown"], [2150, 2700, "shops", "boulevard"], [2700, 3400, "boulevard", "beach"]],
+        set: [["stand", 30, -1, 3], ["stand", 30, 1, 3], ["billboard", 200, -1, 2], ["pier", 150, 1, 30], ["beachbar", 420, 1, 6], ["guard_a", 240, 1, 20], ["stand", 3250, -1, 3], ["stand", 3250, 1, 3]],
+      },
     },
     medals: { vortex: 3000, gold: 3300, silver: 3800, bronze: 4600 }, since: 6, wip: true,
   },

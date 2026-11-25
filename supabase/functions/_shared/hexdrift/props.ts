@@ -10,9 +10,10 @@
 // Only + - * / and sqrt (and Math.imul in the hash).
 import { CELL, CURVE_OUT, DIRV, HALF_W, key, local, type Track } from "./track.ts";
 import { distTo, hash, NO_GROUND, terrainAt } from "./terrain.ts";
+import { compose } from "./kit.ts";
 import { GAP, landAt, MAT, roadDist, WALL_T, WL, WR, type Sample } from "./road.ts";
 
-export type SolidKind = "tower" | "butte" | "berg" | "dune" | "stand" | "parked" | "rock" | "pine" | "palm" | "hotel" | "chalet" | "pylon";
+export type SolidKind = "tower" | "butte" | "berg" | "dune" | "stand" | "parked" | "rock" | "pine" | "palm" | "hotel" | "chalet" | "pylon" | "kit";
 
 export interface Solid {
   kind: SolidKind;
@@ -31,6 +32,8 @@ export interface Solid {
    * a is then the half size across (local x), b along (local z).
    */
   fx?: number; fz?: number;
+  /** A kit object (drawn from the kit; see kit.ts). */
+  kit?: string;
 }
 
 export interface Props {
@@ -232,6 +235,19 @@ function roadSolid(kind: SolidKind, x: number, z: number, fx: number, fz: number
 function roadProps(track: Track): Props {
   const road = track.road!;
   const list: Solid[] = [];
+  const comp = compose(road);
+  if (comp) {
+    // Composed from a kit: every solid object, as a box (or a circle) round its footprint.
+    for (const p of comp.placed) {
+      const d = comp.kit[p.o];
+      if (!d || d.solid === false) continue;
+      const rx = p.fz, rz = -p.fx;
+      const x = p.x + rx * (d.cx ?? 0) + p.fx * (d.cz ?? 0), z = p.z + rz * (d.cx ?? 0) + p.fz * (d.cz ?? 0);
+      if (d.round) list.push({ kind: "kit", kit: p.o, x, z, y: p.y, top: p.y + 0.3 + d.h, a: d.a, b: d.a, box: false, d: 0, v: p.v });
+      else list.push({ kind: "kit", kit: p.o, x, z, y: p.y, top: p.y + 0.3 + d.h, a: d.a, b: d.b, box: true, d: 0, v: p.v, fx: p.fx, fz: p.fz });
+    }
+    return { list, cells: cellsOf(list) };
+  }
   const dress = ROAD_DRESS[track.theme ?? ""] ?? ROAD_DRESS.alpine;
   const sea = road.land.sea;
   const reachOf = (s: Solid) => (s.box ? Math.sqrt(s.a * s.a + s.b * s.b) : s.a > s.b ? s.a : s.b);
