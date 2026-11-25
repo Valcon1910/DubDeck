@@ -9,6 +9,7 @@ COLORS = {
     "paint": (0.05, 0.12, 0.45, 1), "accent": (0.8, 0.05, 0.1, 1), "trim": (0.02, 0.02, 0.025, 1),
     "gloss": (0.01, 0.01, 0.012, 1), "glass": (0.01, 0.02, 0.04, 1), "lamp": (1, 1, 1, 1),
     "tail": (0.5, 0.02, 0.05, 1), "chrome": (0.8, 0.82, 0.86, 1), "metal": (0.5, 0.52, 0.55, 1),
+    "tyre": (0.02, 0.02, 0.022, 1), "rim": (0.3, 0.3, 0.32, 1), "caliper": (0.7, 0.05, 0.08, 1),
 }
 _mats = {}
 _parts = []
@@ -308,6 +309,41 @@ def mirror_pod(s, z, y):
     box("paint", (s * 1.03, y + 0.02, z - 0.02), (0.12, 0.11, 0.2), sub=2)
     box("trim", (s * 0.95, y - 0.02, z + 0.02), (0.12, 0.03, 0.06), bevel=0.01)
     box("glass", (s * 1.035, y + 0.02, z - 0.115), (0.09, 0.08, 0.01), bevel=0.003)
+
+
+def lathe(name, material, prof, steps=48):
+    """Spins a profile [(x, radius)] around the x axis (a wheel's axle)."""
+    bm = bmesh.new()
+    vs = [bm.verts.new(G(x, r, 0)) for x, r in prof]
+    es = [bm.edges.new((a, b)) for a, b in zip(vs, vs[1:])]
+    bmesh.ops.spin(bm, geom=vs + es, cent=(0, 0, 0), axis=(1, 0, 0), angle=2 * math.pi, steps=steps, use_duplicate=False)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    ob = link(name, bm, material)
+    smooth(ob)
+    return ob
+
+
+def join(name, obs):
+    """Joins objects into one named object (and takes them off the parts list)."""
+    bpy.ops.object.select_all(action="DESELECT")
+    for ob in obs:
+        ob.select_set(True)
+        if ob in _parts: _parts.remove(ob)
+    bpy.context.view_layer.objects.active = obs[0]
+    bpy.ops.object.join()
+    ob = bpy.context.active_object
+    ob.name = name
+    return ob
+
+
+def export_all(path):
+    """Exports every object as its own node (by name)."""
+    for ob in bpy.context.scene.objects:
+        n = sum(len(p.vertices) - 2 for p in ob.data.polygons)
+        print("PART", ob.name, n)
+    bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", use_selection=False, export_yup=True,
+                              export_apply=True, export_normals=True, export_texcoords=False, export_materials="EXPORT")
 
 
 # ── Export ──────────────────────────────────────────────────────────────────

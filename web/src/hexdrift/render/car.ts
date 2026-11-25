@@ -6,7 +6,8 @@
 // sections over each wheel, which also gives the fender bulges.
 // Cars with a model made in Blender (scripts/hexdrift-cars) load that body
 // when first needed; until it arrives the lofted body stands in, and it is
-// swapped in place on every car already built.
+// swapped in place on every car already built. The wheels work the same way
+// (one Blender set shared by every car, scaled to each wheel).
 // Fast to draw: everything fixed is merged into one mesh per material, and
 // wheels share geometry (about 25 draw calls a car).
 import * as THREE from "three";
@@ -15,6 +16,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { DEFAULT_LOOK, itemOf, type BodyDef, type Item, type Look } from "../garage.ts";
 import coupeUrl from "../cars/coupe.glb?url";
+import wheelsUrl from "../cars/wheels.glb?url";
 
 export interface CarModel {
   root: THREE.Group;
@@ -606,6 +608,32 @@ const PARTS = new Set<string>(["paint", "accent", "trim", "gloss", "glass", "lam
 const bodies = new Map<string, Map<Part, THREE.BufferGeometry>>();
 const loading = new Map<string, Promise<Map<Part, THREE.BufferGeometry> | null>>();
 
+/** Reads a packed glb into plain float geometries (world space), one per mesh. */
+function readGlb(url: string): Promise<{ name: string; part: string; geo: THREE.BufferGeometry }[]> {
+  return new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(url).then((gltf) => {
+    const out: { name: string; part: string; geo: THREE.BufferGeometry }[] = [];
+    gltf.scene.updateMatrixWorld(true);
+    gltf.scene.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      // Stored as small integers (scaled by the node): back to floats first.
+      const g = new THREE.BufferGeometry();
+      for (const k of ["position", "normal"]) {
+        const a = m.geometry.getAttribute(k);
+        const f = new Float32Array(a.count * 3);
+        for (let i = 0; i < a.count; i++) { f[i * 3] = a.getX(i); f[i * 3 + 1] = a.getY(i); f[i * 3 + 2] = a.getZ(i); }
+        g.setAttribute(k, new THREE.BufferAttribute(f, 3));
+      }
+      g.setIndex(m.geometry.getIndex());
+      g.applyMatrix4(m.matrixWorld);
+      g.normalizeNormals();
+      m.geometry.dispose();
+      out.push({ name: m.name, part: (m.material as THREE.Material).name, geo: g });
+    });
+    return out;
+  });
+}
+
 /** Loads (once) the Blender body for this car; null if it has none or it failed. */
 export function loadBody(id: string): Promise<Map<Part, THREE.BufferGeometry> | null> {
   const have = bodies.get(id);
@@ -614,28 +642,13 @@ export function loadBody(id: string): Promise<Map<Part, THREE.BufferGeometry> | 
   if (!url) return Promise.resolve(null);
   let p = loading.get(id);
   if (!p) {
-    p = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(url).then((gltf) => {
+    p = readGlb(url).then((meshes) => {
       const lists = new Map<Part, THREE.BufferGeometry[]>();
-      gltf.scene.updateMatrixWorld(true);
-      gltf.scene.traverse((o) => {
-        const m = o as THREE.Mesh;
-        if (!m.isMesh) return;
-        const name = (m.material as THREE.Material).name;
-        if (!PARTS.has(name)) return;
-        // Stored as small integers (scaled by the node): back to floats first.
-        const g = new THREE.BufferGeometry();
-        for (const k of ["position", "normal"]) {
-          const a = m.geometry.getAttribute(k);
-          const f = new Float32Array(a.count * 3);
-          for (let i = 0; i < a.count; i++) { f[i * 3] = a.getX(i); f[i * 3 + 1] = a.getY(i); f[i * 3 + 2] = a.getZ(i); }
-          g.setAttribute(k, new THREE.BufferAttribute(f, 3));
-        }
-        g.setIndex(m.geometry.getIndex());
-        g.applyMatrix4(m.matrixWorld);
-        g.normalizeNormals();
-        const l = lists.get(name as Part);
-        if (l) l.push(g); else lists.set(name as Part, [g]);
-      });
+      for (const { part, geo } of meshes) {
+        if (!PARTS.has(part)) continue;
+        const l = lists.get(part as Part);
+        if (l) l.push(geo); else lists.set(part as Part, [geo]);
+      }
       const out = new Map<Part, THREE.BufferGeometry>();
       for (const [part, l] of lists) out.set(part, l.length === 1 ? l[0] : mergeGeometries(l, false)!);
       bodies.set(id, out);
@@ -645,6 +658,43 @@ export function loadBody(id: string): Promise<Map<Part, THREE.BufferGeometry> | 
   }
   return p;
 }
+// ── Wheels made in Blender ──────────────────────────────────────────────────
+// Built for radius 1 and width 0.72, outer face towards +x.
+const WHEEL_W = 0.72;
+let wheelSet: Map<string, THREE.BufferGeometry> | null = null;
+let wheelLoading: Promise<Map<string, THREE.BufferGeometry> | null> | null = null;
+const realWheelCache = new Map<string, WheelGeo>();
+
+/** Loads (once) the shared Blender wheels; null if they failed. */
+export function loadWheels(): Promise<Map<string, THREE.BufferGeometry> | null> {
+  if (wheelSet) return Promise.resolve(wheelSet);
+  wheelLoading ??= readGlb(wheelsUrl).then((meshes) => {
+    wheelSet = new Map(meshes.map((m) => [m.name, m.geo]));
+    return wheelSet;
+  }).catch(() => null);
+  return wheelLoading;
+}
+
+/** The Blender wheel for this size and style (null until they've loaded). */
+function realWheelGeo(r: number, w: number, style: RimStyle, tyre: Tyre): WheelGeo | null {
+  if (!wheelSet) return null;
+  const key = `${r}|${w}|${style}|${tyre}`;
+  const hit = realWheelCache.get(key);
+  if (hit) return hit;
+  const set = wheelSet;
+  const size = tyre === "off" ? "60" : "70";
+  const sized = (name: string) => {
+    const g = set.get(name);
+    return g ? g.clone().scale(w / WHEEL_W, r, r) : null;
+  };
+  const tyreG = sized(`tyre_${tyre}`), rim = sized(`rim_${style}`), disc = sized(`disc_${size}`), caliper = sized(`caliper_${size}`);
+  if (!tyreG || !rim || !disc || !caliper) return null;
+  // One geometry for both sides: left-hand wheels are mirrored by their mesh.
+  const res: WheelGeo = { tyre: tyreG, rimR: rim, rimL: rim, disc, caliper, band: tyre === "slick" ? sized("band_slick") : null };
+  realWheelCache.set(key, res);
+  return res;
+}
+
 export function buildCar(opts: CarOptions = {}): CarModel {
   const look = opts.look ?? DEFAULT_LOOK;
   const ghost = opts.ghost ?? false;
@@ -763,23 +813,39 @@ export function buildCar(opts: CarOptions = {}): CarModel {
   const bandM = ghostM ?? keep(new THREE.MeshBasicMaterial({ color: "#ffd21a" }));
   const caliperM = ghostM ?? (def.id === "rig" ? M.trim : pbr(def.id === "coupe" && look.accent === "factory" ? "#c8102e" : accent, 0.3, 0.4));
   const wheelList: { pivot: THREE.Group; spin: THREE.Group; front: boolean; r: number }[] = [];
+  // Ghosts keep the simple wheels (cheaper, and they're see-through anyway).
+  const fitWheels = () => {
+    for (let i = 0; i < spec.wheels.length; i++) {
+      const w = spec.wheels[i], { pivot, spin } = wheelList[i];
+      const real = ghost ? null : realWheelGeo(w.r, w.w, spec.rim, spec.tyre);
+      const geo = real ?? wheelGeo(w.r, w.w, spec.rim, spec.tyre);
+      const s = w.x < 0 ? -1 : 1;
+      const mesh = (parent: THREE.Group, g: THREE.BufferGeometry, m: THREE.Material, mirror: boolean) => {
+        const o = new THREE.Mesh(g, m);
+        if (mirror) o.scale.x = s;
+        parent.add(o);
+      };
+      pivot.clear(); spin.clear();
+      mesh(spin, geo.tyre, tyreM, true);
+      if (real) mesh(spin, geo.rimR, rimM, true);
+      else mesh(spin, s > 0 ? geo.rimR : geo.rimL, rimM, false);
+      if (geo.band) mesh(spin, geo.band, bandM, true);
+      if (!ghost && spec.rim !== "covered") {
+        mesh(spin, geo.disc, M.metal, true);
+        mesh(pivot, geo.caliper, caliperM, true);
+      }
+      pivot.add(spin);
+    }
+  };
   for (const w of spec.wheels) {
-    const geo = wheelGeo(w.r, w.w, spec.rim, spec.tyre);
     const pivot = new THREE.Group(); pivot.position.set(w.x, w.r, w.z);
     const spin = new THREE.Group();
-    const tyre = new THREE.Mesh(geo.tyre, tyreM);
-    if (w.x < 0) tyre.scale.x = -1;
-    spin.add(tyre);
-    spin.add(new THREE.Mesh(w.x > 0 ? geo.rimR : geo.rimL, rimM));
-    if (geo.band) { const b = new THREE.Mesh(geo.band, bandM); if (w.x < 0) b.scale.x = -1; spin.add(b); }
-    if (!ghost && spec.rim !== "covered") {
-      const disc = new THREE.Mesh(geo.disc, M.metal); if (w.x < 0) disc.scale.x = -1; spin.add(disc);
-      const cal = new THREE.Mesh(geo.caliper, caliperM); if (w.x < 0) cal.scale.x = -1; pivot.add(cal);
-    }
-    pivot.add(spin);
     root.add(pivot);
     wheelList.push({ pivot, spin, front: w.front, r: w.r });
   }
+  fitWheels();
+  // Shared by every car: never disposed here.
+  if (!ghost && !wheelSet) void loadWheels().then((set) => { if (set && !dead) fitWheels(); });
 
   if (ghost === "wr") {
     // A crown floating over the car: a band with five points.
