@@ -8,6 +8,7 @@ import { BIOMES } from "./maps.ts";
 import { formatTime } from "./sim/race.ts";
 import { authorOf, deleteMap, myBest, myMap, myMaps, saveMap } from "./mymaps.ts";
 import { IconBack } from "./ui/icons.tsx";
+import type { BotReply } from "./botworker.ts";
 
 const THEME_IDS = Object.keys(THEMES) as ThemeId[];
 
@@ -132,6 +133,28 @@ export function Editor({ id }: { id: string }) {
   }, []);
 
   const check = useMemo(() => map ? checkMap(map) : null, [map]);
+  // The autopilot drives the map in the background: can it be finished?
+  const [bot, setBot] = useState("");
+  const worker = useRef<Worker | null>(null);
+  useEffect(() => () => worker.current?.terminate(), []);
+  useEffect(() => setBot((b) => (b === "…" ? b : "")), [map]);
+  const runBot = useCallback(() => {
+    if (!map) return;
+    worker.current?.terminate();
+    const w = new Worker(new URL("./botworker.ts", import.meta.url), { type: "module" });
+    worker.current = w;
+    setBot("…");
+    const m = map;
+    w.onmessage = (e: MessageEvent<BotReply>) => {
+      const r = e.data;
+      w.terminate();
+      if (worker.current === w) worker.current = null;
+      if (r.ok) setBot(`The autopilot finished in ${formatTime(r.ticks)}. You can beat that.`);
+      else if (r.error) setBot(`The autopilot couldn't drive it: ${r.error}`);
+      else { const i = pieceAt(m, r.s); setSel(i); setBot(`The autopilot got stuck around piece ${i + 1}. It's careful, so a human may still make it.`); }
+    };
+    w.postMessage(m);
+  }, [map]);
 
   const commit = useCallback((next: CustomMap, keepSel?: number) => {
     setMapState((cur) => {
@@ -246,12 +269,18 @@ export function Editor({ id }: { id: string }) {
         <a className={`hx-btn hx-btn-main ${broken ? "hx-off" : ""}`} href={broken ? undefined : `#/hexdrift/test/${map.id}`} aria-disabled={broken} title="Drive it (Enter)">Drive</a>
       </header>
 
-      <Preview map={map} check={check} sel={sel} onPick={setSel} />
+      <div className="hx-ed-stage">
+        <Preview map={map} check={check} sel={sel} onPick={setSel} />
+        {wide && <Profile map={map} check={check} sel={sel} onPick={setSel} />}
+      </div>
 
+      <div className="hx-ed-side">
       <div className="hx-ed-info">
         <span>{(check.length / 1000).toFixed(2)} km · {map.pieces.filter((q) => q.k === "C").length} CP</span>
         <span>{author ? <>Author {formatTime(author.ticks)} · Gold {formatTime(medalsOf(author.ticks).gold)}</> : "Drive to the finish to set the author time"}</span>
+        <button type="button" className="hx-linkbtn" disabled={broken || bot === "…"} onClick={runBot}>{bot === "…" ? "Autopilot driving…" : "Autopilot test"}</button>
       </div>
+      {bot && bot !== "…" && <p className="hx-ed-bot" role="status">{bot}</p>}
       {check.problems.length > 0 && (
         <ul className="hx-ed-problems" role="status">
           {check.problems.slice(0, 3).map((q, i) => (
@@ -341,6 +370,7 @@ export function Editor({ id }: { id: string }) {
           {wide && <p className="hx-dim hx-small">Keys: S L R C G add a piece · ← → pick · Alt+← move · D duplicate · Delete · Ctrl+Z undo · Enter drive</p>}
         </details>
       </div>
+      </div>
       {msg && <div className="hx-toast" role="status">{msg}</div>}
     </div>
   );
@@ -366,16 +396,27 @@ function Chips<T extends string | number>({ label, values, value, onPick, step, 
 }
 
 // ── The map from above ──────────────────────────────────────────────────────
+// Drag to pan, pinch or scroll to zoom, tap to pick a piece, double-tap to fit.
+interface Cam { zoom: number; cu: number; cz: number }
 function Preview({ map, check, sel, onPick }: { map: CustomMap; check: ReturnType<typeof checkMap>; sel: number; onPick: (i: number) => void }) {
   const cv = useRef<HTMLCanvasElement>(null);
-  const view = useRef({ k: 1, ox: 0, oy: 0 });
   const [size, setSize] = useState({ w: 300, h: 200 });
+  const [cam, setCam] = useState<Cam | null>(null);
+  const view = useRef({ K: 1, cu: 0, cz: 0, w: 300, h: 200, k: 1 });
   useEffect(() => {
     const el = cv.current!;
     const ro = new ResizeObserver(() => setSize({ w: el.clientWidth, h: el.clientHeight }));
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+  // The road's box: the fitted view.
+  const fit = useMemo(() => {
+    const road = check.road;
+    if (!road) return null;
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const p of road.strands[0].pts) { x0 = Math.min(x0, -p.x); x1 = Math.max(x1, -p.x); z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); }
+    return { x0, x1, z0, z1, y0, y1 };
+  }, [check]);
   useEffect(() => {
     const el = cv.current!;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -386,21 +427,28 @@ function Preview({ map, check, sel, onPick }: { map: CustomMap; check: ReturnTyp
     g.fillStyle = b.ground; g.fillRect(0, 0, size.w, size.h);
     g.fillStyle = "rgba(0,0,0,0.35)"; g.fillRect(0, 0, size.w, size.h);
     const road = check.road;
-    if (!road) { g.fillStyle = "#fff"; g.font = "14px system-ui"; g.fillText("This road can't be built.", 16, 28); return; }
+    if (!road || !fit) { g.fillStyle = "#fff"; g.font = "14px system-ui"; g.fillText("This road can't be built.", 16, 28); return; }
     const pts = road.strands[0].pts;
-    // Fit the road (screen x is -world x so right bends go right; +z is up).
-    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-    for (const p of pts) { x0 = Math.min(x0, -p.x); x1 = Math.max(x1, -p.x); z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); }
+    // Screen x is -world x so right bends go right; +z is up.
     const pad = 24;
-    const k = Math.min((size.w - pad * 2) / Math.max(40, x1 - x0), (size.h - pad * 2) / Math.max(40, z1 - z0));
-    const ox = size.w / 2 - k * (x0 + x1) / 2, oy = size.h / 2 + k * (z0 + z1) / 2;
-    view.current = { k, ox, oy };
-    const sx = (x: number) => ox - k * x, sy = (z: number) => oy - k * z;
+    const k = Math.min((size.w - pad * 2) / Math.max(40, fit.x1 - fit.x0), (size.h - pad * 2) / Math.max(40, fit.z1 - fit.z0));
+    const K = k * (cam?.zoom ?? 1);
+    const cu = cam?.cu ?? (fit.x0 + fit.x1) / 2, cz = cam?.cz ?? (fit.z0 + fit.z1) / 2;
+    view.current = { K, cu, cz, w: size.w, h: size.h, k };
+    const sx = (x: number) => size.w / 2 + K * (-x - cu), sy = (z: number) => size.h / 2 - K * (z - cz);
+    // A 50 m grid when zoomed in, to judge sizes.
+    if (K > 1.2) {
+      g.strokeStyle = "rgba(255,255,255,0.07)"; g.lineWidth = 1;
+      const step = 50 * K;
+      for (let x = ((size.w / 2 - K * cu) % step + step) % step; x < size.w; x += step) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, size.h); g.stroke(); }
+      for (let y = ((size.h / 2 + K * cz) % step + step) % step; y < size.h; y += step) { g.beginPath(); g.moveTo(0, y); g.lineTo(size.w, y); g.stroke(); }
+    }
     const bad = new Set(check.problems.map((q) => q.piece));
-    const lw = (p: { hw: number }) => Math.max(2.5, p.hw * 2 * k);
+    const lw = (p: { hw: number }) => Math.max(2.5, p.hw * 2 * K);
     // Low parts first so bridges draw over the roads under them.
     const order = pts.map((_, i) => i).filter((i) => i < pts.length - 1).sort((a, c) => pts[a].y - pts[c].y);
     g.lineCap = "round";
+    const { y0, y1 } = fit;
     for (const pass of [0, 1]) {
       for (const i of order) {
         const a = pts[i], c = pts[i + 1];
@@ -416,11 +464,9 @@ function Preview({ map, check, sel, onPick }: { map: CustomMap; check: ReturnTyp
         g.stroke();
       }
     }
-    // Gaps as dotted lines.
     g.setLineDash([3, 5]); g.strokeStyle = "rgba(255,255,255,0.7)"; g.lineWidth = 1.5;
     for (let i = 0; i < pts.length - 1; i++) if (pts[i].flags & GAP) { g.beginPath(); g.moveTo(sx(pts[i].x), sy(pts[i].z)); g.lineTo(sx(pts[i + 1].x), sy(pts[i + 1].z)); g.stroke(); }
     g.setLineDash([]);
-    // Gates.
     const gate = (gt: { x: number; z: number; fx: number; fz: number; hw: number }, col: string) => {
       const rx = gt.fz, rz = -gt.fx;
       g.strokeStyle = col; g.lineWidth = 3;
@@ -430,17 +476,132 @@ function Preview({ map, check, sel, onPick }: { map: CustomMap; check: ReturnTyp
     gate(road.finish, "#ffffff");
     const s0 = pts[0];
     g.fillStyle = "#3dff8a"; g.beginPath(); g.arc(sx(s0.x), sy(s0.z), 5, 0, Math.PI * 2); g.fill();
-  }, [map, check, sel, size]);
+  }, [map, check, sel, size, fit, cam]);
 
-  const tap = (e: React.PointerEvent) => {
+  // Pointers: one drags, two pinch; a press that hardly moves is a tap.
+  const ptrs = useRef(new Map<number, { x: number; y: number }>());
+  const gest = useRef<{ moved: boolean; x: number; y: number; d: number; cam: Cam; lastTap: number }>({ moved: false, x: 0, y: 0, d: 0, cam: { zoom: 1, cu: 0, cz: 0 }, lastTap: 0 });
+  const camNow = (): Cam => { const v = view.current; return { zoom: v.K / v.k, cu: v.cu, cz: v.cz }; };
+  const zoomAt = (c: Cam, f: number, px: number, py: number): Cam => {
+    const v = view.current;
+    const zoom = Math.min(40, Math.max(0.5, c.zoom * f));
+    const K0 = v.k * c.zoom, K1 = v.k * zoom;
+    // Keep the world point under (px, py) where it is.
+    const wu = c.cu + (px - v.w / 2) / K0, wz = c.cz - (py - v.h / 2) / K0;
+    return { zoom, cu: wu - (px - v.w / 2) / K1, cz: wz + (py - v.h / 2) / K1 };
+  };
+  const local = (e: { clientX: number; clientY: number }) => { const r = cv.current!.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  const down = (e: React.PointerEvent) => {
+    cv.current!.setPointerCapture?.(e.pointerId);
+    ptrs.current.set(e.pointerId, local(e));
+    const G = gest.current;
+    G.cam = camNow();
+    const ps = [...ptrs.current.values()];
+    if (ps.length === 1) { G.moved = false; G.x = ps[0].x; G.y = ps[0].y; }
+    else { G.moved = true; G.d = Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y); G.x = (ps[0].x + ps[1].x) / 2; G.y = (ps[0].y + ps[1].y) / 2; }
+  };
+  const moveP = (e: React.PointerEvent) => {
+    if (!ptrs.current.has(e.pointerId)) return;
+    ptrs.current.set(e.pointerId, local(e));
+    const G = gest.current, v = view.current;
+    const ps = [...ptrs.current.values()];
+    if (ps.length === 1) {
+      const dx = ps[0].x - G.x, dy = ps[0].y - G.y;
+      if (!G.moved && dx * dx + dy * dy < 64) return;
+      G.moved = true;
+      const K = v.k * G.cam.zoom;
+      setCam({ zoom: G.cam.zoom, cu: G.cam.cu - dx / K, cz: G.cam.cz + dy / K });
+    } else if (ps.length >= 2) {
+      const d = Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y);
+      const mx = (ps[0].x + ps[1].x) / 2, my = (ps[0].y + ps[1].y) / 2;
+      const z = zoomAt(G.cam, d / Math.max(10, G.d), G.x, G.y);
+      const K = v.k * z.zoom;
+      setCam({ zoom: z.zoom, cu: z.cu - (mx - G.x) / K, cz: z.cz + (my - G.y) / K });
+    }
+  };
+  const up = (e: React.PointerEvent) => {
+    const had = ptrs.current.delete(e.pointerId);
+    const G = gest.current;
+    if (ptrs.current.size > 0) { const p = [...ptrs.current.values()][0]; G.cam = camNow(); G.x = p.x; G.y = p.y; G.moved = true; return; }
+    if (!had || G.moved || e.type === "pointercancel") return;
+    const now = performance.now();
+    if (now - G.lastTap < 300) { setCam(null); G.lastTap = 0; return; }
+    G.lastTap = now;
+    pick(local(e));
+  };
+  const pick = (at: { x: number; y: number }) => {
     const road = check.road;
     if (!road) return;
-    const r = cv.current!.getBoundingClientRect();
-    const { k, ox, oy } = view.current;
-    const wx = -(e.clientX - r.left - ox) / k, wz = -(e.clientY - r.top - oy) / k;
+    const v = view.current;
+    const wx = -(v.cu + (at.x - v.w / 2) / v.K), wz = v.cz - (at.y - v.h / 2) / v.K;
     let best = -1, bd = Infinity;
     for (const p of road.strands[0].pts) { const d = (p.x - wx) ** 2 + (p.z - wz) ** 2; if (d < bd) { bd = d; best = p.s; } }
-    if (best >= 0 && bd < (30 / k) ** 2 + 400) onPick(pieceAt(map, best));
+    if (best >= 0 && bd < (30 / v.K) ** 2 + 400) onPick(pieceAt(map, best));
   };
-  return <canvas ref={cv} className="hx-ed-view" onPointerDown={tap} aria-label="The map from above: tap a piece to pick it" />;
+  useEffect(() => {
+    const el = cv.current!;
+    const wheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const r = el.getBoundingClientRect();
+      setCam(zoomAt(camNow(), Math.exp(-e.deltaY * 0.0015), e.clientX - r.left, e.clientY - r.top));
+    };
+    el.addEventListener("wheel", wheel, { passive: false });
+    return () => el.removeEventListener("wheel", wheel);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <div className="hx-ed-viewbox">
+      <canvas ref={cv} className="hx-ed-view" onPointerDown={down} onPointerMove={moveP} onPointerUp={up} onPointerCancel={up}
+        aria-label="The map from above: tap a piece to pick it, drag to move, pinch or scroll to zoom" />
+      <div className="hx-ed-zoom">
+        <button type="button" className="hx-icon" aria-label="Zoom in" onClick={() => setCam(zoomAt(camNow(), 1.5, view.current.w / 2, view.current.h / 2))}>+</button>
+        <button type="button" className="hx-icon" aria-label="Zoom out" onClick={() => setCam(zoomAt(camNow(), 1 / 1.5, view.current.w / 2, view.current.h / 2))}>−</button>
+        {cam && <button type="button" className="hx-icon" aria-label="Fit the whole map" title="Fit (double-tap)" onClick={() => setCam(null)}>⤢</button>}
+      </div>
+    </div>
+  );
+}
+
+/** The road's height along its length (studio). */
+function Profile({ map, check, sel, onPick }: { map: CustomMap; check: ReturnType<typeof checkMap>; sel: number; onPick: (i: number) => void }) {
+  const cv = useRef<HTMLCanvasElement>(null);
+  const [w, setW] = useState(400);
+  useEffect(() => {
+    const el = cv.current!;
+    const ro = new ResizeObserver(() => setW(el.clientWidth));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const H = 70;
+  const span = useRef({ s1: 1 });
+  useEffect(() => {
+    const el = cv.current!, road = check.road;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    el.width = Math.round(w * dpr); el.height = Math.round(H * dpr);
+    const g = el.getContext("2d")!;
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, H);
+    if (!road) return;
+    const pts = road.strands[0].pts;
+    let y0 = Infinity, y1 = -Infinity;
+    for (const p of pts) { y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); }
+    if (y1 - y0 < 10) { const m = (y0 + y1) / 2; y0 = m - 5; y1 = m + 5; }
+    const s1 = pts[pts.length - 1].s;
+    span.current.s1 = s1;
+    const X = (s: number) => 4 + (s / s1) * (w - 8), Y = (y: number) => H - 8 - ((y - y0) / (y1 - y0)) * (H - 16);
+    const b = BIOMES[THEMES[map.theme].biome];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], c = pts[i + 1];
+      if (a.flags & GAP) continue;
+      g.strokeStyle = pieceAt(map, a.s) === sel ? b.accent : "rgba(255,255,255,0.75)";
+      g.lineWidth = 2.5;
+      g.beginPath(); g.moveTo(X(a.s), Y(a.y)); g.lineTo(X(c.s), Y(c.y)); g.stroke();
+    }
+    g.fillStyle = "rgba(255,255,255,0.5)"; g.font = "11px system-ui";
+    g.fillText(`${Math.round(y1 - y0)} m`, 6, 12);
+  }, [map, check, sel, w]);
+  const click = (e: React.MouseEvent) => {
+    const r = cv.current!.getBoundingClientRect();
+    onPick(pieceAt(map, ((e.clientX - r.left - 4) / (r.width - 8)) * span.current.s1));
+  };
+  return <canvas ref={cv} className="hx-ed-profile" style={{ height: H }} onClick={click} aria-label="Height along the road: click to pick a piece" />;
 }
