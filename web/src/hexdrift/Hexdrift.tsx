@@ -6,7 +6,8 @@ import { ALL_MAPS, MAPS, BIOMES, medalFor, type MapDef, type Medal } from "./map
 import { Editor, MyMaps } from "./editor.tsx";
 import { Community, CommunityMap } from "./communityview.tsx";
 import { getMap, isCommunity, mapDefFrom, markPlayed } from "./community.ts";
-import { authorOf, bestInputs, finishOn, mapDefOf, myBest, myMap } from "./mymaps.ts";
+import { profileHref } from "../vortex/profileLink.ts";
+import { authorOf, bestInputs, finishOn, mapDefOf, myBest, myMap, savePicture } from "./mymaps.ts";
 import { medalsOf, type CustomMap } from "./sim/custom.ts";
 import { formatTime } from "./sim/race.ts";
 import { Controls, type Action } from "./input.ts";
@@ -663,6 +664,7 @@ function Play({ map, custom, home }: { map: MapDef; custom?: CustomMap; home?: s
         },
         onHidden() { pause(true); },
         onIntro(s) { setIntro(s); },
+        onPicture(jpeg) { if (cmRef.current) savePicture(cmRef.current, jpeg); },
       }, c, (Number(pref("hexdrift.cam", "0")) || 0) % 3, readLook(), !(bootLive && bootLive.map === map.id && bootLive.inputs.length > 0));
     } catch (e) {
       setError(e instanceof Error ? e.message : "This device can't show 3D graphics.");
@@ -671,6 +673,7 @@ function Play({ map, custom, home }: { map: MapDef; custom?: CustomMap; home?: s
     game.current = g;
     g.setGraphics(gfxPref());
     if (cmRef.current) {
+      g.wantPicture = cmRef.current.id.startsWith("u");
       const b = myBest(cmRef.current);
       if (b) g.setGhost(bestInputs(b), b.t);
     } else void allBests().then(() => {
@@ -1029,6 +1032,7 @@ function Player({ email }: { email: string }) {
         <div>
           <h1 className="hx-page-title">{nameOf(profiles, email)}{email === me && <span className="hx-dim"> (you)</span>}</h1>
           {rows && <p className="hx-dim">{rows.length} of {MAPS.length} maps · {wrs} world record{wrs === 1 ? "" : "s"}</p>}
+          <a className="hx-linkbtn" href={profileHref(email)}>Vortex profile</a>
         </div>
       </div>
       {!sb ? <NeedOnline /> : error ? <p className="hx-dim">{error}</p> : !rows ? <p className="hx-dim">Loading…</p> : (

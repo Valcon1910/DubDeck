@@ -14,10 +14,11 @@ import "./vortex.css";
 const Manage = lazy(() => import("./Manage").then((m) => ({ default: m.Manage })));
 const ChatPage = lazy(() => import("./chat/Chat").then((m) => ({ default: m.ChatPage })));
 const Admin = lazy(() => import("./Admin").then((m) => ({ default: m.Admin })));
+const ProfilePage = lazy(() => import("./Profile").then((m) => ({ default: m.ProfilePage })));
 const Hexdrift = lazy(() => import("../hexdrift/Hexdrift").then((m) => ({ default: m.Hexdrift })));
 
-type Route = "home" | "games" | "downloader" | "announcements" | "chat" | "admin" | "manage" | "hexdrift" | "notfound";
-const ROUTES: Route[] = ["games", "downloader", "announcements", "chat", "admin", "manage", "hexdrift"];
+type Route = "home" | "games" | "downloader" | "announcements" | "chat" | "admin" | "manage" | "hexdrift" | "profile" | "notfound";
+const ROUTES: Route[] = ["games", "downloader", "announcements", "chat", "admin", "manage", "hexdrift", "profile"];
 
 function readRoute(): Route {
   const r = location.hash.replace(/^#\/?/, "").split(/[/?]/)[0] as Route;
@@ -82,7 +83,7 @@ function Shell({ email, prefs, setPrefs, gravatar }: { email: string | null; pre
 
   const s0 = content.sections;
   useEffect(() => {
-    const page = { home: "", games: content.games.title, downloader: content.downloader.title, announcements: content.announcements.title, chat: s0.chat.title, admin: "Editor", manage: "Admin", hexdrift: "Hexdrift", notfound: "Page not found" }[route];
+    const page = { home: "", games: content.games.title, downloader: content.downloader.title, announcements: content.announcements.title, chat: s0.chat.title, admin: "Editor", manage: "Admin", hexdrift: "Hexdrift", profile: "Profile", notfound: "Page not found" }[route];
     const base = page ? `${page} · ${content.site.name}` : content.site.name;
     document.title = unread > 0 ? `(${unread}) ${base}` : base;
   }, [route, unread]);
@@ -197,6 +198,9 @@ function Shell({ email, prefs, setPrefs, gravatar }: { email: string | null; pre
             {route === "announcements" && <AnnouncementsPage editor={isOwner(email ?? "")} />}
             {route === "chat" && (
               <Suspense fallback={<div className="vx-card vx-skeleton" aria-hidden="true" />}><ChatPage /></Suspense>
+            )}
+            {route === "profile" && (
+              <Suspense fallback={<div className="vx-card vx-skeleton" aria-hidden="true" />}><ProfilePage /></Suspense>
             )}
             {route === "manage" && (
               <Suspense fallback={<div className="vx-card vx-skeleton" aria-hidden="true" />}><Manage /></Suspense>

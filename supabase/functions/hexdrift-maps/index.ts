@@ -53,6 +53,26 @@ export function replayOn(m: CustomMap, inputs: Uint8Array): number | null {
   return r.phase === "finished" ? r.finishTicks : null;
 }
 
+/** The card picture (a JPEG the game took on the maker's drive), or null. */
+function pictureOf(v: unknown): Uint8Array | null {
+  if (typeof v !== "string" || !v.startsWith("data:image/jpeg;base64,") || v.length > 160_000) return null;
+  const b = decode(v.slice(23));
+  return b && b.length > 200 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff ? b : null;
+}
+
+/** Puts the picture in the public "pics" bucket: its path there, or "". */
+async function upload(path: string, jpeg: Uint8Array): Promise<string> {
+  const res = await fetch(`${URL}/storage/v1/object/pics/${path}`, {
+    method: "POST",
+    headers: { apikey: SERVICE, Authorization: `Bearer ${SERVICE}`, "Content-Type": "image/jpeg", "x-upsert": "true", "Cache-Control": "max-age=31536000" },
+    body: jpeg.slice().buffer,
+  }).catch(() => null);
+  return res?.ok ? path : "";
+}
+async function unload(path: string) {
+  await fetch(`${URL}/storage/v1/object/pics/${path}`, { method: "DELETE", headers: { apikey: SERVICE, Authorization: `Bearer ${SERVICE}` } }).catch(() => null);
+}
+
 const newId = () => "c" + Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => "0123456789abcdefghijklmnopqrstuvwxyz"[b % 36]).join("");
 
 Deno.serve(async (req) => {
@@ -67,7 +87,7 @@ Deno.serve(async (req) => {
   const member = await call(`/rest/v1/profiles?select=member&email=eq.${who}`);
   if (!member.ok || !member.data?.[0]?.member) return json({ error: "You're not on the Vortex access list" }, 403);
 
-  const body = await req.json().catch(() => null) as { map?: unknown; v?: number } | null;
+  const body = await req.json().catch(() => null) as { map?: unknown; v?: number; picture?: unknown } | null;
   if (body?.v !== PHYSICS_V) return json({ error: "Update the game first: it's an older version", stale: true }, 409);
   const raw = body?.map as Record<string, unknown> | undefined;
   const m = cleanMap(raw, "");
@@ -84,9 +104,9 @@ Deno.serve(async (req) => {
   if (replayOn(m, inputs) !== a.ticks) return json({ error: "Your author run doesn't finish in that time on this map. Drive it again.", rejected: true }, 422);
 
   // Publishing again updates the map; a new one has limits.
-  const mine = await call(`/rest/v1/hexdrift_maps?author=eq.${who}&select=id,local_id,published_at,version`);
+  const mine = await call(`/rest/v1/hexdrift_maps?author=eq.${who}&select=id,local_id,published_at,version,picture`);
   if (!mine.ok) return json({ error: "Couldn't reach the maps" }, 500);
-  const rows = (mine.data ?? []) as { id: string; local_id: string; published_at: string; version: string }[];
+  const rows = (mine.data ?? []) as { id: string; local_id: string; published_at: string; version: string; picture: string }[];
   const old = rows.find((r) => r.local_id === m.id);
   if (!old) {
     const day = Date.now() - 24 * 3600 * 1000;
@@ -95,10 +115,17 @@ Deno.serve(async (req) => {
   }
   const id = old?.id ?? newId();
   const now = new Date().toISOString();
+  // A new picture replaces the old one (kept when this publish has none).
+  const jpeg = pictureOf(body?.picture);
+  let picture = old?.picture ?? "";
+  if (jpeg) {
+    const path = await upload(`hexdrift/${id}-${version}-${Date.now().toString(36)}.jpg`, jpeg);
+    if (path) { if (picture) await unload(picture); picture = path; }
+  }
   const row = {
     id, author: email, local_id: m.id, name: m.name.trim(), theme: m.theme, pieces: m.pieces, version,
     author_ticks: a.ticks, author_inputs: a.inputs, length_m: Math.round(check.length), checkpoints: check.road.gates.length,
-    v: PHYSICS_V, updated_at: now,
+    v: PHYSICS_V, updated_at: now, picture,
   };
   const saved = old
     ? await call(`/rest/v1/hexdrift_maps?id=eq.${id}`, { method: "PATCH", prefer: "return=minimal", body: row })

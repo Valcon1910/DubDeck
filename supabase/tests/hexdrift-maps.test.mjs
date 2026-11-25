@@ -74,6 +74,19 @@ assert.equal(r.data.players, 2);
 // …but not on an old version of it.
 assert.equal((await post(SUBMIT, bob, { map: `${id}-zzz`, ticks: bobRun.ticks, inputs: b64(bobRun.inputs), v: PHYSICS_V })).status, 422);
 
+// The browse list: Bob's run is the world record now, two players finished it.
+let { data: cards } = await cat.sb.rpc("hexdrift_list", { p_sort: "new", p_search: "test loop", p_v: PHYSICS_V, p_author: null, p_limit: 10 });
+let card = cards.find((c) => c.id === id);
+assert.ok(card, "the map is in the list");
+assert.equal(card.finishers, 2);
+assert.equal(card.wr_ticks, Math.min(m.author.ticks, bobRun.ticks));
+assert.equal(card.difficulty, null, "not rated before 5 players");
+({ data: cards } = await cat.sb.rpc("hexdrift_list", { p_sort: "author", p_search: "", p_v: PHYSICS_V, p_author: ann.email, p_limit: 10 }));
+assert.deepEqual(cards.map((c) => c.id), [id]);
+const holder = bobRun.ticks < m.author.ticks ? bob : ann;
+const { data: held } = await cat.sb.rpc("hexdrift_held", { p_email: holder.email, p_v: PHYSICS_V });
+assert.ok(held.some((h) => h.map === key), "the record holder's profile lists it");
+
 // Likes (not your own), plays (each player once).
 assert.ok((await ann.sb.from("hexdrift_map_likes").insert({ map_id: id, email: ann.email })).error, "no liking your own map");
 assert.ok(!(await bob.sb.from("hexdrift_map_likes").insert({ map_id: id, email: bob.email })).error);

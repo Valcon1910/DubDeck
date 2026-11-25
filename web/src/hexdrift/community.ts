@@ -6,6 +6,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { cleanMap, medalsOf, roadDefOf, THEMES, type CustomMap, type ThemeId } from "./sim/custom.ts";
 import { PHYSICS_V } from "./sim/race.ts";
 import type { MapDef } from "./maps.ts";
+import { pictureOf } from "./mymaps.ts";
 
 const FN = `hexdrift-maps-v${PHYSICS_V}`;
 const T = "hexdrift_maps";
@@ -15,30 +16,47 @@ export interface CMap {
   author_ticks: number; length_m: number; checkpoints: number;
   likes: number; plays: number; reports: number;
   featured_at: string | null; hidden: boolean; published_at: string; updated_at: string;
-  local_id: string;
+  local_id: string; picture: string;
+  /** From the browse list: the world record on the current version, finishers, difficulty (0–1, null until 5 players). */
+  wr_email?: string | null; wr_ticks?: number | null; finishers?: number; difficulty?: number | null;
   pieces?: unknown;
 }
-const CARD = "id,author,name,theme,version,author_ticks,length_m,checkpoints,likes,plays,reports,featured_at,hidden,published_at,updated_at,local_id";
+const CARD = "id,author,name,theme,version,author_ticks,length_m,checkpoints,likes,plays,reports,featured_at,hidden,published_at,updated_at,local_id,picture";
 
-export type Sort = "featured" | "popular" | "played" | "new" | "mine" | "hidden";
+export type Sort = "featured" | "trending" | "new" | "liked" | "hardest" | "played" | "mine" | "hidden" | "author";
 
 /** True for a community map's record id ("<map id>-<version>"). */
 export const isCommunity = (mapId: string) => /^c[0-9a-z]{8}-[0-9a-z]+$/.test(mapId);
 
-export async function listMaps(sb: SupabaseClient, sort: Sort, me: string, search = "", limit = 60): Promise<CMap[]> {
-  let q = sb.from(T).select(CARD);
-  if (sort === "mine") q = q.eq("author", me);
-  else if (sort === "hidden") q = q.eq("hidden", true);
-  else q = q.eq("hidden", false);
-  if (sort === "featured") q = q.not("featured_at", "is", null).order("featured_at", { ascending: false });
-  else if (sort === "popular") q = q.order("likes", { ascending: false }).order("published_at", { ascending: false });
-  else if (sort === "played") q = q.order("plays", { ascending: false }).order("published_at", { ascending: false });
-  else q = q.order(sort === "hidden" ? "reports" : "published_at", { ascending: false });
-  const s = search.trim().replace(/[%_,()*]/g, " ").trim();
-  if (s) q = q.ilike("name", `%${s}%`);
-  const { data, error } = await q.limit(limit);
+/** Maps for the browse page (or one player's maps, with sort "author"). */
+export async function listMaps(sb: SupabaseClient, sort: Sort, search = "", author?: string, limit = 60): Promise<CMap[]> {
+  const { data, error } = await sb.rpc("hexdrift_list", { p_sort: sort, p_search: search.trim().slice(0, 40), p_v: PHYSICS_V, p_author: author ?? null, p_limit: limit });
   if (error) throw error;
   return (data ?? []) as CMap[];
+}
+
+/** The card picture's address (or "" when the map has none). */
+export function pictureUrl(sb: SupabaseClient, c: Pick<CMap, "picture">) {
+  return c.picture ? sb.storage.from("pics").getPublicUrl(c.picture).data.publicUrl : "";
+}
+
+export type Difficulty = "Not rated" | "Easy" | "Medium" | "Hard" | "Extreme";
+export function difficultyOf(d: number | null | undefined): Difficulty {
+  if (d == null) return "Not rated";
+  return d < 0.25 ? "Easy" : d < 0.5 ? "Medium" : d < 0.75 ? "Hard" : "Extreme";
+}
+
+/** The world record on a community map's current version. */
+export async function recordOf(sb: SupabaseClient, c: CMap): Promise<{ email: string; ticks: number } | null> {
+  const { data } = await sb.from("hexdrift_records").select("email,ticks").eq("map", `${c.id}-${c.version}`).eq("v", PHYSICS_V).order("ticks").order("set_at").limit(1);
+  return (data?.[0] as { email: string; ticks: number } | undefined) ?? null;
+}
+
+/** The maps where this player holds the world record (newest first). */
+export async function recordsHeld(sb: SupabaseClient, email: string): Promise<{ map: string; ticks: number; set_at: string }[]> {
+  const { data, error } = await sb.rpc("hexdrift_held", { p_email: email, p_v: PHYSICS_V });
+  if (error) throw error;
+  return data ?? [];
 }
 
 /** A map with its pieces, or null when it's gone (or hidden from you). */
@@ -66,7 +84,7 @@ export function mapDefFrom(c: CMap, by: string): MapDef | null {
 
 export type PublishResult = { ok: true; id: string; updated: boolean; changed: boolean } | { ok: false; error: string };
 export async function publishMap(sb: SupabaseClient, m: CustomMap): Promise<PublishResult> {
-  const { data, error } = await sb.functions.invoke(FN, { body: { map: m, v: PHYSICS_V } });
+  const { data, error } = await sb.functions.invoke(FN, { body: { map: m, v: PHYSICS_V, picture: pictureOf(m) ?? undefined } });
   if (!error && data?.id) return { ok: true, id: data.id, updated: !!data.updated, changed: !!data.changed };
   let msg = data?.error as string | undefined;
   const ctx = (error as { context?: Response } | null)?.context;

@@ -8,6 +8,7 @@ import type { MapDef } from "./maps.ts";
 
 const KEY = "hexdrift.mymaps.v1";
 const BEST = "hexdrift.mybest.v1";
+const PICS = "hexdrift.mypics.v1";
 
 function read<T>(key: string, fallback: T): T {
   try { const s = localStorage.getItem(key); return s ? JSON.parse(s) as T : fallback; } catch { return fallback; }
@@ -35,6 +36,23 @@ export function deleteMap(id: string) {
   const b = read<Record<string, MyBest>>(BEST, {});
   for (const k of Object.keys(b)) if (k.startsWith(id + ":")) delete b[k];
   write(BEST, b);
+  const p = read<Record<string, unknown>>(PICS, {});
+  delete p[id];
+  write(PICS, p);
+}
+
+/** The card picture the game took on your last drive of this version of the map. */
+export function pictureOf(m: CustomMap): string | null {
+  const p = read<Record<string, { hash: string; jpeg: string }>>(PICS, {})[m.id];
+  return p && p.hash === versionOf(m) ? p.jpeg : null;
+}
+export function savePicture(m: CustomMap, jpeg: string) {
+  const all = read<Record<string, { hash: string; jpeg: string }>>(PICS, {});
+  all[m.id] = { hash: versionOf(m), jpeg };
+  // Keep the newest few (each is about 30 KB).
+  const keys = Object.keys(all);
+  if (keys.length > 12) for (const k of keys.slice(0, keys.length - 12)) delete all[k];
+  write(PICS, all);
 }
 
 /** The author time counts only on the version it was driven on. */
