@@ -6,6 +6,7 @@ import { CELL, CURVE_IN, CURVE_OUT, DIRV, HALF_W, LEVEL, surface, THICK, WALL_H,
 import { NO_GROUND, terrainAt } from "../sim/terrain.ts";
 import type { Biome, BiomeId } from "../maps.ts";
 import { buildProps, type Breakables } from "./props.ts";
+import { buildRoadWorld } from "./roadworld.ts";
 
 const ARCH_H = 9;
 
@@ -82,6 +83,7 @@ export interface World {
 }
 
 export function buildWorld(track: Track, biome: Biome, biomeId: BiomeId): World {
+  if (track.road) return buildRoadWorld(track, biome, biomeId);
   const b = new Builder();
   const mats: THREE.Material[] = [];
   const geos: THREE.BufferGeometry[] = [];

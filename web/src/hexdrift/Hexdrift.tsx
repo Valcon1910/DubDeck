@@ -2,7 +2,7 @@
 // the HUD, the finish screen and Gaming Mode; the game itself is in game.ts.
 // Loaded only when someone opens it, so it adds nothing to the rest of the site.
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { MAPS, BIOMES, medalFor, type MapDef, type Medal } from "./maps.ts";
+import { ALL_MAPS, MAPS, BIOMES, medalFor, type MapDef, type Medal } from "./maps.ts";
 import { formatTime } from "./sim/race.ts";
 import { Controls, type Action } from "./input.ts";
 import { Game } from "./game.ts";
@@ -46,7 +46,8 @@ function readView(): View {
   if (parts[1] === "maps") return { kind: "maps" };
   if (parts[1] === "map") { const m = MAPS.find((x) => x.id === parts[2]); return m ? { kind: "map", map: m } : { kind: "maps" }; }
   if (parts[1] === "player" && parts[2]) return { kind: "player", email: decodeURIComponent(parts[2]).toLowerCase() };
-  const map = MAPS.find((m) => m.id === parts[1]);
+  // Maps still being built open by address on the dev server only.
+  const map = (import.meta.env.DEV ? ALL_MAPS : MAPS).find((m) => m.id === parts[1]);
   if (!map) return { kind: "menu" };
   return parts[2] === "records" ? { kind: "records", map } : { kind: "play", map };
 }

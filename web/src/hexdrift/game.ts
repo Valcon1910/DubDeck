@@ -8,6 +8,7 @@ import { COUNTDOWN, formatTime, HZ, newRace, pack, raceTicks, step, type Race } 
 import { CELL, groundAt, key, local } from "./sim/track.ts";
 import { propsOf } from "./sim/props.ts";
 import { buildWorld, GROUND, type World } from "./render/world.ts";
+import { setupScene } from "./render/roadworld.ts";
 import { Particles } from "./render/particles.ts";
 import { Skids } from "./render/skids.ts";
 import { Weather, WEATHER } from "./render/weather.ts";
@@ -171,12 +172,7 @@ export class Game {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.camera = new THREE.PerspectiveCamera(CAMS[this.cam].fov, 1, 0.5, 2600);
 
-    this.scene.fog = new THREE.Fog(biome.fog, biome.fogNear, biome.fogFar);
-    this.scene.background = new THREE.Color(biome.fog);
-    this.scene.add(new THREE.HemisphereLight(biome.sky, biome.ground, 1.5));
-    const sun = new THREE.DirectionalLight("#ffffff", 1.7);
-    sun.position.set(0.45, 1, 0.3);
-    this.scene.add(sun);
+    setupScene(this.scene, biome, map.biome, !!track.road);
 
     this.world = buildWorld(track, biome, map.biome);
     this.scene.add(this.world.group);
@@ -706,7 +702,9 @@ export class Game {
     if (!list) return 0;
     let lift = 0;
     for (const s of list) {
-      const dx = p.x - s.x, dz = p.z - s.z, m = 1.2;
+      let dx = p.x - s.x, dz = p.z - s.z;
+      const m = 1.2;
+      if (s.fx !== undefined && s.fz !== undefined) { const lx = dx * s.fz - dz * s.fx; dz = dx * s.fx + dz * s.fz; dx = lx; }
       const inside = s.box ? Math.abs(dx) < s.a + m && Math.abs(dz) < s.b + m : (dx / (s.a + m)) ** 2 + (dz / (s.b + m)) ** 2 < 1;
       if (inside && p.y < s.top + 1.5 && s.top - p.y < 14) lift = Math.max(lift, s.top + 1.5 - p.y);
     }
@@ -718,8 +716,17 @@ export class Game {
     const car = this.race.car;
     const v = Math.sqrt(car.vx * car.vx + car.vz * car.vz);
     if (v < 0.5) return;
-    const fin = this.race.track.pieces[this.race.track.pieces.length - 1];
-    const room = Math.max(4, CELL / 2 - 4 - local(fin, car.x, car.z).w);
+    const tr = this.race.track;
+    let room: number;
+    if (tr.road) {
+      // Whatever's left of the road past the line.
+      const f = tr.road.finish;
+      const past = (car.x - f.x) * f.fx + (car.z - f.z) * f.fz;
+      room = Math.max(6, tr.road.runout - past - 6);
+    } else {
+      const fin = tr.pieces[tr.pieces.length - 1];
+      room = Math.max(4, CELL / 2 - 4 - local(fin, car.x, car.z).w);
+    }
     this.coast = {
       x: car.x, y: car.y, z: car.z, yaw: car.yaw, yaw0: car.yaw,
       dx: car.vx / v, dz: car.vz / v, v, v0: v, dec: (v * v) / (2 * room),
