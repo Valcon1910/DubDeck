@@ -1,4 +1,4 @@
-// The 3D car viewer (garage and title screen): one car on a lit stage. Drag
+// The 3D car viewer (garage and title screen): one car floating in the light. Drag
 // to turn it any way you like, around any axis and as far as you like (it
 // keeps spinning with your flick, then settles into a slow turn). Draws only
 // while it's on screen.
@@ -15,8 +15,6 @@ export class Preview {
   private scene = new THREE.Scene();
   private camera = new THREE.PerspectiveCamera(32, 1, 0.5, 100);
   private car: CarModel | null = null;
-  private stage: THREE.Mesh;
-  private ring: THREE.Mesh;
   private canvas: HTMLCanvasElement;
   private ro: ResizeObserver;
   private raf = 0;
@@ -45,12 +43,6 @@ export class Preview {
     this.scene.add(new THREE.HemisphereLight("#cfd8ff", "#2a2140", 1.6));
     const key = new THREE.DirectionalLight("#ffffff", 2.2); key.position.set(4, 7, 5); this.scene.add(key);
     const rim = new THREE.DirectionalLight("#7af7ff", 1.1); rim.position.set(-5, 3, -6); this.scene.add(rim);
-    const g = new THREE.CircleGeometry(4.2, 48); g.rotateX(-Math.PI / 2);
-    this.stage = new THREE.Mesh(g, new THREE.MeshPhongMaterial({ color: "#1b1833", specular: "#3a3560", shininess: 30 }));
-    this.scene.add(this.stage);
-    this.ring = new THREE.Mesh(new THREE.RingGeometry(4.1, 4.25, 64).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: "#7a5cff" }));
-    this.ring.position.y = 0.01;
-    this.scene.add(this.ring);
     this.scene.add(this.fx.group);
     this.camera.position.set(0, 2.6, 8.2);
     this.camera.lookAt(0, 0.65, 0);
@@ -160,7 +152,6 @@ export class Preview {
     this.car?.dispose();
     this.trail?.dispose();
     this.fx.dispose();
-    for (const m of [this.stage, this.ring]) { m.geometry.dispose(); (m.material as THREE.Material).dispose(); }
     this.renderer.dispose();
     this.renderer.forceContextLoss();
     this.canvas.remove();
