@@ -12,7 +12,11 @@ import { hash } from "./math.ts";
 import { GAP, landAt, MAT, roadDist, roadTerrain, TUN, WL, WR, type Road, type Sample, type Strip } from "./road.ts";
 
 /** An object of a kit: its solid footprint (half sizes across a and deep b, centre shift cx/cz in its own frame), height, and room kept clear in front. */
-export interface KitDef { a: number; b: number; h: number; cx?: number; cz?: number; front?: number; round?: boolean; solid?: boolean }
+export interface KitDef {
+  a: number; b: number; h: number; cx?: number; cz?: number; front?: number; round?: boolean; solid?: boolean;
+  /** Drawn out to the fog (open-air scenery), not just nearby. */
+  vista?: boolean;
+}
 
 export const KITS: Record<string, Record<string, KitDef>> = {
   miami: {
@@ -101,7 +105,30 @@ export const KITS: Record<string, Record<string, KitDef>> = {
     sedan_r: { a: 1.1, b: 2.7, h: 2 }, sedan_b: { a: 1.1, b: 2.7, h: 1.9 }, sedan_w: { a: 1.1, b: 2.7, h: 2 },
     taxi: { a: 1, b: 2, h: 1.8 }, police: { a: 1.1, b: 2.7, h: 1.9 }, van: { a: 1.1, b: 2.7, h: 1.9 }, bus: { a: 1.2, b: 5, h: 3.4 },
   },
+  sky: {
+    keep: { a: 9, b: 9, h: 34, front: 2, vista: true },
+    gatehouse: { a: 8.2, b: 3.1, h: 19.6, vista: true },
+    wizard: { a: 3, b: 3, h: 23, round: true, vista: true },
+    temple: { a: 6, b: 6, h: 12.2, round: true },
+    cottage_a: { a: 4, b: 3.7, h: 9.1, front: 1 }, cottage_b: { a: 4, b: 3.7, h: 9.1, front: 1 }, cottage_c: { a: 4, b: 3.7, h: 9.1, front: 1 },
+    windmill: { a: 3, b: 3, h: 16.3, round: true },
+    oak: { a: 0.5, b: 0.5, h: 8, round: true }, blossom: { a: 0.5, b: 0.5, h: 8, round: true }, cypress: { a: 0.4, b: 0.4, h: 9.4, round: true },
+    flowers: { a: 2, b: 1, h: 0.7, solid: false },
+    lantern: { a: 0.2, b: 0.2, h: 4.2, round: true },
+    crystal: { a: 1.6, b: 1.6, h: 5.7, round: true },
+    statue: { a: 1.2, b: 1.2, h: 6.8 },
+    gazebo: { a: 3, b: 3, h: 5.2, round: true },
+    stand: { a: 15, b: 4.4, cz: 0.5, h: 7.3 },
+    chevron_r: { a: 1.2, b: 0.15, h: 2.7 }, chevron_l: { a: 1.2, b: 0.15, h: 2.7 },
+    // The open air: drawn only.
+    cloud_a: { a: 15, b: 12, h: 9, solid: false, vista: true }, cloud_b: { a: 25, b: 16, h: 12, solid: false, vista: true },
+    islet_a: { a: 4.6, b: 4.6, h: 14, solid: false, vista: true }, islet_b: { a: 4.6, b: 4.6, h: 14, solid: false, vista: true },
+    balloon_a: { a: 6.2, b: 6.2, h: 19, solid: false, vista: true }, balloon_b: { a: 6.2, b: 6.2, h: 19, solid: false, vista: true },
+    airship: { a: 5.1, b: 17, h: 12, solid: false, vista: true },
+  },
 };
+
+const SKY_AIR = ["cloud_a", "cloud_b", "cloud_a", "islet_a", "cloud_b", "balloon_a", "islet_b", "cloud_a", "cloud_b", "islet_a", "balloon_b", "cloud_a", "cloud_b", "airship"];
 
 /** What lines each kind of strip: the frontage along the road, the blocks behind, and fillers between. */
 interface Mix {
@@ -112,6 +139,8 @@ interface Mix {
   scatter?: number;
   /** What stands right by the road (default: the fillers). */
   kerb?: string[];
+  /** Where there's no ground (between sky islands): drawn-only things in the open air. */
+  air?: string[];
 }
 const MIXES: Record<string, Partial<Record<Strip, Mix>>> = {
   miami: {
@@ -133,6 +162,11 @@ const MIXES: Record<string, Partial<Record<Strip, Mix>>> = {
     cliff: { front: [], back: ["rock_b", "mesa", "rock_a", "rock_b", "cardon", "rock_a"], filler: ["rock_a", "shrubs", "saguaro_b", "agave", "rock_b"], setback: 3, wild: true, scatter: 8 },
     camp: { front: ["tent", "tent", "stand", "tent"], back: ["saguaro_a", "palapa", "rock_a", "cardon", "saguaro_c", "shrubs"], filler: ["saguaro_b", "agave", "shrubs", "rock_a"], kerb: ["tyres", "bales", "tyres", "bales", "fanpalm"], setback: 3, wild: true, scatter: 6 },
     park: { front: [], back: ["saguaro_a", "cardon", "rock_a", "saguaro_c", "shrubs"], filler: ["saguaro_b", "agave", "shrubs", "rock_a"], setback: 4, wild: true, scatter: 10 },
+  },
+  sky: {
+    village: { front: ["cottage_a", "cottage_b", "keep", "cottage_c", "temple", "gatehouse", "cottage_a", "windmill", "wizard", "cottage_b"], back: ["cottage_a", "cottage_b", "cottage_c", "oak", "blossom", "cottage_a", "windmill", "cottage_b", "gazebo", "oak"], filler: ["lantern", "cypress", "flowers", "blossom", "statue", "oak"], kerb: ["lantern", "cypress", "flowers", "lantern", "statue"], setback: 4, wild: true, scatter: 6, air: SKY_AIR },
+    park: { front: [], back: ["oak", "blossom", "gazebo", "temple", "cypress", "oak", "crystal", "windmill", "blossom"], filler: ["cypress", "flowers", "oak", "blossom", "crystal", "lantern"], kerb: ["lantern", "cypress", "flowers", "crystal", "blossom"], setback: 4, wild: true, scatter: 10, air: SKY_AIR },
+    cliff: { front: [], back: ["crystal", "oak", "crystal", "cypress", "blossom"], filler: ["crystal", "cypress", "blossom", "flowers"], kerb: ["crystal", "lantern", "cypress"], setback: 3, wild: true, scatter: 8, air: SKY_AIR },
   },
 };
 
@@ -374,6 +408,20 @@ export function compose(road: Road): Composed | null {
       const sand = sandAt(mx, mz);
       const mix = sand ? mixes.beach : mixes[strip] ?? mixes.park;
       if (!mix) continue;
+      // No ground here (open sky): clouds below, islets around, balloons and airships above.
+      if (mix.air && roadTerrain(road, mx, mz).h < -1e7) {
+        for (let k = 0; k < 2; k++) {
+          const hv = hash(gu0 + bu, gv0 + bv, 200 + k);
+          if (hv < 0.55) continue;
+          const o = pick(mix.air, hash(gu0 + bu, gv0 + bv, 201 + k * 7));
+          const [px, pz] = G(U + BLOCK / 2 + (hash(gu0 + bu, gv0 + bv, 202 + k * 7) - 0.5) * 48, V + BLOCK / 2 + (hash(gu0 + bu, gv0 + bv, 203 + k * 7) - 0.5) * 48);
+          if (roadDist(road, px, pz, 30) < 28) continue;
+          const t = hash(gu0 + bu, gv0 + bv, 204 + k * 7);
+          const dy = o.startsWith("cloud") ? -14 - t * 70 : o.startsWith("islet") ? -30 + t * 45 : 14 + t * 55;
+          placed.push({ o, x: px, y: nr.p.y + dy, z: pz, fx: ux, fz: uz, v: hash(gu0 + bu, gv0 + bv, 205 + k * 7) });
+        }
+        continue;
+      }
       // Streets along two sides of every block (where they don't cross the race).
       if (!sand && strip !== "beach" && strip !== "park" && !mix.wild) {
         for (const [a, b] of [[G(U, V), G(U + BLOCK, V)], [G(U, V), G(U, V + BLOCK)]]) {

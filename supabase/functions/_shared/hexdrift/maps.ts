@@ -96,6 +96,19 @@ export const ALL_MAPS: MapDef[] = [
     medals: { vortex: 3202, gold: 3499, silver: 4027, bronze: 4952 }, since: 6, wip: true,
   },
   {
+    id: "sky-kingdom", name: "Sky Kingdom", biome: "sky", difficulty: "Hard",
+    blurb: "Out of the castle gate and off the edge of the world. Three ramps over open air, each longer than the last, with clouds far below. The narrow sky bridge saves time if you can hold the line.",
+    road: {
+      land: { kind: "isles", seed: 64, base: 60, amp: 20, scale: 260, fall: 24, shoulder: 0.2 },
+      start: [0, 0, 60, 0], bank: 4,
+      route: "H7 S50 B S150 C R60/80 S100 U5 S90 L45/90 S60 BL S80 J4 S20 G42/-3 S80 C R90/55 S70 U6 S90 L90/50 @a S70 R45/90 S90 L45/90 @b S60 B S80 J5 S20 G46/-4 S100 C D5 S90 R60/70 S120 L90/55 S80 U4 S70 C B S90 J5 S20 G50/-3 S90 R45/90 S100 L60/80 S140 C D4 S80 B S120 F",
+      alts: [{ from: "a", to: "b", via: [[0.5, 5]], hw: 4 }],
+      dress: { kit: "sky", zones: [[0, 280, "village", "village"], [280, 900, "park", "cliff"], [900, 1700, "cliff", "park"], [1700, 2400, "park", "cliff"], [2400, 3200, "village", "village"]],
+        set: [["stand", 25, -1, 3], ["stand", 25, 1, 3], ["gatehouse", 8, 1, 4], ["keep", 140, -1, 26], ["windmill", 700, 1, 14], ["temple", 1300, -1, 16], ["wizard", 2000, 1, 14], ["keep", 2700, 1, 26], ["wizard", 2950, -1, 14]] },
+    },
+    medals: { vortex: 3714, gold: 4059, silver: 4671, bronze: 5744 }, since: 6, wip: true,
+  },
+  {
     id: "miami-storm", name: "Miami Storm", biome: "storm", difficulty: "Beginner",
     blurb: "Midnight downpour downtown. Wide neon straights on soaked asphalt, a boost through the plaza and a back-alley cut for the brave. Brake early: the puddles bite.",
     road: {

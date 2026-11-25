@@ -12,8 +12,9 @@ import { roadDist, roadTerrain, type Road } from "../sim/road.ts";
 import miamiUrl from "../kit/miami.glb?url";
 import alpineUrl from "../kit/alpine.glb?url";
 import bajaUrl from "../kit/baja.glb?url";
+import skyUrl from "../kit/sky.glb?url";
 
-const URLS: Record<string, string> = { miami: miamiUrl, alpine: alpineUrl, baja: bajaUrl };
+const URLS: Record<string, string> = { miami: miamiUrl, alpine: alpineUrl, baja: bajaUrl, sky: skyUrl };
 
 /** Material kinds (from the Blender material name). */
 const PLAIN = 0, GLASS = 1, NEON = 2, LAMP = 3, SCREEN = 4, CAR_GLASS = 5, FACADE = 6, BLINK = 7, ARROW = 8, ARROW_L = 9;
@@ -360,9 +361,11 @@ export function buildKit(group: THREE.Group, road: Road, night: boolean, sky: TH
         m4.compose(v.set(p.x, p.y, p.z), q, one).toArray(M, i * 16);
         XZ[i * 2] = p.x; XZ[i * 2 + 1] = p.z;
       });
-      const big = (c.kit[o]?.h ?? 0) > 18 && c.kit[o]?.solid !== false;
+      const block0 = (c.kit[o]?.h ?? 0) > 18 && c.kit[o]?.solid !== false && !c.kit[o]?.vista;
+      // Seen as far as the fog: big buildings (as blocks past MID) and the open-air scenery (clouds, airships).
+      const big = block0 || !!c.kit[o]?.vista;
       const near = new THREE.InstancedMesh(g.near, mat, list.length), far = new THREE.InstancedMesh(g.far, mat, list.length);
-      const block = big ? new THREE.InstancedMesh(g.block, mat, list.length) : null;
+      const block = block0 ? new THREE.InstancedMesh(g.block, mat, list.length) : null;
       for (const im of [near, far, block]) {
         if (!im) continue;
         im.frustumCulled = false; im.count = 0; im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);

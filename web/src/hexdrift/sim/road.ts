@@ -618,7 +618,10 @@ export function roadTerrain(road: Road, x: number, z: number): RoadGround {
       if (L.kind === "isles") {
         // Rock under the sky roads: a grassy shoulder, then cliffs.
         const o = dd < 0 ? 0 : dd;
-        const em = e - (o < 6 ? 0.08 * o : 0.48 + 1.6 * (o - 6));
+        // Past a segment's ends, fall away faster than any ramp climbs, so a
+        // higher piece of road never lifts the rock above the road here.
+        const oa = q.along < 0 ? -q.along : q.along > sg.len ? q.along - sg.len : 0;
+        const em = e - (o < 6 ? 0.08 * o : 0.48 + 1.6 * (o - 6)) - 0.5 * oa;
         if (em > isle) isle = em;
       }
     }
@@ -636,6 +639,8 @@ export function roadTerrain(road: Road, x: number, z: number): RoadGround {
     if (w > 0.6 && !flushNear && L.verge !== undefined) mat = L.verge;
   }
   let ravine = false;
+  // Sky islands: the land under a jump opens to the sky below.
+  if (cut > 0.6 && L.kind === "isles") return { h: NONE, ravine: false, rough: ROUGH[mat], mat };
   if (cut > 0) {
     const c = h + (cutH - h) * cut;
     if (c < h) h = c;
