@@ -180,7 +180,7 @@ export class Game {
 
     this.world = buildWorld(track, biome, map.biome);
     this.scene.add(this.world.group);
-    this.car = buildCar({ look, mapAccent: biome.accent });
+    this.car = buildCar({ look, mapAccent: biome.accent, env: biome });
     this.scene.add(this.car.root);
     this.scene.add(this.shadow.mesh);
     this.trail = new Trail(trailDef(itemOf("trail", look.trail) as Item));

@@ -129,12 +129,19 @@ def wheel_well(body, x, z, r):
     smooth(body)
 
 
+def sharpen(ob, degrees=45):
+    """Hard edges where faces meet at a sharp angle (the lips of the wheel
+    wells), so the smooth shading doesn't smear across them."""
+    ob.data.set_sharp_from_angle(angle=math.radians(degrees))
+
+
 def under_trim(body):
     if not body.data.materials.get("trim"):
         body.data.materials.append(mat("trim"))
     ti = list(body.data.materials).index(mat("trim"))
     for p in body.data.polygons:
-        if p.normal.z < -0.55:
+        # Only the real floor of the car (not the lips of the wheel arches).
+        if p.normal.z < -0.55 and p.center.z < 0.3:
             p.material_index = ti
 
 

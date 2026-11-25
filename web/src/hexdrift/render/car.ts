@@ -32,6 +32,8 @@ export interface CarOptions {
   ghost?: false | "pb" | "wr";
   /** Shown above the world-record ghost. */
   label?: string;
+  /** What the paint reflects (the map); a studio if not given. */
+  env?: CarEnv;
 }
 
 type Part = "paint" | "accent" | "trim" | "gloss" | "glass" | "lamp" | "tail" | "metal" | "chrome" | "white";
@@ -549,31 +551,53 @@ function roundel() {
 const colorOf = (slot: "paint" | "accent" | "rims" | "trail", id: string) => (itemOf(slot, id) as Item).color;
 
 
+/** The world a car's paint reflects (a map's colours). Without it: a photo studio. */
+export interface CarEnv { sky: string; fog: string; ground: string; edge: string; wall: string }
+
 /**
- * A studio around the car for reflections: bright sky with soft boxes, a
- * white horizon and a dark floor, painted once on a small canvas (no file
- * to load). three.js blurs it into the right sharpness for each material.
+ * What the car reflects, painted once on a small canvas (no file to load):
+ * a studio with soft boxes for the garage, or the map's sky, horizon and
+ * ground with strips of its edge colours (neon in the city). three.js blurs
+ * it into the right sharpness for each material.
  */
-let studio: THREE.Texture | null = null;
-function studioEnv(): THREE.Texture {
-  if (studio) return studio;
+const envs = new Map<string, THREE.Texture>();
+function studioEnv(e?: CarEnv): THREE.Texture {
+  const key = e ? `${e.sky}${e.fog}${e.ground}${e.edge}${e.wall}` : "studio";
+  const have = envs.get(key);
+  if (have) return have;
   const c = document.createElement("canvas");
   c.width = 512; c.height = 256;
   const x = c.getContext("2d")!;
   const g = x.createLinearGradient(0, 0, 0, 256);
-  g.addColorStop(0, "#6f7c99"); g.addColorStop(0.42, "#b9c3d8"); g.addColorStop(0.5, "#f2f5fb");
-  g.addColorStop(0.53, "#5a5d6e"); g.addColorStop(0.7, "#24252e"); g.addColorStop(1, "#101015");
-  x.fillStyle = g; x.fillRect(0, 0, 512, 256);
-  // Soft boxes overhead and long strip lights at the sides.
-  x.fillStyle = "#ffffff";
-  for (const [bx, by, bw, bh] of [[200, 18, 112, 46], [40, 70, 30, 40], [442, 70, 30, 40], [120, 96, 70, 10], [322, 96, 70, 10]]) {
-    x.shadowColor = "#ffffff"; x.shadowBlur = 10;
-    x.fillRect(bx, by, bw, bh);
+  const shade = (hex: string, k: number) => `#${new THREE.Color(hex).multiplyScalar(k).getHexString()}`;
+  if (e) {
+    // A little darker than the real sky, so bright maps don't wash the paint out.
+    g.addColorStop(0, shade(e.sky, 0.7)); g.addColorStop(0.44, shade(e.fog, 0.75)); g.addColorStop(0.5, shade(e.fog, 0.95));
+    g.addColorStop(0.53, shade(e.ground, 0.7)); g.addColorStop(1, shade(e.ground, 0.25));
+  } else {
+    g.addColorStop(0, "#6f7c99"); g.addColorStop(0.42, "#b9c3d8"); g.addColorStop(0.5, "#f2f5fb");
+    g.addColorStop(0.53, "#5a5d6e"); g.addColorStop(0.7, "#24252e"); g.addColorStop(1, "#101015");
   }
-  studio = new THREE.CanvasTexture(c);
-  studio.mapping = THREE.EquirectangularReflectionMapping;
-  studio.colorSpace = THREE.SRGBColorSpace;
-  return studio;
+  x.fillStyle = g; x.fillRect(0, 0, 512, 256);
+  x.shadowBlur = 10;
+  if (e) {
+    // The sun overhead, and the map's colours as long strips along the horizon.
+    x.fillStyle = x.shadowColor = "#ffffff";
+    x.beginPath(); x.arc(300, 40, 16, 0, Math.PI * 2); x.fill();
+    x.fillStyle = x.shadowColor = e.edge;
+    for (const bx of [20, 150, 280, 410]) x.fillRect(bx, 112, 80, 7);
+    x.fillStyle = x.shadowColor = e.wall;
+    for (const bx of [85, 215, 345, 475]) x.fillRect(bx, 120, 50, 5);
+  } else {
+    // Soft boxes overhead and long strip lights at the sides.
+    x.fillStyle = x.shadowColor = "#ffffff";
+    for (const [bx, by, bw, bh] of [[200, 18, 112, 46], [40, 70, 30, 40], [442, 70, 30, 40], [120, 96, 70, 10], [322, 96, 70, 10]]) x.fillRect(bx, by, bw, bh);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.mapping = THREE.EquirectangularReflectionMapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  envs.set(key, t);
+  return t;
 }
 
 // ── Bodies made in Blender ──────────────────────────────────────────────────
@@ -658,7 +682,7 @@ export function buildCar(opts: CarOptions = {}): CarModel {
   const D = { polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 };
   // Real materials that reflect a studio around them: clear-coated paint,
   // mirror chrome, glass that shows the sky.
-  const env = studioEnv();
+  const env = studioEnv(opts.env);
   const pbr = (c: string, metalness: number, roughness: number, extra: THREE.MeshStandardMaterialParameters = {}) =>
     keep(new THREE.MeshStandardMaterial({ color: c, metalness, roughness, envMap: env, side: THREE.DoubleSide, ...extra }));
   const M: Record<Part, THREE.Material> = ghostM
@@ -715,7 +739,7 @@ export function buildCar(opts: CarOptions = {}): CarModel {
   }
 
   // Glowing pipe ends and the boost flames.
-  const glowM = keep(new THREE.MeshBasicMaterial({ color: "#ff9a3d", transparent: !!ghost, opacity: ghost ? 0.3 : 1 }));
+  const glowM = keep(new THREE.MeshBasicMaterial({ color: "#3a2418", transparent: !!ghost, opacity: ghost ? 0.3 : 1 }));
   const flameM = keep(new THREE.MeshBasicMaterial({ color: trail ?? "#ff5fd2", transparent: true, opacity: ghost ? 0.3 : 0.85, depthWrite: false }));
   const endG = new THREE.CircleGeometry(0.05, 10); endG.rotateY(Math.PI); geos.push(endG);
   const flameG = new THREE.ConeGeometry(0.13, 1.2, 8); flameG.rotateX(-Math.PI / 2); geos.push(flameG);
@@ -791,7 +815,7 @@ export function buildCar(opts: CarOptions = {}): CarModel {
     setBoost(on) {
       for (const f of flames) { f.visible = on; f.scale.z = on ? 0.8 + Math.random() * 0.5 : 1; }
       if (on && !trail && !ghost) { hue = (hue + 0.02) % 1; flameM.color.setHSL(hue, 1, 0.6); }
-      glowM.color.set(on ? (trail ?? flameM.color.getStyle()) : "#ff9a3d");
+      glowM.color.set(on ? (trail ?? flameM.color.getStyle()) : "#3a2418");
     },
     dispose() {
       dead = true;
