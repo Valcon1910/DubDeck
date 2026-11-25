@@ -108,6 +108,19 @@ export const ALL_MAPS: MapDef[] = [
     medals: { vortex: 3714, gold: 4059, silver: 4671, bronze: 5744 }, since: 6, wip: true,
   },
   {
+    id: "interstellar", name: "Interstellar", biome: "space", difficulty: "Expert",
+    blurb: "Out of the orbital shipyard and into the asteroid belt. Low gravity, a narrow steel deck and four long jumps through empty space. Every landing counts: miss the deck and you're drifting.",
+    road: {
+      land: { kind: "void", seed: 1, base: 0, amp: 0, scale: 100, fall: 20, shoulder: 0.2 },
+      start: [0, 0, 100, 0], bank: 6, grav: 0.55,
+      route: "H6 Mmetal S50 B S160 C R90/60 S80 U8 S100 L60/70 B S120 J5 S25 G70/-6 S90 C L90/50 S60 R90/50 @a S80 D8 S100 L45/80 S60 R45/80 @b S70 B S100 J6 S25 G80/-4 S100 C U10 S120 R120/45 S70 L60/70 S90 BL S60 J5 S20 G75/-8 S90 C R90/55 WB S140 W0 L90/50 D6 S100 B S110 J6 S25 G90/-5 S120 C L60/80 S100 B S160 F",
+      alts: [{ from: "a", to: "b", via: [[0.5, 6]], hw: 3.5 }],
+      dress: { kit: "space", zones: [[0, 320, "village", "village"], [320, 1100, "park", "cliff"], [1100, 1900, "cliff", "park"], [1900, 2900, "park", "cliff"], [2900, 3800, "village", "village"]],
+        set: [["stand", 25, -1, 3], ["stand", 25, 1, 3], ["spire", 150, -1, 10], ["ring", 900, 1, 160], ["ring", 2300, -1, 200], ["spire", 3150, 1, 10]] },
+    },
+    medals: { vortex: 4366, gold: 4771, silver: 5491, bronze: 6752 }, since: 6, wip: true,
+  },
+  {
     id: "miami-storm", name: "Miami Storm", biome: "storm", difficulty: "Beginner",
     blurb: "Midnight downpour downtown. Wide neon straights on soaked asphalt, a boost through the plaza and a back-alley cut for the brave. Brake early: the puddles bite.",
     road: {

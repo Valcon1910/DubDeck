@@ -13,8 +13,9 @@ import miamiUrl from "../kit/miami.glb?url";
 import alpineUrl from "../kit/alpine.glb?url";
 import bajaUrl from "../kit/baja.glb?url";
 import skyUrl from "../kit/sky.glb?url";
+import spaceUrl from "../kit/space.glb?url";
 
-const URLS: Record<string, string> = { miami: miamiUrl, alpine: alpineUrl, baja: bajaUrl, sky: skyUrl };
+const URLS: Record<string, string> = { miami: miamiUrl, alpine: alpineUrl, baja: bajaUrl, sky: skyUrl, space: spaceUrl };
 
 /** Material kinds (from the Blender material name). */
 const PLAIN = 0, GLASS = 1, NEON = 2, LAMP = 3, SCREEN = 4, CAR_GLASS = 5, FACADE = 6, BLINK = 7, ARROW = 8, ARROW_L = 9;

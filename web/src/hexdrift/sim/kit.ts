@@ -16,9 +16,30 @@ export interface KitDef {
   a: number; b: number; h: number; cx?: number; cz?: number; front?: number; round?: boolean; solid?: boolean;
   /** Drawn out to the fog (open-air scenery), not just nearby. */
   vista?: boolean;
+  /** Floats at the road's height where there's no ground (space). */
+  hover?: boolean;
+  /** Open-air scenery: how far below and above the road it may float. */
+  alt?: [number, number];
 }
 
 export const KITS: Record<string, Record<string, KitDef>> = {
+  space: {
+    beacon: { a: 0.8, b: 0.8, h: 4.8, round: true, hover: true },
+    solar: { a: 10, b: 1.5, h: 6.2, hover: true },
+    dish: { a: 4.8, b: 4.2, cz: 0.6, h: 12.6, hover: true },
+    pods: { a: 3.5, b: 1.7, h: 5.4, hover: true },
+    dock: { a: 11, b: 7, h: 14.8, front: 2, hover: true },
+    hab: { a: 8.8, b: 3.3, h: 9.4, hover: true },
+    spire: { a: 4.6, b: 4.6, h: 37.5, round: true, hover: true, vista: true },
+    stand: { a: 15.5, b: 4.4, cz: 0.2, h: 7.7, hover: true },
+    chevron_r: { a: 1.3, b: 0.4, h: 2.9, hover: true }, chevron_l: { a: 1.3, b: 0.4, h: 2.9, hover: true },
+    rock_a: { a: 8, b: 7, h: 10, solid: false, vista: true, alt: [-70, 60] },
+    rock_b: { a: 15, b: 15, h: 26, solid: false, vista: true, alt: [-110, 80] },
+    rock_c: { a: 28, b: 24, h: 36, solid: false, vista: true, alt: [-160, 110] },
+    satellite: { a: 6.2, b: 1.4, h: 3, solid: false, vista: true, alt: [12, 70] },
+    freighter: { a: 5, b: 38, h: 11, solid: false, vista: true, alt: [45, 140] },
+    ring: { a: 66, b: 66, h: 17, solid: false, vista: true, alt: [110, 190] },
+  },
   miami: {
     deco_a: { a: 8.6, b: 6.6, h: 22, front: 5 },
     deco_b: { a: 7.1, b: 5.6, h: 18.7, front: 5 },
@@ -128,6 +149,7 @@ export const KITS: Record<string, Record<string, KitDef>> = {
   },
 };
 
+const SPACE_AIR = ["rock_a", "rock_b", "rock_a", "satellite", "rock_c", "rock_a", "rock_b", "rock_a", "satellite", "rock_b", "rock_a", "rock_c", "rock_a", "rock_b", "satellite", "rock_a", "rock_b", "rock_a", "rock_c", "rock_a", "rock_b", "satellite", "rock_a", "freighter"];
 const SKY_AIR = ["cloud_a", "cloud_b", "cloud_a", "islet_a", "cloud_b", "balloon_a", "islet_b", "cloud_a", "cloud_b", "islet_a", "balloon_b", "cloud_a", "cloud_b", "airship"];
 
 /** What lines each kind of strip: the frontage along the road, the blocks behind, and fillers between. */
@@ -141,8 +163,15 @@ interface Mix {
   kerb?: string[];
   /** Where there's no ground (between sky islands): drawn-only things in the open air. */
   air?: string[];
+  /** How many open-air things to try per block (default 2). */
+  airN?: number;
 }
 const MIXES: Record<string, Partial<Record<Strip, Mix>>> = {
+  space: {
+    village: { front: ["dock", "pods", "hab", "solar", "pods", "dish", "hab", "dock", "solar"], back: [], filler: ["beacon", "pods"], kerb: ["beacon", "beacon", "pods", "beacon"], setback: 5, wild: true, air: SPACE_AIR, airN: 3 },
+    park: { front: ["solar", "dish"], back: [], filler: ["beacon"], kerb: ["beacon"], setback: 18, wild: true, air: SPACE_AIR, airN: 3 },
+    cliff: { front: [], back: [], filler: ["beacon"], kerb: ["beacon", "beacon", "pods"], setback: 6, wild: true, air: SPACE_AIR, airN: 4 },
+  },
   miami: {
     boulevard: { front: ["deco_a", "deco_b", "deco_c", "deco_d", "deco_a", "deco_c"], back: ["condo_a", "condo_b", "shops_a", "deco_b", "condo_a"], filler: ["palm_tall", "palm_mid", "palm_pair"], setback: 5 },
     downtown: { front: ["office_a", "condo_b", "shops_a", "shops_b", "garage", "condo_a"], back: ["office_a", "condo_b", "condo_a", "garage", "shops_b"], filler: ["palm_mid", "planter", "palm_mid", "busstop", "billboard", "planter", "lamp2"], setback: 4, tall: ["office_a", "condo_b"] },
@@ -225,6 +254,17 @@ export function compose(road: Road): Composed | null {
   const main = road.strands[0].pts;
   const total = main[main.length - 1].s;
 
+  // The main road, every ~10 m, for "which stretch is nearest".
+  const marks: Sample[] = [];
+  for (let i = 0; i < main.length; i += 4) marks.push(main[i]);
+  const nearest = (x: number, z: number) => {
+    let bd = 1e18, bp = marks[0];
+    for (const p of marks) {
+      const dx = p.x - x, dz = p.z - z, dd = dx * dx + dz * dz;
+      if (dd < bd) { bd = dd; bp = p; }
+    }
+    return { p: bp, d: Math.sqrt(bd) };
+  };
   const sandAt = (x: number, z: number) => sea !== undefined && landAt(road.land, x, z).mat === MAT.sand;
   const wetAt = (x: number, z: number) => sea !== undefined && landAt(road.land, x, z).h < sea + 0.3;
   /** Places an object if it fits: clear of every road by gap, on dry land, not on anything else. */
@@ -252,7 +292,11 @@ export function compose(road: Road): Composed | null {
     }
     const gc = roadTerrain(road, cx, cz).h;
     if (gc < y) y = gc;
-    if (y < -1e7) return false;
+    // No ground: only things that float (at the nearest road's height, or their open-air height).
+    if (y < -1e7) {
+      if (!d.hover && !d.alt) return false;
+      y = nearest(cx, cz).p.y + (d.alt ? (d.alt[0] + d.alt[1]) / 2 : -0.7);
+    }
     if (!occ.box(cx + fx * front * 0.5, cz + fz * front * 0.5, fx, fz, d.a, d.b + front * 0.5, margin, true)) return false;
     placed.push({ o, x, y: y - 0.3, z, fx, fz, v });
     return true;
@@ -293,7 +337,8 @@ export function compose(road: Road): Composed | null {
       const [x, z] = at(p, side * (p.hw + 2.6), 0);
       n++;
       if (put(side < 0 ? "chevron_r" : "chevron_l", x, z, fx, fz, hash(n, side, 180), 1.2, 0)) {
-        placed[placed.length - 1].y = roadTerrain(road, x, z).h;
+        const g = roadTerrain(road, x, z).h;
+        if (g > -1e7) placed[placed.length - 1].y = g;
         last = p.s;
       }
     }
@@ -379,17 +424,6 @@ export function compose(road: Road): Composed | null {
   const s0 = main[0];
   const ux = s0.dx, uz = s0.dz, vx = s0.dz, vz = -s0.dx; // grid axes
   const BLOCK = 64, STREET = 12;
-  // The main road, every ~10 m, for "which stretch is nearest".
-  const marks: Sample[] = [];
-  for (let i = 0; i < main.length; i += 4) marks.push(main[i]);
-  const nearest = (x: number, z: number) => {
-    let bd = 1e18, bp = marks[0];
-    for (const p of marks) {
-      const dx = p.x - x, dz = p.z - z, dd = dx * dx + dz * dz;
-      if (dd < bd) { bd = dd; bp = p; }
-    }
-    return { p: bp, d: Math.sqrt(bd) };
-  };
   const R = 560;
   const cx0 = (road.x0 + road.x1) / 2, cz0 = (road.z0 + road.z1) / 2;
   const span = Math.sqrt((road.x1 - road.x0) * (road.x1 - road.x0) + (road.z1 - road.z0) * (road.z1 - road.z0)) / 2 + R;
@@ -410,14 +444,17 @@ export function compose(road: Road): Composed | null {
       if (!mix) continue;
       // No ground here (open sky): clouds below, islets around, balloons and airships above.
       if (mix.air && roadTerrain(road, mx, mz).h < -1e7) {
-        for (let k = 0; k < 2; k++) {
+        for (let k = 0; k < (mix.airN ?? 2); k++) {
           const hv = hash(gu0 + bu, gv0 + bv, 200 + k);
           if (hv < 0.55) continue;
           const o = pick(mix.air, hash(gu0 + bu, gv0 + bv, 201 + k * 7));
           const [px, pz] = G(U + BLOCK / 2 + (hash(gu0 + bu, gv0 + bv, 202 + k * 7) - 0.5) * 48, V + BLOCK / 2 + (hash(gu0 + bu, gv0 + bv, 203 + k * 7) - 0.5) * 48);
-          if (roadDist(road, px, pz, 30) < 28) continue;
+          const al = kit[o]?.alt;
+          // (Big open-space things keep their own size clear of the road too.)
+          const clear = al ? 28 + kit[o].a : 28;
+          if (roadDist(road, px, pz, clear + 2) < clear) continue;
           const t = hash(gu0 + bu, gv0 + bv, 204 + k * 7);
-          const dy = o.startsWith("cloud") ? -14 - t * 70 : o.startsWith("islet") ? -30 + t * 45 : 14 + t * 55;
+          const dy = al ? al[0] + t * (al[1] - al[0]) : o.startsWith("cloud") ? -14 - t * 70 : o.startsWith("islet") ? -30 + t * 45 : 14 + t * 55;
           placed.push({ o, x: px, y: nr.p.y + dy, z: pz, fx: ux, fz: uz, v: hash(gu0 + bu, gv0 + bv, 205 + k * 7) });
         }
         continue;
