@@ -9,6 +9,7 @@ import { CELL, groundAt, key, local } from "./sim/track.ts";
 import { propsOf } from "./sim/props.ts";
 import { buildWorld, GROUND, type World } from "./render/world.ts";
 import { LOOKS, setupScene } from "./render/roadworld.ts";
+import { lookWith } from "./render/env.ts";
 import { GFX, gradeFor, guessGfx, Post, SunShadow, type Gfx } from "./render/post.ts";
 import { Particles } from "./render/particles.ts";
 import { Skids } from "./render/skids.ts";
@@ -196,13 +197,15 @@ export class Game {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.camera = new THREE.PerspectiveCamera(CAMS[this.cam].fov, 1, 0.5, 2600);
 
-    const lit = setupScene(this.scene, biome, map.biome, !!track.road);
-    const L = track.road ? LOOKS[map.biome] : undefined;
+    // Studio maps can set their own time of day, fog and weather.
+    const E = track.road ? lookWith(map.biome, LOOKS[map.biome] ?? LOOKS.miami!, biome, map.env) : null;
+    const L = E?.look;
+    const lit = setupScene(this.scene, E?.biome ?? biome, map.biome, !!track.road, 1, 1, L);
     this.post = new Post(this.renderer, gradeFor(map.biome, L), lit.sun.position, lit.sun.color.clone().multiplyScalar(L ? 1 : 0.9));
     this.sun = new SunShadow(lit.sun, this.scene);
-    if (map.biome === "storm" && lit.hemi) this.storm = { hemi: lit.hemi, base: lit.hemi.intensity, next: 4 + Math.random() * 6, t: -1 };
+    if ((E ? E.storm : map.biome === "storm") && lit.hemi) this.storm = { hemi: lit.hemi, base: lit.hemi.intensity, next: 4 + Math.random() * 6, t: -1 };
 
-    this.world = buildWorld(track, biome, map.biome);
+    this.world = buildWorld(track, E?.biome ?? biome, map.biome, L);
     this.scene.add(this.world.group);
     // Everything takes the sun's shadow; the scenery casts it (not the land, sky or sea).
     this.world.group.traverse((o) => {
@@ -221,7 +224,7 @@ export class Game {
     this.biomeId = map.biome;
     this.smoke = new Particles(900, false, this.scene.fog as THREE.Fog);
     this.glow = new Particles(500, true, this.scene.fog as THREE.Fog);
-    this.weather = new Weather(WEATHER[map.biome]);
+    this.weather = new Weather(E?.weather ?? WEATHER[map.biome]);
     this.scene.add(this.skids.mesh, this.smoke.points, this.glow.points, this.weather.object, this.wrTrail.mesh);
     this.flash = document.createElement("div");
     this.flash.className = "hx-flash";

@@ -550,3 +550,9 @@ export function buildKit(group: THREE.Group, road: Road, night: boolean, sky: TH
     },
   };
 }
+
+/** A kit's objects (their close-up geometry, with colours), for the studio's previews. Shared: don't dispose. */
+export async function kitShapes(kit: string): Promise<Map<string, THREE.BufferGeometry> | null> {
+  const k = await loadKit(kit);
+  return k ? new Map([...k].map(([o, g]) => [o, g.near])) : null;
+}

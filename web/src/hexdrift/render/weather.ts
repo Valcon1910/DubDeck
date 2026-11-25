@@ -7,7 +7,7 @@ import type { BiomeId } from "../maps.ts";
 
 export type WeatherKind = "rain" | "snow" | "dust" | "wind";
 
-interface Spec { kind: WeatherKind; count: number; box: [number, number, number]; vel: [number, number, number]; color: string; alpha: number; size: number; len: number }
+export interface Spec { kind: WeatherKind; count: number; box: [number, number, number]; vel: [number, number, number]; color: string; alpha: number; size: number; len: number }
 
 export const WEATHER: Record<BiomeId, Spec> = {
   city: { kind: "rain", count: 2600, box: [70, 36, 70], vel: [-4, -42, 2], color: "#a9c4ff", alpha: 0.42, size: 0, len: 1.6 },

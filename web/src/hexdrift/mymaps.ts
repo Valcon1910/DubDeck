@@ -64,7 +64,7 @@ export function mapDefOf(m: CustomMap): MapDef {
   const th = THEMES[m.theme];
   return {
     id: `${m.id}-${versionOf(m)}`, name: m.name, biome: th.biome, difficulty: "Medium",
-    blurb: `${th.name} · made by you`, road: roadDefOf(m),
+    blurb: `${th.name} · made by you`, road: roadDefOf(m), env: m.env,
     medals: a ? medalsOf(a.ticks) : { vortex: 0, gold: 0, silver: 0, bronze: 0 }, since: PHYSICS_V,
   };
 }

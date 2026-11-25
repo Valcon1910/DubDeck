@@ -78,7 +78,7 @@ export function mapDefFrom(c: CMap, by: string): MapDef | null {
   if (!m) return null;
   return {
     id: `${c.id}-${c.version}`, name: c.name, biome: THEMES[c.theme].biome, difficulty: "Medium",
-    blurb: `${THEMES[c.theme].name} · by ${by}`, road: roadDefOf(m),
+    blurb: `${THEMES[c.theme].name} · by ${by}`, road: roadDefOf(m), env: m.env,
     medals: medalsOf(c.author_ticks), since: PHYSICS_V,
   };
 }

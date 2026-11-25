@@ -549,9 +549,14 @@ type Over = null | "pause" | "restored" | Result;
 /** Driving one of your maps: times stay on this device; your fastest sets the author time. */
 function TestDrive({ id }: { id: string }) {
   const [cm] = useState(() => myMap(id));
-  const map = useMemo(() => cm ? mapDefOf(cm) : null, [cm]);
+  // The studio's "drive from here": #/hexdrift/test/<id>?from=x,y,z,yaw (a practice run, not saved).
+  const [from] = useState(() => {
+    const f = new URLSearchParams(location.hash.split("?")[1] ?? "").get("from")?.split(",").map(Number);
+    return f && f.length === 4 && f.every(Number.isFinite) ? { x: f[0], y: f[1], z: f[2], yaw: f[3] } : undefined;
+  });
+  const map = useMemo(() => cm ? { ...mapDefOf(cm), ...(from ? { from } : {}) } : null, [cm, from]);
   if (!cm || !map) return <div className="hx-menu"><a className="hx-back" href="#/hexdrift/editor">My maps</a><p>That map isn't on this device.</p></div>;
-  return <Play map={map} custom={cm} />;
+  return <Play map={map} custom={cm} practice={!!from} />;
 }
 
 /** A community map: fetched, then raced (or its leaderboard) like any other. */
@@ -574,7 +579,7 @@ function CommunityRun({ id, records }: { id: string; records: boolean }) {
   return records ? <Records map={def} home={home} race={`${home}/race`} /> : <Play map={def} home={home} />;
 }
 
-function Play({ map, custom, home }: { map: MapDef; custom?: CustomMap; home?: string }) {
+function Play({ map, custom, home, practice }: { map: MapDef; custom?: CustomMap; home?: string; practice?: boolean }) {
   // Where "back" goes: the editor for your own maps, the map's page for community maps.
   const back = custom ? `#/hexdrift/editor/${custom.id}` : home;
   const host = useRef<HTMLDivElement>(null);
@@ -637,6 +642,8 @@ function Play({ map, custom, home }: { map: MapDef; custom?: CustomMap; home?: s
         onFinish(ticks, inputs) {
           clearLive();
           bootLive = null;
+          // A practice run from part way along: nothing is kept.
+          if (practice) { setOver({ ticks, best: null, isBest: false }); return; }
           if (cmRef.current) {
             const prev = myTime();
             const res = finishOn(cmRef.current, ticks, inputs);
@@ -674,7 +681,7 @@ function Play({ map, custom, home }: { map: MapDef; custom?: CustomMap; home?: s
     game.current = g;
     g.setGraphics(gfxPref());
     if (cmRef.current) {
-      g.wantPicture = cmRef.current.id.startsWith("u");
+      g.wantPicture = cmRef.current.id.startsWith("u") && !practice;
       const b = myBest(cmRef.current);
       if (b) g.setGhost(bestInputs(b), b.t);
     } else void allBests().then(() => {
