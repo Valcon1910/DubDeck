@@ -109,7 +109,7 @@ export interface Leader { email: string; points: number; maps: number; wrs: numb
  * medal on each), most first. Ties go to more world records, then more maps.
  */
 export async function medalLeaders(sb: SupabaseClient, limit = 5): Promise<Leader[]> {
-  const r = await withLook((cols) => sb.from(TABLE).select(cols).eq("v", PHYSICS_V).order("ticks").limit(5000), "map,email,ticks,set_at");
+  const r = await withLook((cols) => sb.from(TABLE).select(cols).eq("v", PHYSICS_V).in("map", MAPS.map((m) => m.id)).order("ticks").limit(5000), "map,email,ticks,set_at");
   if (r.error) throw r.error;
   const rows = lookOf(r.data as unknown as Record<string, unknown>[]) as unknown as Entry[];
   const by = new Map<string, Leader & { at: string }>();

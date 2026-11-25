@@ -9,6 +9,9 @@ import { formatTime } from "./sim/race.ts";
 import { authorOf, deleteMap, myBest, myMap, myMaps, saveMap } from "./mymaps.ts";
 import { IconBack } from "./ui/icons.tsx";
 import type { BotReply } from "./botworker.ts";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { publishedOf, publishMap } from "./community.ts";
+import { versionOf } from "./sim/custom.ts";
 
 const THEME_IDS = Object.keys(THEMES) as ThemeId[];
 
@@ -117,7 +120,7 @@ function label(p: Piece) {
 }
 
 // ── The editor ──────────────────────────────────────────────────────────────
-export function Editor({ id }: { id: string }) {
+export function Editor({ id, sb, me }: { id: string; sb: SupabaseClient | null; me: string }) {
   const [map, setMapState] = useState<CustomMap | null>(() => myMap(id));
   const [sel, setSel] = useState(() => Math.max(0, (map?.pieces.length ?? 1) - 1));
   const undo = useRef<CustomMap[]>([]);
@@ -242,6 +245,23 @@ export function Editor({ id }: { id: string }) {
     return () => window.removeEventListener("keydown", k);
   }, [map, add, remove, move, dup, back, id]);
 
+  // Community Maps: is this map out, and is the published copy this version?
+  const [pub, setPub] = useState<{ id: string; version: string } | null>(null);
+  const [publishing, setPublishing] = useState(false);
+  useEffect(() => {
+    if (!sb || !me) return;
+    let alive = true;
+    void publishedOf(sb, me, id).then((p) => { if (alive) setPub(p); }).catch(() => {});
+    return () => { alive = false; };
+  }, [sb, me, id]);
+  const publish = useCallback(async () => {
+    if (!sb || !map) return;
+    setPublishing(true);
+    const r = await publishMap(sb, map);
+    setPublishing(false);
+    if (r.ok) { setPub({ id: r.id, version: versionOf(map) }); setMsg(r.updated ? (r.changed ? "Updated. The road changed, so its leaderboard starts fresh." : "Updated.") : "Published! It's in Community Maps now."); }
+    else setMsg(r.error);
+  }, [sb, map]);
   useEffect(() => { if (!msg) return; const t = setTimeout(() => setMsg(""), 4000); return () => clearTimeout(t); }, [msg]);
 
   if (!map || !check) {
@@ -359,6 +379,15 @@ export function Editor({ id }: { id: string }) {
             </>}
           </div>
         )}
+
+        <div className="hx-ed-pub">
+          {pub && <a href={`#/hexdrift/c/${pub.id}`}>{pub.version === versionOf(map) ? "Published" : "Published (an older version)"}</a>}
+          <button type="button" className="hx-btn" disabled={!sb || publishing || !author || check.problems.length > 0 || (!!pub && pub.version === versionOf(map))} onClick={() => void publish()}
+            title={!sb ? "Sign in to Chat to publish" : !author ? "Drive it to the finish first" : check.problems.length ? "Fix the problems first" : ""}>
+            {publishing ? "Checking your run…" : pub ? "Update in Community Maps" : "Publish to Community Maps"}
+          </button>
+          {!sb ? <span className="hx-dim hx-small">Sign in to Chat to publish.</span> : !author ? <span className="hx-dim hx-small">Drive it to the finish first: your time sets the medals.</span> : null}
+        </div>
 
         <details className="hx-ed-more">
           <summary>Map settings</summary>

@@ -36,6 +36,8 @@ export interface GameEvents {
   onHidden(): void;
   /** The race-start cutscene: the flyover, the car reveal, then done. */
   onIntro?(stage: IntroStage): void;
+  /** The map's card picture (a small JPEG data URL), when one was asked for. */
+  onPicture?(jpeg: string): void;
 }
 
 export type IntroStage = "fly" | "car" | "done";
@@ -135,6 +137,9 @@ export class Game {
   private splitClass = "";
   private splitUntil = 0;
   private introT = -1;
+  /** Take the card picture on a good frame (part way through the flyover). */
+  wantPicture = false;
+  private born = performance.now();
   private finishAt = 0;
   private introStage: IntroStage = "done";
   private route: THREE.Vector3[] = [];
@@ -614,7 +619,24 @@ export class Game {
     this.camera.getWorldDirection(this.camDir);
     this.sun.update(this.vx.set(x, y, z), this.camDir, this.post.sunDir);
     this.post.render(this.scene, this.camera, dt);
+    if (this.wantPicture && ((this.introT < 0 && performance.now() - this.born > 2500) || (this.introT > FLY * 0.55 && this.introT < FLY))) this.takePicture();
     this.updateHud();
+  }
+
+  /** Copies the frame just drawn (still in the canvas this task) into a 480×270 JPEG. */
+  private takePicture() {
+    this.wantPicture = false;
+    try {
+      const W = 480, H = 270, src = this.canvas;
+      const c = document.createElement("canvas");
+      c.width = W; c.height = H;
+      const g = c.getContext("2d");
+      if (!g || !src.width || !src.height) return;
+      const k = Math.max(W / src.width, H / src.height), w = W / k, h = H / k;
+      g.drawImage(src, (src.width - w) / 2, (src.height - h) / 2, w, h, 0, 0, W, H);
+      const jpeg = c.toDataURL("image/jpeg", 0.78);
+      if (jpeg.startsWith("data:image/jpeg")) this.events.onPicture?.(jpeg);
+    } catch { /* no picture this time */ }
   }
 
   /** The engine, tyres, wind and the world's own sound, from the car as it is now. */

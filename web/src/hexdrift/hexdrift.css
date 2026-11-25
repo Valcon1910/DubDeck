@@ -495,3 +495,46 @@ a.hx-pl-name:hover { text-decoration: underline; }
   .hx-ed-panel { max-height: none; flex: 1; }
 }
 .hx-ed-wide { grid-template-columns: minmax(0, 1fr) 440px; }
+
+/* ── Community Maps ── */
+.hx-cm-bar { max-width: 980px; margin: 0 auto 14px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.hx-cm-tabs { flex: 1 1 420px; overflow-x: auto; }
+.hx-cm-tabs button { white-space: nowrap; }
+.hx .hx-cm-search, .hx .hx-cm-report input { flex: 1 1 200px; width: auto !important; min-height: 0 !important; padding: 9px 12px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.3) !important; color: inherit !important; font: inherit; user-select: text; -webkit-user-select: text; }
+.hx-cm-badge { position: absolute; top: 8px; left: 8px; font-style: normal; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: #ffd23d; color: #1a1300; }
+.hx-cm-hidden { left: auto; right: 8px; background: #ff4d5e; color: #fff; }
+.hx-cm-stats { display: flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; font-size: 14px; }
+.hx-cm-stats .hx-dim { margin-left: auto; font-size: 13px; }
+.hx-cm-page { max-width: 720px; margin: 0 auto; display: grid; gap: 10px; }
+.hx-cm-page h1 { margin: 4px 0 0; }
+.hx-cm-page p { margin: 0; }
+.hx-cm-art { border-radius: 16px; overflow: hidden; height: 150px; }
+.hx-cm-actions { justify-content: flex-start; margin-top: 0; }
+.hx-cm-actions .hx-btn { display: inline-flex; align-items: center; gap: 6px; }
+.hx-btn.on { border-color: #ff4fa3; }
+.hx-chip-static { display: inline-flex; align-items: center; gap: 6px; padding: 10px 12px; opacity: 0.8; font-variant-numeric: tabular-nums; }
+.hx-cm-page .hx-medals { justify-content: flex-start; }
+.hx-cm-report, .hx-cm-mod { display: grid; gap: 8px; padding: 12px; border-radius: 14px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); }
+.hx-cm-report .hx-row, .hx-cm-mod .hx-row, .hx-cm-page > .hx-row { justify-content: flex-start; margin-top: 0; }
+.hx-cm-reports { margin: 0; padding-left: 18px; font-size: 14px; }
+.hx-cm-mod h2 { margin: 0; font-size: 16px; }
+.hx-ed-pub { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.hx-ed-pub .hx-btn:disabled { opacity: 0.45; cursor: default; }
+.hx-cm-report .hx-chip-btn { text-transform: none; }
+/* Community cards: the name is the card's link (stretched over it); author and record holder link to profiles. */
+.hx-cm-card { position: relative; }
+.hx-cm-card .hx-map-art { height: auto; aspect-ratio: 16 / 9; overflow: hidden; }
+.hx-cm-art { height: auto !important; aspect-ratio: 16 / 9; max-height: 340px; }
+.hx-map-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: transform 0.5s var(--hx-ease); }
+.hx-cm-card:hover .hx-map-art img { transform: scale(1.05); }
+.hx-cm-link { color: inherit; text-decoration: none; }
+.hx-cm-link::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.hx-cm-link:focus-visible { outline: none; }
+.hx-cm-card:has(.hx-cm-link:focus-visible) { border-color: var(--hx-a); }
+.hx-cm-author { position: relative; z-index: 1; color: inherit; opacity: 0.75; text-decoration: none; justify-self: start; min-height: 24px; }
+.hx-cm-author:hover, .hx-cm-author:focus-visible { opacity: 1; text-decoration: underline; }
+.hx-cm-stats > span { display: inline-flex; align-items: center; gap: 4px; margin-right: 8px; }
+.hx-cm-wr { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #ffd34d; font-variant-numeric: tabular-nums; }
+.hx-cm-wr .hx-cm-author { opacity: 0.9; color: #fff; }
+.hx-diff-easy { color: #6dffa8; } .hx-diff-medium { color: #ffd34d; } .hx-diff-hard { color: #ff9a4d; } .hx-diff-extreme { color: #ff5470; }

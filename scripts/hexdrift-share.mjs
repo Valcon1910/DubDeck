@@ -16,6 +16,7 @@ const files = {
   "props.ts": "sim/props.ts",
   "road.ts": "sim/road.ts",
   "kit.ts": "sim/kit.ts",
+  "custom.ts": "sim/custom.ts",
   "maps.ts": "maps.ts",
 };
 const head = "// Copied from web/src/hexdrift by scripts/hexdrift-share.mjs. Don't edit here.\n";
