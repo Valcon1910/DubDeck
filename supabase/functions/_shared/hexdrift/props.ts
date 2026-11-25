@@ -10,7 +10,7 @@
 // Only + - * / and sqrt (and Math.imul in the hash).
 import { CELL, CURVE_OUT, DIRV, HALF_W, key, local, type Track } from "./track.ts";
 import { distTo, hash, NO_GROUND, terrainAt } from "./terrain.ts";
-import { GAP, roadDist, WALL_T, WL, WR, type Sample } from "./road.ts";
+import { GAP, landAt, MAT, roadDist, WALL_T, WL, WR, type Sample } from "./road.ts";
 
 export type SolidKind = "tower" | "butte" | "berg" | "dune" | "stand" | "parked" | "rock" | "pine" | "palm" | "hotel" | "chalet" | "pylon";
 
@@ -320,7 +320,11 @@ function roadProps(track: Track): Props {
         if (hash(i, j, 41) > dress.farP) continue;
         const x = (i + 0.2 + hash(i, j, 42) * 0.6) * C, z = (j + 0.2 + hash(i, j, 43) * 0.6) * C;
         const v = hash(i, j, 44), w = hash(i, j, 45);
-        const k = pick(dress.far, hash(i, j, 46));
+        let k = pick(dress.far, hash(i, j, 46));
+        // Nothing big on the beach: palms only.
+        if (sea !== undefined && landAt(road.land, x, z).mat === MAT.sand) {
+          if (k !== "palm" || hash(i, j, 48) < 0.5) continue;
+        }
         // Big buildings face the nearest road (they line the streets).
         let fx = 0, fz = 1;
         if (k === "hotel" || k === "tower" || k === "chalet") {

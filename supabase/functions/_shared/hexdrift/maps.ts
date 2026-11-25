@@ -55,11 +55,11 @@ export const ALL_MAPS: MapDef[] = [
     blurb: "Golden hour on the beach boulevard. Six lanes wide, palms and hotels on one side, the sea on the other. Cut across the sand, fly the marina and thread the downtown alley.",
     road: {
       land: { kind: "coast", seed: 11, base: 3, amp: 4, scale: 260, sea: 0, shore: [-1, 0, 90], fall: 26, shoulder: 0.15, verge: 6 },
-      start: [0, 0, 3.2, 0], bank: 4,
-      route: "H12 S60 B S140 @a L22/240 S60 R22/240 @b S120 C S80 L90/110 U9 S140 L90/150 D9 S120 C H8 S40 @c R90/40 S50 L90/40 @d S90 L90/70 S40 J3 S30 G34/-3 S70 C H11 L90/90 B S180 R45/120 S80 F S70",
+      start: [-62, 0, 3.6, 0], bank: 4,
+      route: "H12 S60 B S180 C S40 @a L60/70 S60 R60/70 S80 R60/70 S60 L60/70 @b S80 C L90/90 H9 WB S100 R45/60 S30 L45/60 W0 U10 S140 D10 S60 H10 @c R90/45 S70 L90/45 @d S60 R90/70 S100 BL S90 J3 S25 G32/-3 S60 C R90/70 S270 B S274 L90/70 B S160 C S40 R30/120 L30/120 S60 F S80",
       alts: [
-        { from: "a", to: "b", via: [[0.5, 22]], hw: 7, surf: "sand", flush: true },
-        { from: "c", to: "d", via: [[0.5, -8]], hw: 4.5 },
+        { from: "a", to: "b", via: [[0.3, 7], [0.7, 7]], hw: 6, surf: "sand", flush: true },
+        { from: "c", to: "d", via: [[0.5, -6]], hw: 4.5 },
       ],
     },
     medals: { vortex: 3000, gold: 3300, silver: 3800, bronze: 4600 }, since: 6, wip: true,
