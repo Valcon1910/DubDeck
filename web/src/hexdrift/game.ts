@@ -20,6 +20,7 @@ import type { Controls } from "./input.ts";
 import { DEFAULT_LOOK, itemOf, type Item, type Look } from "./garage.ts";
 import { FinishFx, Trail, trailDef, type FinishKind } from "./render/fx.ts";
 import { play } from "./ui/sound.ts";
+import { RaceAudio, type Surface } from "./ui/raceaudio.ts";
 
 export interface HudRefs {
   time: HTMLElement | null;
@@ -88,6 +89,7 @@ export class Game {
   private wrTrail = new Trail({ style: "ribbon", color: "#ffe27a", color2: "#ff9a1a" }, false, 0.75);
   /** What happened in the steps since the last frame. */
   private ev = { hit: 0, land: 0, cp: 0, boost: false };
+  private audio: RaceAudio;
   private prevBoost = 0;
   private shake = 0;
   private hitSoundAt = 0;
@@ -164,6 +166,7 @@ export class Game {
     host.prepend(canvas);
     this.canvas = canvas;
     this.race = newRace(track);
+    this.audio = new RaceAudio(look.body, map.biome);
     this.prev = this.cur = snap(this.race);
     this.camYaw = this.race.car.yaw;
     this.cam = camMode;
@@ -280,6 +283,7 @@ export class Game {
 
   setPaused(p: boolean) {
     this.paused = p;
+    this.audio.setPaused(p);
     this.last = performance.now();
     this.acc = 0;
   }
@@ -548,6 +552,7 @@ export class Game {
     }
 
     this.effects(x, y, z, yaw, road, dt, sdt);
+    this.sound(road, dt);
 
     // Chase camera.
     const c = CAMS[this.cam];
@@ -609,6 +614,30 @@ export class Game {
     this.sun.update(this.vx.set(x, y, z), this.camDir, this.post.sunDir);
     this.post.render(this.scene, this.camera, dt);
     this.updateHud();
+  }
+
+  /** The engine, tyres, wind and the world's own sound, from the car as it is now. */
+  private sound(road: ReturnType<typeof groundAt>, dt: number) {
+    const car = this.race.car, r = this.race;
+    const lastIn = r.inputs[r.inputs.length - 1] ?? 0;
+    // On the grid the gas still revs the engine (the race ignores it).
+    const gas = r.phase === "countdown" ? this.introT < 0 && !this.autopilot && this.controls.read().gas : (lastIn & 16) !== 0;
+    let surface: Surface = "asphalt";
+    if (car.offroad) {
+      const b = this.map.biome;
+      surface = b === "baja" || b === "desert" || b === "canyon" || b === "miami" ? "sand" : b === "glacier" ? "ice" : "grass";
+    } else {
+      const sg = (road as { seg?: { surf?: string } } | null)?.seg;
+      const sf = sg?.surf;
+      surface = sf === "dirt" || sf === "ice" || sf === "metal" || sf === "sand" ? sf : road?.ice ? "ice" : "asphalt";
+    }
+    const sp = this.race.track.spawn;
+    const fromStart = Math.min(Math.hypot(car.x - sp.x, car.z - sp.z), this.finished ? 0 : 1e9);
+    this.audio.update({
+      speed: this.coast ? this.coast.v : car.speed, slip: this.coast ? 0 : car.slip,
+      gas, brake: (lastIn & 32) !== 0, grounded: this.coast ? true : car.grounded, boosting: car.boosting > 0,
+      surface, phase: this.coast || this.finished ? "finished" : r.phase, fromStart,
+    }, dt);
   }
 
   /** Smoke, dust, tyre marks, sparks, breakables, the crowd: everything that's only for show. */
@@ -891,7 +920,7 @@ export class Game {
     const s = this.storm!;
     if (s.t < 0) {
       s.next -= dt;
-      if (s.next <= 0) { s.t = 0; s.next = 6 + Math.random() * 9; }
+      if (s.next <= 0) { s.t = 0; s.next = 6 + Math.random() * 9; this.audio.thunder(0.6 + Math.random() * 0.4); }
       return;
     }
     s.t += dt;
@@ -904,6 +933,7 @@ export class Game {
   }
 
   dispose() {
+    this.audio.dispose();
     this.endIntro();
     this.post.dispose();
     this.stop();
