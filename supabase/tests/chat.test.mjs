@@ -121,5 +121,16 @@ assert.equal(ok(await bob.from("message_reactions").select("*").eq("message_id",
 ok(await bob.from("message_reactions").delete().match({ message_id: rm.id, emoji: "🔥" }));
 assert.equal(ok(await bob.from("message_reactions").select("*").eq("message_id", rm.id)).length, 0);
 
+// Admins-only groups: members can't post (but still react); only admins flip the setting.
+const ag = ok(await ann.rpc("create_conversation", { p_kind: "group", p_members: ["bob@x.test"], p_name: "News" }));
+bad(await bob.rpc("set_admins_only", { p_id: ag, p_on: true }), "member sets admins-only");
+ok(await ann.rpc("set_admins_only", { p_id: ag, p_on: true }));
+bad(await bob.from("messages").insert({ conversation_id: ag, body: "can I?" }), "member posts in admins-only group");
+const am = ok(await ann.from("messages").insert({ conversation_id: ag, body: "announcement" }).select().single());
+ok(await bob.from("message_reactions").insert({ message_id: am.id, conversation_id: ag, emoji: "👍" }));
+assert.equal(ok(await bob.rpc("my_conversations")).find((x) => x.id === ag).admins_only, true);
+ok(await ann.rpc("set_admins_only", { p_id: ag, p_on: false }));
+ok(await bob.from("messages").insert({ conversation_id: ag, body: "now I can" }));
+
 console.log("Chat rules: all checks passed");
 process.exit(0);

@@ -269,3 +269,30 @@ test("first visit tour, emoji reactions live, and a cropped GIF picture", async 
   await expect(bob.locator(".vx-chat-head .vx-avatar img")).toHaveAttribute("src", /\/pics\/.*\.gif$/, { timeout: 15_000 });
   await expect(bob.locator(".vx-chat-head .vx-avatar img")).toHaveCSS("transform", /matrix\(2, 0, 0, 2/);
 });
+
+test("group set so only admins can send: members read and react but can't write", async ({ browser }, info) => {
+  test.skip(info.project.name !== "desktop", "desktop only");
+  const ann = await as(browser, "ann@x.test");
+  const bob = await as(browser, "bob@x.test");
+  await ann.goto("/#/chat");
+  await ann.getByRole("button", { name: "New group" }).click();
+  const name = `Notices ${Date.now() % 100000}`;
+  await ann.getByLabel("Group name").fill(name);
+  await ann.getByLabel("Only admins can send messages").check();
+  await ann.getByRole("dialog").getByRole("button", { name: /Bob/ }).click();
+  await ann.getByRole("button", { name: "Create group" }).click();
+  await ann.getByLabel("Message", { exact: true }).fill("admins only here");
+  await ann.keyboard.press("Enter");
+  await expect(ann.locator(".vx-msg-mine").last()).toContainText("admins only here");
+
+  await bob.goto("/#/chat");
+  await bob.locator(".vx-chat-item", { hasText: name }).click();
+  await expect(bob.locator(".vx-msg").last()).toContainText("admins only here");
+  await expect(bob.getByLabel("Message", { exact: true })).toHaveCount(0);
+  await expect(bob.locator(".vx-chat-readonly")).toContainText("Only admins can send");
+
+  // Ann turns it off in Group info; Bob can write straight away.
+  await ann.getByRole("button", { name: "Group info" }).click();
+  await ann.getByLabel("Only admins can send messages").uncheck();
+  await expect(bob.getByLabel("Message", { exact: true })).toBeVisible();
+});

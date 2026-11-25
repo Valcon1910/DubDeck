@@ -19,6 +19,8 @@ export interface Conversation {
   last_body: string | null; last_sender: string | null; last_files: number; last_deleted: boolean | null;
   /** You removed the chat from your list at this time: older messages stay hidden for you. */
   cleared_at: string | null;
+  /** Group setting: only admins can send messages. */
+  admins_only?: boolean;
 }
 export interface Message {
   id: string; conversation_id: string; sender: string; body: string; attachments: Attachment[];
