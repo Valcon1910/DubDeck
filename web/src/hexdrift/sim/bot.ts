@@ -11,6 +11,20 @@ export const DEFAULT_BOT: BotTuning = { look: 4, corner: 15, gain: 2.4 };
 export function botInput(r: Race, at: { i: number }, tune: BotTuning = DEFAULT_BOT) {
   const { car, track } = r;
   const line = track.line;
+  // Loops: flat out, kept to the middle.
+  if (car.loop >= 0) return pack({ steer: clamp(-car.ll * 0.3, -1, 1), gas: true, brake: false, drift: false, respawn: false });
+  for (const L of track.road?.loops ?? []) {
+    const along = (car.x - L.x) * L.fx + (car.z - L.z) * L.fz, lat = (car.x - L.x) * L.rx + (car.z - L.z) * L.rz;
+    if (along > -90 && along < 0 && lat > -L.hw - 3 && lat < L.hw + 3 && car.grounded) {
+      const fx = dsin(car.yaw), fz = dcos(car.yaw);
+      // Aim at the loop's foot, straight on.
+      const aim = clamp(-along * 0.5, 6, 40);
+      const ax = L.x + L.fx * aim - car.x, az = L.z + L.fz * aim - car.z;
+      const l = Math.sqrt(ax * ax + az * az) || 1;
+      const cross = (fz * ax - fx * az) / l;
+      return pack({ steer: clamp(-cross * 2.4, -1, 1), gas: true, brake: false, drift: false, respawn: false });
+    }
+  }
   // Follow progress along the line (search a little behind and ahead).
   let best = at.i, bd = Infinity;
   for (let i = Math.max(0, at.i - 4); i < Math.min(line.length, at.i + 24); i++) {

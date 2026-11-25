@@ -53,7 +53,7 @@ const CAMS = [
   { dist: -0.2, height: 1.45, look: 1.25, fov: 78 },
 ];
 
-interface Snap { x: number; y: number; z: number; yaw: number; nx: number; ny: number; nz: number }
+interface Snap { x: number; y: number; z: number; yaw: number; nx: number; ny: number; nz: number; loop: boolean; tx: number; ty: number; tz: number }
 /** The best run replayed next to you: see-through, no collisions. */
 interface Ghost {
   inputs: Uint8Array;
@@ -66,7 +66,7 @@ interface Ghost {
   n: THREE.Vector3;
 }
 
-const snap = (r: Race): Snap => ({ x: r.car.x, y: r.car.y, z: r.car.z, yaw: r.car.yaw, nx: r.car.nx, ny: r.car.ny, nz: r.car.nz });
+const snap = (r: Race): Snap => ({ x: r.car.x, y: r.car.y, z: r.car.z, yaw: r.car.yaw, nx: r.car.nx, ny: r.car.ny, nz: r.car.nz, loop: r.car.loop >= 0, tx: r.car.tx, ty: r.car.ty, tz: r.car.tz });
 
 export class Game {
   race: Race;
@@ -878,8 +878,10 @@ export class Game {
   /** Places a car model: forward along yaw, up along the (smoothed) road normal. */
   private pose(model: CarModel, n: THREE.Vector3, b: Snap, jump: boolean, x: number, y: number, z: number, yaw: number, dt: number) {
     n.lerp(this.vy.set(b.nx, b.ny, b.nz), Math.min(1, dt * 10)).normalize();
-    if (jump) n.set(b.nx, b.ny, b.nz);
-    this.vz.set(Math.sin(yaw), 0, Math.cos(yaw));
+    if (jump || b.loop) n.set(b.nx, b.ny, b.nz);
+    // Round a loop the car points along it (its heading alone can't say which way up it's going).
+    if (b.loop) this.vz.set(b.tx, b.ty, b.tz);
+    else this.vz.set(Math.sin(yaw), 0, Math.cos(yaw));
     this.vx.crossVectors(n, this.vz).normalize();
     this.vz.crossVectors(this.vx, n).normalize();
     this.tmpM.makeBasis(this.vx, n, this.vz).setPosition(x, y, z);

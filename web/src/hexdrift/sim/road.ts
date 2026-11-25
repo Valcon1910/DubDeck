@@ -11,6 +11,7 @@
 //
 // Like the rest of the simulation this only uses + - * / sqrt (and
 // Math.floor / Math.imul), so every device and the record checker agree.
+import type { PartDef } from "./parts.ts";
 import { dcos, dsin, hash, noise, smooth } from "./math.ts";
 
 /** Spacing of the road's samples (and the length of its segments). */
@@ -77,6 +78,8 @@ export interface RoadDef {
   grav?: number;
   /** How the land round the roads is dressed (scenery only; see kit.ts). */
   dress?: Dress;
+  /** Free parts (studio editor). */
+  parts?: PartDef[];
 }
 
 /** Roadside strips: what lines a stretch of road (kit.ts knows what each holds). */
@@ -93,6 +96,20 @@ export interface Dress {
 
 /** Flags of the segment that starts at a sample. */
 export const WL = 1, WR = 2, TUN = 4, FLUSH = 8, GAP = 16, BOOST = 32;
+/** The jump sideways from a loop's way in to its way out (no road, no ravine). */
+export const LOOPJ = 64;
+
+/**
+ * A loop: a vertical circle standing on the road at (x, y, z), facing the way
+ * of travel. It drifts sideways by `off` as it goes round (a corkscrew), so
+ * the car comes back down beside the way in and drives on from there.
+ */
+export interface Loop {
+  x: number; y: number; z: number; yaw: number;
+  fx: number; fz: number; rx: number; rz: number;
+  r: number; hw: number; off: number;
+}
+export const LOOP_R = [8, 40] as const;
 
 export interface Sample {
   x: number; y: number; z: number;
@@ -142,6 +159,7 @@ export interface Road {
   x0: number; x1: number; z0: number; z1: number;
   minY: number;
   dress?: Dress;
+  loops: Loop[];
 }
 
 // ── The land ────────────────────────────────────────────────────────────────
@@ -211,6 +229,7 @@ export function landAt(L: LandDef, x: number, z: number): { h: number; mat: numb
  *   T+ T-    tunnel on / off
  *   X+ X-    the road is the ground itself on / off
  *   Mdirt    surface from here (asphalt, dirt, ice, metal, sand)
+ *   O14      a loop of 14 m radius here (the road goes on beside it)
  */
 export function buildRoad(def: RoadDef): Road {
   const L = def.land;
@@ -218,6 +237,7 @@ export function buildRoad(def: RoadDef): Road {
   const gates: Gate[] = [];
   let finish: Gate | null = null;
   const marks: Record<string, number> = {};
+  const loops: Loop[] = [];
   let [x, z, y, hd] = def.start;
   let yaw = hd * DEG;
   let s = 0, hw = 9, walls = 0, flags = 0, surf: Surf = "asphalt", cp = 0;
@@ -304,7 +324,15 @@ export function buildRoad(def: RoadDef): Road {
     else if (c === "T") flags = rest === "+" ? flags | TUN : flags & ~TUN;
     else if (c === "X") flags = rest === "+" ? flags | FLUSH : flags & ~FLUSH;
     else if (c === "M") surf = rest as Surf;
-    else throw new Error(`Bad road token ${tok}`);
+    else if (c === "O") {
+      const r = num(rest);
+      if (r < LOOP_R[0] || r > LOOP_R[1]) throw new Error(`Bad loop ${tok}`);
+      const fx = dsin(yaw), fz = dcos(yaw), off = 2 * hw + 4;
+      loops.push({ x, y, z, yaw, fx, fz, rx: -fz, rz: fx, r, hw, off });
+      main[main.length - 1].flags |= GAP | LOOPJ;
+      x += -fz * off; z += fx * off;
+      push();
+    } else throw new Error(`Bad road token ${tok}`);
   }
   if (!finish) throw new Error("A road needs a finish (F)");
 
@@ -393,7 +421,7 @@ export function buildRoad(def: RoadDef): Road {
   if (L.sea !== undefined && L.sea < minY) minY = L.sea;
   return {
     strands, segs, grid, tgrid, gates, finish, land: L, grav: def.grav ?? 1, dress: def.dress,
-    runout: main[main.length - 1].s - main[fi].s, x0, x1, z0, z1, minY,
+    runout: main[main.length - 1].s - main[fi].s, x0, x1, z0, z1, minY, loops,
   };
 }
 
@@ -598,6 +626,7 @@ export function roadTerrain(road: Road, x: number, z: number): RoadGround {
       const q = near(sg, x, z);
       const hw = sg.hw0 + (sg.hw1 - sg.hw0) * q.t;
       const hc = sg.ay + (sg.by - sg.ay) * q.t;
+      if (sg.flags & LOOPJ) continue;
       if (sg.flags & GAP) {
         // A ravine under the gap.
         if (q.along < 0 || q.along > sg.len) continue;
