@@ -979,3 +979,69 @@ button.vx-chat-person:hover { background: var(--surface-2); }
 @keyframes vx-pop-in { from { opacity: 0; transform: translateX(24px) scale(0.96); } }
 @keyframes vx-pop-timer { to { transform: scaleX(0); } }
 @media (prefers-reduced-motion: reduce) { .vx-pop, .vx-msg-new, .vx-viewer, .vx-viewer img { animation: none; } .vx-pop::after { display: none; } }
+
+/* ── Emoji reactions (chat messages and announcements) ── */
+.vx-reacts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 4px; }
+.vx-msg-mine .vx-reacts { justify-content: flex-end; }
+.vx-react {
+  display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 8px; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface); color: var(--ink); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+  transition: transform 0.12s, background 0.15s, border-color 0.15s;
+}
+.vx-react:hover { background: var(--surface-2); }
+.vx-react:active { transform: scale(0.92); }
+.vx-react.mine { background: var(--vx-accent-soft); border-color: var(--vx-accent); color: var(--vx-accent); }
+.vx-react-emoji { font-size: 15px; line-height: 1; }
+.vx-react-n { font-variant-numeric: tabular-nums; }
+.vx-react-add { color: var(--muted); padding: 0 7px; }
+.vx-react-pick { position: relative; display: inline-flex; }
+.vx-react-menu {
+  position: absolute; z-index: 30; bottom: calc(100% + 6px); left: 0; display: grid; grid-template-columns: repeat(6, 34px); gap: 2px; padding: 6px;
+  border-radius: 14px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 10px 30px rgb(0 0 0 / 0.18);
+  animation: vx-zoom 0.15s var(--ease, ease-out) both; transform-origin: bottom left;
+}
+.vx-msg-mine .vx-react-menu { left: auto; right: 0; transform-origin: bottom right; }
+.vx-react-menu button { width: 34px; height: 34px; border: 0; border-radius: 10px; background: none; font-size: 20px; line-height: 1; cursor: pointer; transition: transform 0.12s, background 0.12s; }
+.vx-react-menu button:hover { background: var(--surface-2); transform: scale(1.18); }
+.vx-react-menu button.mine { background: var(--vx-accent-soft); }
+.vx-msg-actions .vx-react-add { height: auto; padding: 2px 6px; border: 0; background: transparent; }
+.vx-msg-actions:has(.vx-react-menu) { opacity: 1; pointer-events: auto; }
+.vx-news-item .vx-reacts { margin-top: 10px; }
+
+/* ── Gaming Mode: nothing on the page can be highlighted or copied ── */
+html[data-gaming="on"], html[data-gaming="on"] * { -webkit-user-select: none !important; user-select: none !important; -webkit-touch-callout: none !important; }
+html[data-gaming="on"] input, html[data-gaming="on"] textarea, html[data-gaming="on"] [contenteditable="true"] { -webkit-user-select: text !important; user-select: text !important; }
+html[data-gaming="on"] img, html[data-gaming="on"] a { -webkit-user-drag: none; }
+
+/* ── Profile picture cropper ── */
+.vx-crop-card { width: min(340px, calc(100vw - 32px)); display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.vx-crop-card .vx-modal-head, .vx-crop-card .vx-action-row, .vx-crop-zoom { align-self: stretch; }
+.vx-crop-frame { position: relative; overflow: hidden; border-radius: 16px; background: #111; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; max-width: 100%; }
+.vx-crop-frame:active { cursor: grabbing; }
+.vx-crop-frame img { display: block; width: 100%; height: 100%; pointer-events: none; }
+.vx-crop-ring { position: absolute; inset: 0; border-radius: 50%; box-shadow: 0 0 0 999px rgb(0 0 0 / 0.5); outline: 2px solid rgb(255 255 255 / 0.85); pointer-events: none; }
+.vx-crop-zoom input { width: 100%; accent-color: var(--vx-accent); }
+.vx-pop-avatar { overflow: hidden; }
+.vx-pop-avatar img { width: 100%; height: 100%; display: block; }
+
+/* ── Chat: your picture in the list header, and the first-visit tour ── */
+.vx-chat-list-head h1 { margin-right: auto; }
+.vx-chat-me { display: grid; place-items: center; padding: 2px; border: 2px solid transparent; border-radius: 50%; background: none; cursor: pointer; transition: border-color 0.15s, transform 0.15s; }
+.vx-chat-me:hover { border-color: var(--vx-accent); transform: scale(1.05); }
+.vx-chat-help { font-weight: 700; }
+.vx-tour { position: fixed; inset: 0; z-index: 200; }
+.vx-tour-hole {
+  position: fixed; border-radius: 14px; box-shadow: 0 0 0 9999px rgb(6 6 14 / 0.62), 0 0 0 3px var(--vx-accent), 0 0 24px 6px var(--vx-accent);
+  transition: left 0.3s var(--ease, ease), top 0.3s var(--ease, ease), width 0.3s var(--ease, ease), height 0.3s var(--ease, ease);
+  pointer-events: none; animation: vx-tour-pulse 1.6s ease-in-out infinite;
+}
+.vx-tour-nohole { inset: 0; border-radius: 0; box-shadow: none; background: rgb(6 6 14 / 0.62); animation: none; }
+@keyframes vx-tour-pulse { 50% { box-shadow: 0 0 0 9999px rgb(6 6 14 / 0.62), 0 0 0 3px var(--vx-accent), 0 0 36px 12px var(--vx-accent); } }
+.vx-tour-card { position: fixed; z-index: 1; padding: 16px; display: flex; flex-direction: column; gap: 6px; box-shadow: 0 18px 50px rgb(0 0 0 / 0.35); animation: vx-zoom 0.22s var(--ease, ease-out) both; }
+.vx-tour-card h2 { margin: 0; font-size: 18px; }
+.vx-tour-card p { margin: 0; line-height: 1.45; }
+.vx-tour-dots { display: flex; gap: 5px; margin: 4px 0; }
+.vx-tour-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--border-strong); transition: width 0.2s, background 0.2s; }
+.vx-tour-dots i.on { width: 18px; border-radius: 3px; background: var(--vx-accent); }
+@media (prefers-reduced-motion: reduce) { .vx-tour-hole { animation: none; transition: none; } }
+.vx-chat-readonly { margin: 0; padding: 14px 16px; border-top: 1px solid var(--border); text-align: center; }

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { nameFromEmail, squareAvatar, type Prefs, type TextSize, type ThemePref } from "./account";
+import { nameFromEmail, type Prefs, type TextSize, type ThemePref } from "./account";
+import { AvatarCrop } from "./AvatarCrop";
+import { cropStyle, readCrop, stripCrop } from "./crop";
 
 const ACCENTS = ["#6c4ce0", "#2563eb", "#0891b2", "#059669", "#d97706", "#e4572e", "#db2777", "#111827"];
 
@@ -9,16 +11,18 @@ export function Settings({ prefs, update, email, gravatar, siteAccent, onClose }
 }) {
   const file = useRef<HTMLInputElement>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [cropping, setCropping] = useState<File | null>(null);
   useEffect(() => {
-    const k = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const k = (e: KeyboardEvent) => { if (e.key === "Escape" && !cropping && !document.querySelector(".vx-tour")) onClose(); };
     window.addEventListener("keydown", k);
     return () => window.removeEventListener("keydown", k);
-  }, [onClose]);
+  }, [onClose, cropping]);
 
-  async function pick(f: File | undefined) {
+  function pick(f: File | undefined) {
     if (!f) return;
     setErr(null);
-    try { update({ avatar: await squareAvatar(f) }); } catch { setErr("That file isn't a picture this browser can open."); }
+    if (!f.type.startsWith("image/")) { setErr("That file isn't a picture."); return; }
+    setCropping(f);
   }
 
   const name = prefs.name.trim() || nameFromEmail(email);
@@ -36,14 +40,15 @@ export function Settings({ prefs, update, email, gravatar, siteAccent, onClose }
           <div className="vx-set-profile">
             <Avatar src={prefs.avatar || gravatar || ""} name={name} size={72} />
             <div className="vx-action-row">
-              <button type="button" className="vx-btn vx-btn-ghost vx-btn-sm" onClick={() => file.current?.click()}>Change picture</button>
+              <button type="button" className="vx-btn vx-btn-ghost vx-btn-sm" data-tour="picture" onClick={() => file.current?.click()}>Change picture</button>
               {prefs.avatar && <button type="button" className="vx-btn vx-btn-ghost vx-btn-sm" onClick={() => update({ avatar: "" })}>{gravatar ? "Use my account picture" : "Remove"}</button>}
-              <input ref={file} type="file" accept="image/*" hidden onChange={(e) => { void pick(e.target.files?.[0]); e.target.value = ""; }} />
+              <input ref={file} type="file" accept="image/*" hidden onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ""; }} />
             </div>
           </div>
           {!prefs.avatar && <p className="vx-muted vx-small">{gravatar ? "Showing the picture linked to your email (Gravatar)." : "No picture is linked to your email yet; your initials are shown."}</p>}
           {err && <p className="vx-alert vx-alert-error" role="alert">{err}</p>}
-          <label className="vx-field">
+          <p className="vx-muted vx-small">Pictures can be cropped, and GIFs play as your picture.</p>
+          <label className="vx-field" data-tour="name">
             <span>Full name</span>
             <input type="text" maxLength={40} value={prefs.name} placeholder={nameFromEmail(email)} onChange={(e) => update({ name: e.target.value })} />
           </label>
@@ -77,6 +82,11 @@ export function Settings({ prefs, update, email, gravatar, siteAccent, onClose }
           <button type="button" className="vx-btn vx-btn-primary" onClick={onClose}>Done</button>
         </footer>
       </div>
+      {cropping && (
+        <div onClick={(e) => e.stopPropagation()}>
+          <AvatarCrop file={cropping} onCancel={() => setCropping(null)} onDone={(avatar) => { update({ avatar }); setCropping(null); }} />
+        </div>
+      )}
     </div>
   );
 }
@@ -100,7 +110,7 @@ export function Avatar({ src, name, size = 34 }: { src: string; name: string; si
   const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("") || "?";
   return (
     <span className="vx-avatar" style={{ width: size, height: size, fontSize: size * 0.4 }} aria-hidden="true">
-      {src ? <img src={src} alt="" /> : initials}
+      {src ? <img src={stripCrop(src)} alt="" style={cropStyle(readCrop(src))} /> : initials}
     </span>
   );
 }

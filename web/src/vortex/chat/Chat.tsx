@@ -3,11 +3,23 @@ import { Avatar } from "../Settings";
 import { squareAvatar } from "../account";
 import {
   conversationPicture, conversationTitle, dataUrlToBlob, displayName, UnreadBadge, useChat,
-  type Attachment, type Conversation, type Message, type Participant, type Profile,
+  type Attachment, type Conversation, type Message, type Participant, type Profile, type Reaction,
 } from "./store";
+import { EmojiPicker, ReactionBar, tallyReactions } from "../reactions";
+import { openSettings, Tour, type TourStep } from "../Tour";
 import { Files, mediaSize, size } from "./media";
 
 const PAGE = 50;
+
+const TOUR_KEY = "vortex.chatTour";
+const TOUR: TourStep[] = [
+  { target: '[data-tour="profile"]', title: "Your profile", text: "This is how you look in Chat. Tap here any time to change your name and picture.", before: () => openSettings(false) },
+  { target: '[data-tour="picture"]', title: "Change your picture", text: "Pick a photo or a GIF (GIFs keep moving). Then drag and zoom to crop it so your face fits the circle.", before: () => openSettings(true) },
+  { target: '[data-tour="name"]', title: "Change your name", text: "Type the name everyone in Chat sees. It saves as you type.", before: () => openSettings(true) },
+  { target: ".vx-user", title: "Find it again", text: "Your account menu up here also has Settings, with your name and picture.", before: () => openSettings(false) },
+  { target: '[data-tour="new-chat"]', title: "Start chatting", text: "Message someone, or make a group. Hold or hover a message to reply, react with an emoji, edit or delete it." },
+];
+const tourSeen = () => { try { return localStorage.getItem(TOUR_KEY) === "1"; } catch { return true; } };
 const MAX_FILE = 25 * 1024 * 1024;
 const MAX_FILES = 10;
 
@@ -22,6 +34,7 @@ export function ChatPage() {
   const [id, setId] = useState(openId);
   const [dialog, setDialog] = useState<null | "dm" | "group" | "info">(null);
   const [query, setQuery] = useState("");
+  const [tour, setTour] = useState(false);
 
   useEffect(() => {
     const on = () => setId(openId());
@@ -29,6 +42,14 @@ export function ChatPage() {
     return () => window.removeEventListener("hashchange", on);
   }, []);
   useEffect(() => { chat?.setOpen(id); return () => chat?.setOpen(null); }, [chat, id]);
+  // The first time Chat opens: show where to change your name and picture.
+  const ready = chat?.status === "ready";
+  useEffect(() => { if (ready && !tourSeen()) setTour(true); }, [ready]);
+  const endTour = useCallback(() => {
+    setTour(false);
+    openSettings(false);
+    try { localStorage.setItem(TOUR_KEY, "1"); } catch { /* ignore */ }
+  }, []);
 
   if (!chat || chat.status === "off") {
     return (
@@ -60,8 +81,12 @@ export function ChatPage() {
       <aside className="vx-chat-list" aria-label="Chats">
         <div className="vx-chat-list-head">
           <h1>Chat</h1>
+          <button type="button" className="vx-chat-me" data-tour="profile" aria-label="Change your name and picture" title="Your name and picture" onClick={() => openSettings()}>
+            <Avatar src={profiles.get(me)?.avatar ?? ""} name={displayName(profiles.get(me), me)} size={32} />
+          </button>
+          <button type="button" className="vx-icon-btn vx-chat-help" aria-label="Show the Chat tour again" title="How Chat works" onClick={() => setTour(true)}>?</button>
           <div className="vx-action-row">
-            <button type="button" className="vx-btn vx-btn-primary vx-btn-sm" onClick={() => setDialog("dm")}>New chat</button>
+            <button type="button" className="vx-btn vx-btn-primary vx-btn-sm" data-tour="new-chat" onClick={() => setDialog("dm")}>New chat</button>
             <button type="button" className="vx-btn vx-btn-ghost vx-btn-sm" onClick={() => setDialog("group")}>New group</button>
           </div>
         </div>
@@ -84,6 +109,7 @@ export function ChatPage() {
       </section>
       {(dialog === "dm" || dialog === "group") && <NewChat kind={dialog} onClose={() => setDialog(null)} />}
       {dialog === "info" && current && <GroupInfo c={current} onClose={() => setDialog(null)} />}
+      {tour && <Tour steps={TOUR} onDone={endTour} />}
     </div>
   );
 }
@@ -217,6 +243,7 @@ function Thread({ c, onInfo }: { c: Conversation; onInfo: () => void }) {
   const [reply, setReply] = useState<Message | null>(null);
   const [editing, setEditing] = useState<Message | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [reactions, setReactions] = useState<Reaction[]>([]);
   const scroller = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
@@ -245,8 +272,44 @@ function Thread({ c, onInfo }: { c: Conversation; onInfo: () => void }) {
 
   useEffect(() => { void loadLatest(); void loadPeople(); markRead(); }, [loadLatest, loadPeople, markRead]);
 
+  // Reactions for the messages on screen (fetched again when more load).
+  const ids = useMemo(() => messages.map((m) => m.id), [messages]);
+  const idKey = `${ids[0] ?? ""}:${ids.length}`;
+  const idsRef = useRef(ids);
+  idsRef.current = ids;
+  const loadReactions = useCallback(async () => {
+    const list = idsRef.current;
+    if (!list.length) return;
+    const { data } = await sb!.from("message_reactions").select("*").eq("conversation_id", c.id).in("message_id", list);
+    if (data) setReactions(data as Reaction[]);
+  }, [sb, c.id]);
+  useEffect(() => { void loadReactions(); }, [idKey, loadReactions]);
+
+  async function react(m: Message, emoji: string) {
+    const mine = reactions.some((r) => r.message_id === m.id && r.email === me && r.emoji === emoji);
+    const same = (r: Reaction) => r.message_id === m.id && r.email === me && r.emoji === emoji;
+    setSelected(null);
+    if (mine) {
+      setReactions((l) => l.filter((r) => !same(r)));
+      const { error } = await sb!.from("message_reactions").delete().match({ message_id: m.id, email: me, emoji });
+      if (error) { alert(error.message); void loadReactions(); }
+    } else {
+      setReactions((l) => [...l, { message_id: m.id, conversation_id: c.id, email: me, emoji, created_at: new Date().toISOString() }]);
+      const { error } = await sb!.from("message_reactions").insert({ message_id: m.id, conversation_id: c.id, emoji });
+      if (error && error.code !== "23505") { alert(error.message); void loadReactions(); }
+    }
+  }
+
   useEffect(() => chat.listen((ch) => {
-    if (ch.table === "resync") { void loadLatest(); void loadPeople(); return; }
+    if (ch.table === "resync") { void loadLatest(); void loadPeople(); void loadReactions(); return; }
+    if (ch.table === "message_reactions") {
+      const r = (ch.eventType === "DELETE" ? ch.old : ch.new) as unknown as Reaction;
+      if (!r?.message_id || !idsRef.current.includes(r.message_id)) return;
+      const same = (x: Reaction) => x.message_id === r.message_id && x.email === r.email && x.emoji === r.emoji;
+      if (ch.eventType === "DELETE") setReactions((l) => l.filter((x) => !same(x)));
+      else if (ch.eventType === "INSERT") setReactions((l) => (l.some(same) ? l : [...l, r]));
+      return;
+    }
     const row = (ch.eventType === "DELETE" ? ch.old : ch.new) as Record<string, unknown>;
     if (row?.conversation_id !== c.id) return;
     if (ch.table === "messages" && ch.eventType !== "DELETE") {
@@ -254,7 +317,7 @@ function Thread({ c, onInfo }: { c: Conversation; onInfo: () => void }) {
       if (ch.eventType === "INSERT" && row.sender !== me) { markRead(); clearTyping(row.sender as string); }
     }
     if (ch.table === "participants") void loadPeople();
-  }), [chat, c.id, me, loadLatest, loadPeople, markRead]);
+  }), [chat, c.id, me, loadLatest, loadPeople, markRead, loadReactions]);
 
   useEffect(() => {
     const on = () => { if (!document.hidden) markRead(); };
@@ -302,6 +365,7 @@ function Thread({ c, onInfo }: { c: Conversation; onInfo: () => void }) {
   }, [messages, urls]);
 
   const title = conversationTitle(c, me, profiles);
+  const canSend = !(c.kind === "group" && c.admins_only && c.my_role !== "admin");
   const other = c.kind === "dm" ? c.members.find((m) => m !== me) ?? me : null;
   const byId = useMemo(() => new Map(messages.map((m) => [m.id, m])), [messages]);
   const othersRead = people.filter((p) => p.email !== me);
@@ -365,9 +429,16 @@ function Thread({ c, onInfo }: { c: Conversation; onInfo: () => void }) {
                     <span className="vx-msg-time">{m.edited_at && !m.deleted ? "edited · " : ""}{clock(m.created_at)}</span>
                   </div>
                   {!m.deleted && (
+                    <ReactionBar onToggle={(e) => void react(m, e)}
+                      counts={tallyReactions(reactions.filter((r) => r.message_id === m.id).map((r) => ({ emoji: r.emoji, who: r.email })), me,
+                        (w) => (w === me ? "You" : displayName(profiles.get(w), w)))} />
+                  )}
+                  {!m.deleted && (
                     <div className="vx-msg-actions" onClick={(e) => e.stopPropagation()}>
-                      <button type="button" onClick={() => { setEditing(null); setReply(m); setSelected(null); }}>Reply</button>
-                      {mine && m.body && <button type="button" onClick={() => { setReply(null); setEditing(m); setSelected(null); }}>Edit</button>}
+                      <EmojiPicker className="vx-msg-react" label="React" onPick={(e) => void react(m, e)}
+                        chosen={reactions.filter((r) => r.message_id === m.id && r.email === me).map((r) => r.emoji)} />
+                      {canSend && <button type="button" onClick={() => { setEditing(null); setReply(m); setSelected(null); }}>Reply</button>}
+                      {canSend && mine && m.body && <button type="button" onClick={() => { setReply(null); setEditing(m); setSelected(null); }}>Edit</button>}
                       {(mine || owner) && <button type="button" className="vx-danger-text" onClick={() => void remove(m)}>Delete</button>}
                     </div>
                   )}
@@ -393,7 +464,9 @@ function Thread({ c, onInfo }: { c: Conversation; onInfo: () => void }) {
         </div>
       </div>
 
-      <Composer c={c} reply={reply} editing={editing} onTyping={sendTyping} onDone={() => { setReply(null); setEditing(null); stick.current = true; }} />
+      {!canSend
+        ? <p className="vx-chat-readonly vx-muted vx-small" role="status">Only admins can send messages in this group. You can still react.</p>
+        : <Composer c={c} reply={reply} editing={editing} onTyping={sendTyping} onDone={() => { setReply(null); setEditing(null); stick.current = true; }} />}
     </>
   );
 }
@@ -636,6 +709,7 @@ function NewChat({ kind, onClose }: { kind: "dm" | "group"; onClose: () => void 
   const [name, setName] = useState("");
   const [chosen, setChosen] = useState<string[]>([]);
   const [icon, setIcon] = useState<File | null>(null);
+  const [adminsOnly, setAdminsOnly] = useState(false);
   const [preview, setPreview] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -649,6 +723,10 @@ function NewChat({ kind, onClose }: { kind: "dm" | "group"; onClose: () => void 
       if (kind === "group" && icon) {
         const url = await uploadIcon(sb, id as string, icon);
         await sb!.rpc("update_group", { p_id: id, p_name: name.trim(), p_icon: url });
+      }
+      if (kind === "group" && adminsOnly) {
+        const { error: e2 } = await sb!.rpc("set_admins_only", { p_id: id, p_on: true });
+        if (e2) throw e2;
       }
       reload();
       onClose();
@@ -681,6 +759,10 @@ function NewChat({ kind, onClose }: { kind: "dm" | "group"; onClose: () => void 
           <input value={name} maxLength={60} onChange={(e) => setName(e.target.value)} placeholder="e.g. Study group" />
         </label>
       </div>
+      <label className="vx-check">
+        <input type="checkbox" checked={adminsOnly} onChange={(e) => setAdminsOnly(e.target.checked)} />
+        <span>Only admins can send messages</span>
+      </label>
       <p className="vx-small vx-muted">{chosen.length ? `${chosen.length} selected` : "Pick people to add"}</p>
       <MemberPicker exclude={[me]} chosen={chosen} multi onPick={(e) => setChosen((c) => (c.includes(e) ? c.filter((x) => x !== e) : [...c, e]))} />
       {err && <p className="vx-alert vx-alert-error" role="alert">{err}</p>}
@@ -700,6 +782,8 @@ function GroupInfo({ c, onClose }: { c: Conversation; onClose: () => void }) {
   const [err, setErr] = useState("");
   const pick = useRef<HTMLInputElement>(null);
   const admin = c.my_role === "admin" || owner;
+  const [adminsOnly, setAdminsOnly] = useState(!!c.admins_only);
+  useEffect(() => setAdminsOnly(!!c.admins_only), [c.admins_only]);
 
   const load = useCallback(async () => {
     const { data } = await sb!.from("participants").select("*").eq("conversation_id", c.id).order("joined_at");
@@ -737,6 +821,16 @@ function GroupInfo({ c, onClose }: { c: Conversation; onClose: () => void }) {
         ) : <strong className="vx-grow">{c.name}</strong>}
       </div>
 
+      {admin ? (
+        <label className="vx-check">
+          <input type="checkbox" checked={adminsOnly} onChange={(e) => {
+            const on = e.target.checked;
+            setAdminsOnly(on);
+            void run(() => sb!.rpc("set_admins_only", { p_id: c.id, p_on: on })).then((done) => { if (!done) setAdminsOnly(!on); });
+          }} />
+          <span>Only admins can send messages</span>
+        </label>
+      ) : c.admins_only && <p className="vx-small vx-muted">Only admins can send messages in this group.</p>}
       <h3 className="vx-small">{people.length} members</h3>
       <ul className="vx-chat-people">
         {people.map((p) => {

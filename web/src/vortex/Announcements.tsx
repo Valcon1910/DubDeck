@@ -3,6 +3,7 @@ import { useVisitorEmail } from "./admins";
 import { CONTENT_PATH, commit, GitHubError, readJson } from "./github";
 import { imageSrc, normalize, useContent, type Announcement, type Attachment } from "./content";
 import { prepareImage } from "./images";
+import { ReactionBar, tallyReactions } from "./reactions";
 
 const TOKEN = ""; // added by the site's /gh route
 /* ---------- the page ---------- */
@@ -58,6 +59,7 @@ export function AnnouncementsPage({ editor }: { editor: boolean }) {
                     {a.text && <p>{a.text}</p>}
                     <Attachments files={a.files} />
                     {a.poll && <Poll id={a.id} poll={a.poll} owner={editor} />}
+                    <Reactions post={a.id} />
                     {editor && (
                       <div className="vx-row">
                         <button type="button" className="vx-btn vx-btn-ghost vx-btn-sm" onClick={() => setEditing(a.id)}>Edit</button>
@@ -169,6 +171,78 @@ function Poll({ id, poll, owner }: { id: string; poll: { question: string; optio
         {err ?? (counts === null ? "Loading votes…" : `${total} vote${total === 1 ? "" : "s"}${mine !== null ? " · tap another option to change your vote" : ""}`)}
       </span>
     </div>
+  );
+}
+
+/* ---------- emoji reactions (Site Data "reactions": each tap saves on/off; a person's latest per emoji counts) ---------- */
+
+interface ReactRow { post: string; emoji: string; voter: string; on: boolean; at: string }
+
+async function loadReactions(): Promise<ReactRow[]> {
+  const all: ReactRow[] = [];
+  let cursor = "";
+  for (let page = 0; page < 50; page++) {
+    const res = await fetch(`./.herenow/data/reactions?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(String(res.status));
+    const body = await res.json() as Record<string, unknown>;
+    const rows = (body.records ?? body.items ?? body.data ?? []) as Record<string, unknown>[];
+    for (const r of rows) {
+      const d = (r.data && typeof r.data === "object" ? r.data : r) as Record<string, unknown>;
+      all.push({ post: String(d.post ?? ""), emoji: String(d.emoji ?? ""), voter: String(d.voter ?? ""), on: Number(d.on) === 1, at: String(r.created_at ?? r.createdAt ?? "") });
+    }
+    cursor = String(body.nextCursor ?? body.next_cursor ?? "");
+    if (!cursor || !rows.length) break;
+  }
+  return all;
+}
+
+let reactCache: Promise<ReactRow[]> | null = null;
+const reactRows = (fresh = false) => (reactCache && !fresh ? reactCache : (reactCache = loadReactions()));
+
+/** The reactions now standing on one post: each person's latest tap per emoji. */
+function standing(rows: ReactRow[], post: string) {
+  const latest = new Map<string, ReactRow>();
+  for (const r of rows.filter((x) => x.post === post && x.emoji).sort((a, b) => a.at.localeCompare(b.at))) latest.set(`${r.voter}\n${r.emoji}`, r);
+  return [...latest.values()].filter((r) => r.on).map((r) => ({ emoji: r.emoji, who: r.voter }));
+}
+
+function Reactions({ post }: { post: string }) {
+  const email = useVisitorEmail();
+  const me = voterId(email);
+  const [rows, setRows] = useState<{ emoji: string; who: string }[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => { reactRows().then((r) => setRows(standing(r, post))).catch(() => setRows([])); }, [post]);
+
+  async function toggle(emoji: string) {
+    if (!rows) return;
+    const on = !rows.some((r) => r.emoji === emoji && r.who === me);
+    const before = rows;
+    setRows(on ? [...rows, { emoji, who: me }] : rows.filter((r) => !(r.emoji === emoji && r.who === me)));
+    setBusy(true); setErr(null);
+    try {
+      const res = await fetch("./.herenow/data/reactions", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ post, emoji, voter: me, on: on ? 1 : 0 }),
+      });
+      if (res.status === 429) throw new Error("Too many reactions from here. Try again later.");
+      if (!res.ok) throw new Error("Couldn't save your reaction. Try again.");
+      setRows(standing(await reactRows(true), post));
+    } catch (e) {
+      setRows(before);
+      setErr(e instanceof Error ? e.message : "Couldn't save your reaction.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!rows) return null;
+  return (
+    <>
+      <ReactionBar always busy={busy} onToggle={(e) => void toggle(e)}
+        counts={tallyReactions(rows, me, (w) => (w === me ? "You" : w.includes("@") ? w.split("@")[0] : "Someone"))} />
+      {err && <span className="vx-muted vx-small" role="alert">{err}</span>}
+    </>
   );
 }
 

@@ -107,5 +107,30 @@ const [, annCh] = await join(ann, `typing:${dm}`);
 await annCh.send({ type: "broadcast", event: "typing", payload: { email: "ann@x.test" } });
 assert.equal(await Promise.race([typed, new Promise((r) => setTimeout(() => r("timeout"), 5000))]), "ann@x.test");
 
+// Reactions: members react as themselves, once per emoji; outsiders can't see or add.
+const rm = ok(await ann.from("messages").insert({ conversation_id: dm, body: "react to me" }).select().single());
+ok(await bob.from("message_reactions").insert({ message_id: rm.id, conversation_id: dm, emoji: "🔥", email: "ann@x.test" }));
+const rs = ok(await ann.from("message_reactions").select("*").eq("message_id", rm.id));
+assert.deepEqual(rs.map((r) => [r.email, r.emoji]), [["bob@x.test", "🔥"]], "reaction stamped with the real sender");
+bad(await bob.from("message_reactions").insert({ message_id: rm.id, conversation_id: dm, emoji: "🔥" }), "duplicate reaction");
+bad(await cy.from("message_reactions").insert({ message_id: rm.id, conversation_id: dm, emoji: "👍" }), "outsider reaction");
+assert.equal(ok(await cy.from("message_reactions").select("*").eq("message_id", rm.id)).length, 0, "outsider sees reactions");
+bad(await cy.from("message_reactions").insert({ message_id: rm.id, conversation_id: g, emoji: "👍" }), "reaction pointing at another chat");
+ok(await ann.from("message_reactions").delete().match({ message_id: rm.id, email: "bob@x.test" }));
+assert.equal(ok(await bob.from("message_reactions").select("*").eq("message_id", rm.id)).length, 1, "someone else removed my reaction");
+ok(await bob.from("message_reactions").delete().match({ message_id: rm.id, emoji: "🔥" }));
+assert.equal(ok(await bob.from("message_reactions").select("*").eq("message_id", rm.id)).length, 0);
+
+// Admins-only groups: members can't post (but still react); only admins flip the setting.
+const ag = ok(await ann.rpc("create_conversation", { p_kind: "group", p_members: ["bob@x.test"], p_name: "News" }));
+bad(await bob.rpc("set_admins_only", { p_id: ag, p_on: true }), "member sets admins-only");
+ok(await ann.rpc("set_admins_only", { p_id: ag, p_on: true }));
+bad(await bob.from("messages").insert({ conversation_id: ag, body: "can I?" }), "member posts in admins-only group");
+const am = ok(await ann.from("messages").insert({ conversation_id: ag, body: "announcement" }).select().single());
+ok(await bob.from("message_reactions").insert({ message_id: am.id, conversation_id: ag, emoji: "👍" }));
+assert.equal(ok(await bob.rpc("my_conversations")).find((x) => x.id === ag).admins_only, true);
+ok(await ann.rpc("set_admins_only", { p_id: ag, p_on: false }));
+ok(await bob.from("messages").insert({ conversation_id: ag, body: "now I can" }));
+
 console.log("Chat rules: all checks passed");
 process.exit(0);

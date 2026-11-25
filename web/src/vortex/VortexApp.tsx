@@ -54,6 +54,11 @@ function Shell({ email, prefs, setPrefs, gravatar }: { email: string | null; pre
   useApplyAppearance(prefs);
   const [menu, setMenu] = useState(false);
   const [settings, setSettings] = useState(false);
+  useEffect(() => {
+    const on = (e: Event) => setSettings((e as CustomEvent<boolean>).detail !== false);
+    window.addEventListener("vortex:settings", on);
+    return () => window.removeEventListener("vortex:settings", on);
+  }, []);
   const [drawer, setDrawer] = useState(false);
   const [sideHidden, setSideHidden] = useState(() => { try { return localStorage.getItem("vortex.sideHidden") === "1"; } catch { return false; } });
   const toggleSide = (hide: boolean) => {
