@@ -18,6 +18,7 @@ import { mapStill, spectator } from "./render/spectator.ts";
 import { isMuted, play, setMuted, wireUiSounds } from "./ui/sound.ts";
 import { IconBack, IconCamera, IconCrown, IconFlag, IconFullscreen, IconGamepad, IconGarage, IconLock, IconMedal, IconMute, IconPause, IconPlay, IconRestart, IconRoute, IconSound, IconTrophy } from "./ui/icons.tsx";
 import type { IntroStage } from "./game.ts";
+import { cropStyle, readCrop, stripCrop } from "../vortex/crop";
 import "./hexdrift.css";
 
 const MEDAL_NAME: Record<Exclude<Medal, null>, string> = { vortex: "Vortex", gold: "Gold", silver: "Silver", bronze: "Bronze" };
@@ -841,7 +842,9 @@ function TouchPad({ controls }: { controls: React.RefObject<Controls | null> }) 
 function Avatar({ p, email, size = 32 }: { p: Profile | undefined; email: string; size?: number }) {
   const name = displayName(p, email);
   return p?.avatar
-    ? <img className="hx-av" src={p.avatar} alt="" width={size} height={size} loading="lazy" />
+    ? <span className="hx-av hx-av-frame" style={{ width: size, height: size }}>
+        <img src={stripCrop(p.avatar)} style={cropStyle(readCrop(p.avatar))} alt="" width={size} height={size} loading="lazy" />
+      </span>
     : <span className="hx-av" style={{ width: size, height: size, fontSize: size * 0.45 }} aria-hidden="true">{name.slice(0, 1).toUpperCase()}</span>;
 }
 
