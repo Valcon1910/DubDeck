@@ -15,6 +15,19 @@ COLORS = {}
 _mats = {}
 _parts = []
 _objects = []
+_far = [False]
+
+
+def far():
+    """True while building the far-away versions (plainer: fewer segments, window bands, no bevels)."""
+    return _far[0]
+
+
+def build_both(build):
+    """Builds every object twice: as it is, then its far version (named name~far)."""
+    _far[0] = False; build()
+    _far[0] = True; build()
+    _far[0] = False
 
 
 def G(x, y, z):
@@ -63,6 +76,7 @@ def apply_mod(ob, mod):
 
 
 def bevel(ob, w, seg=1):
+    if far(): return ob
     m = ob.modifiers.new("bev", "BEVEL"); m.width = w; m.segments = seg
     m.limit_method = "ANGLE"
     apply_mod(ob, m)
@@ -111,6 +125,7 @@ def prism(material, pts, y0, y1, bv=0.0):
 def cyl(material, c, r, h, n=12, r1=None, axis="y", cap=True):
     """A cylinder (or cone, with r1 at the top) centred at c along an axis."""
     r1 = r if r1 is None else r1
+    if far(): n = max(4, n // 2)
     bm = bmesh.new()
     def P(a, t, rr):
         u, v = math.cos(a) * rr, math.sin(a) * rr
@@ -149,6 +164,7 @@ def quad(material, a, b, c, d):
 
 
 def tube(material, pts, r, n=6):
+    if far(): n = 4
     bm = bmesh.new()
     rings = []
     for i, p in enumerate(pts):
@@ -169,6 +185,7 @@ def tube(material, pts, r, n=6):
 def rounded(w, d, r, per=5, cx=0.0, cz=0.0):
     """A rounded rectangle footprint (w across x, d along z)."""
     pts = []
+    if far(): per = max(1, per // 3)
     for (sx, sz, a0) in ((1, 1, 0), (-1, 1, 90), (-1, -1, 180), (1, -1, 270)):
         ox, oz = cx + sx * (w / 2 - r), cz + sz * (d / 2 - r)
         for k in range(per + 1):
@@ -209,12 +226,20 @@ def windows(P, width, y0, y1, floor=3.2, win=1.5, gap=0.9, sill=0.9, wh=1.6, dep
     cols = max(1, int((width - 2 * margin + gap) / (win + gap)))
     span = cols * win + (cols - 1) * gap
     x0 = (width - span) / 2
+    if far():
+        # One band of glass per floor, and the ledges.
+        for f in range(fl):
+            yb = y0 + f * floor
+            quad(glass, P(x0, yb + sill, 0.06), P(x0 + span, yb + sill, 0.06), P(x0 + span, yb + sill + wh, 0.06), P(x0, yb + sill + wh, 0.06))
+            if ledge and f > 0:
+                slab(ledge, P, -0.1, width + 0.1, yb - 0.12, yb + 0.05, 0.0, ledge_d)
+        return
     for f in range(fl):
         yb = y0 + f * floor
         for k in range(cols):
             xa = x0 + k * (win + gap)
-            a, b = P(xa, yb + sill, 0.02), P(xa + win, yb + sill, 0.02)
-            c, d = P(xa + win, yb + sill + wh, 0.02), P(xa, yb + sill + wh, 0.02)
+            a, b = P(xa, yb + sill, 0.06), P(xa + win, yb + sill, 0.06)
+            c, d = P(xa + win, yb + sill + wh, 0.06), P(xa, yb + sill + wh, 0.06)
             quad(glass, a, b, c, d)
             if frame:
                 for (p0, p1, sz) in (((xa - 0.06, yb + sill - 0.08), (xa + win + 0.06, yb + sill), 0),
@@ -272,6 +297,12 @@ def palm(h, lean=0.25, fronds=9, trunk="trunk", leaf="leaf", leaf2="leaf2", seed
     for i in range(9):
         t = i / 8
         pts.append((lean * h * t * t, h * t, 0.0))
+    if far():
+        tube(trunk, [pts[0], pts[3], pts[6], pts[8]], 0.3, 4)
+        for k in range(0, fronds, 2):
+            a = 2 * math.pi * k / fronds + seed * 0.7
+            frond(Vector(pts[-1]), a, h * 0.45, 0.5, leaf if k % 4 else leaf2, 3)
+        return
     rings = []
     for i in range(len(pts) - 1):
         a, b = Vector(pts[i]), Vector(pts[i + 1])
@@ -310,7 +341,7 @@ def frond(base, ang, L, rise, material, n=8):
             bm.faces.new((prev[1], prev[2], ring[2], ring[1]))
         prev = ring
     ob = link(bm, material)
-    s = ob.modifiers.new("sol", "SOLIDIFY"); s.thickness = 0.04
+    s = ob.modifiers.new("sol", "SOLIDIFY"); s.thickness = 0.04 if not far() else 0.1
     apply_mod(ob, s)
     return smooth(ob, 80)
 
@@ -378,13 +409,13 @@ def obj(name):
     bpy.context.view_layer.objects.active = _parts[0]
     bpy.ops.object.join()
     ob = bpy.context.active_object
-    ob.name = name
+    ob.name = name + ("~far" if far() else "")
     _parts.clear()
     _objects.append(ob)
     tris = sum(len(p.vertices) - 2 for p in ob.data.polygons)
     bb = [Vector(c) for c in ob.bound_box]
-    print("OBJ %-14s %6d tris  x %.1f..%.1f  y %.1f..%.1f  z %.1f..%.1f" % (
-        name, tris, min(v.x for v in bb), max(v.x for v in bb), min(v.z for v in bb), max(v.z for v in bb),
+    print("OBJ %-18s %6d tris  x %.1f..%.1f  y %.1f..%.1f  z %.1f..%.1f" % (
+        ob.name, tris, min(v.x for v in bb), max(v.x for v in bb), min(v.z for v in bb), max(v.z for v in bb),
         -max(v.y for v in bb), -min(v.y for v in bb)))
     return ob
 

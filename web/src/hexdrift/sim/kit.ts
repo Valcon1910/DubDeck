@@ -37,6 +37,7 @@ export const KITS: Record<string, Record<string, KitDef>> = {
     foodtruck: { a: 1.2, b: 2.8, h: 3.5 },
     stand: { a: 19, b: 5.5, h: 16.7 },
     planter: { a: 2.0, b: 0.6, h: 1.5 },
+    lamp2: { a: 0.3, b: 0.3, h: 9.2, round: true },
     sedan_r: { a: 0.93, b: 2.25, h: 1.7 }, sedan_b: { a: 0.93, b: 2.25, h: 1.7 }, sedan_w: { a: 0.93, b: 2.25, h: 1.7 },
     taxi: { a: 0.93, b: 2.25, h: 1.9 }, police: { a: 0.93, b: 2.25, h: 1.9 }, van: { a: 1.0, b: 2.7, h: 2.4 }, bus: { a: 1.3, b: 6, h: 3.3 },
     // Scenery out of reach (on the water, in the air): drawn only.
@@ -50,8 +51,8 @@ interface Mix { front: string[]; back: string[]; filler: string[]; setback: numb
 const MIXES: Record<string, Partial<Record<Strip, Mix>>> = {
   miami: {
     boulevard: { front: ["deco_a", "deco_b", "deco_c", "deco_d", "deco_a", "deco_c"], back: ["condo_a", "condo_b", "shops_a", "deco_b", "condo_a"], filler: ["palm_tall", "palm_mid", "palm_pair"], setback: 5 },
-    downtown: { front: ["office_a", "condo_b", "shops_a", "shops_b", "garage", "condo_a"], back: ["office_a", "condo_b", "condo_a", "garage", "shops_b"], filler: ["palm_mid", "planter", "billboard"], setback: 4, tall: ["office_a", "condo_b"] },
-    shops: { front: ["shops_a", "shops_b", "deco_b", "foodtruck"], back: ["deco_d", "condo_a", "shops_a"], filler: ["palm_mid", "planter"], setback: 3 },
+    downtown: { front: ["office_a", "condo_b", "shops_a", "shops_b", "garage", "condo_a"], back: ["office_a", "condo_b", "condo_a", "garage", "shops_b"], filler: ["palm_mid", "planter", "palm_mid", "busstop", "billboard", "planter", "lamp2"], setback: 4, tall: ["office_a", "condo_b"] },
+    shops: { front: ["shops_a", "shops_b", "deco_b", "foodtruck"], back: ["deco_d", "condo_a", "shops_a"], filler: ["palm_mid", "planter", "lamp2", "busstop", "palm_mid"], setback: 3 },
     beach: { front: [], back: ["guard_a", "guard_b", "beachbar"], filler: ["palm_tall", "palm_pair", "palm_mid"], setback: 3 },
     park: { front: [], back: ["palm_pair", "palm_tall"], filler: ["palm_mid", "planter"], setback: 4 },
   },

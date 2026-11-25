@@ -690,7 +690,7 @@ export class Game {
     // The crowd jumps at the start and goes wild at the finish.
     const want = this.race.phase === "finished" ? 1 : this.race.phase === "countdown" || (running && this.race.tick - COUNTDOWN < 150) ? 0.45 : 0;
     this.cheer = want;
-    this.world.update(sdt, this.cheer);
+    this.world.update(sdt, this.cheer, this.camera);
     this.smoke.update(sdt);
     this.glow.update(sdt);
     this.skids.update();

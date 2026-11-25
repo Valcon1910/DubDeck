@@ -77,8 +77,8 @@ export interface World {
   group: THREE.Group;
   /** Lamp posts, cones, fences...: knocked over by the car (only for show). */
   breakables: Breakables;
-  /** Animates the world (the crowd; cheer 0..1). */
-  update(dt: number, cheer?: number): void;
+  /** Animates the world (the crowd; cheer 0..1). The camera picks what is drawn on kit maps. */
+  update(dt: number, cheer?: number, cam?: THREE.Camera): void;
   dispose(): void;
 }
 

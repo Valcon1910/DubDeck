@@ -43,6 +43,9 @@ function pack(p, pos, nrm, idx) {
   prims.push({ p, pos: p2, nrm: n2, idx, count: unique });
 }
 const meshCount = json.meshes.length;
+// Kits built with far versions of their own (name~far) keep those as they are.
+const ownFar = json.nodes.some((n) => n.name?.endsWith("~far"));
+const farMesh = new Set(json.nodes.filter((n) => n.name?.endsWith("~far")).map((n) => n.mesh));
 let full = 0, far = 0;
 for (let mi = 0; mi < meshCount; mi++) {
   const mesh = json.meshes[mi];
@@ -56,6 +59,7 @@ for (let mi = 0; mi < meshCount; mi++) {
   const farPrims = [];
   for (const q of raw) {
     pack(q.p, q.pos, q.nrm, q.idx);
+    if (ownFar) { if (farMesh.has(mi)) far += q.idx.length / 3; else full += q.idx.length / 3; continue; }
     full += q.idx.length / 3;
     // Far version: simplified, small parts dropped.
     let idx = q.idx;
@@ -71,9 +75,9 @@ for (let mi = 0; mi < meshCount; mi++) {
     pack(p2, q.pos, q.nrm, idx);
     far += idx.length / 3;
   }
-  json.meshes.push({ name: mesh.name + "~far", primitives: farPrims });
+  if (!ownFar) json.meshes.push({ name: mesh.name + "~far", primitives: farPrims });
 }
-for (const node of [...json.nodes]) {
+for (const node of ownFar ? [] : [...json.nodes]) {
   if (node.mesh === undefined) continue;
   json.nodes.push({ name: node.name + "~far", mesh: meshCount + node.mesh, ...(node.translation ? { translation: node.translation } : {}) });
 }

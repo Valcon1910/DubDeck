@@ -649,6 +649,7 @@ export function buildProps(group: THREE.Group, track: Track, biome: Biome, id: B
   const up = new THREE.Vector3(0, 1, 0);
   const c = new THREE.Color();
   for (const [kind, list] of byKind) {
+    if (kind === "kit") continue; // drawn by render/kit.ts
     let geo: G;
     let mat: THREE.Material = flat;
     switch (kind) {

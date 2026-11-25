@@ -9,6 +9,7 @@ import { terrainAt } from "../sim/terrain.ts";
 import { BOOST, FLUSH, GAP, landAt, MAT, roadDist, TUN, WALL_H, WALL_T, WL, WR, THICK, type Road, type Sample } from "../sim/road.ts";
 import type { Biome, BiomeId } from "../maps.ts";
 import { buildProps } from "./props.ts";
+import { buildKit } from "./kit.ts";
 import { addGrain, noiseTex } from "./textures.ts";
 import type { World } from "./world.ts";
 
@@ -147,7 +148,7 @@ export function buildRoadWorld(track: Track, biome: Biome, id: BiomeId): World {
   const updates: ((dt: number) => void)[] = [(dt) => { time.value += dt; }];
 
   sky(group, look, geos, mats, time);
-  if (road.land.kind !== "void") terrain(group, track, look, geos, mats);
+  const ground = road.land.kind !== "void" ? terrain(group, track, look, geos, mats) : null;
   if (road.land.sea !== undefined && look.sea) water(group, road, look, geos, mats, time);
   roadSurface(group, road, look, geos, mats, time);
   const misc = new Builder();
@@ -170,11 +171,17 @@ export function buildRoadWorld(track: Track, biome: Biome, id: BiomeId): World {
   pillars(group, track, geos, mats);
 
   const props = buildProps(group, track, biome, id, geos, mats);
+  const kit = buildKit(group, road, look.night, new THREE.Color(look.skyHorizon), biome.fogFar, time);
   return {
     group,
     breakables: props.breakables,
-    update(dt, cheer = 0) { for (const u of updates) u(dt); props.update(dt, cheer); },
+    update(dt, cheer = 0, cam) {
+      for (const u of updates) u(dt);
+      props.update(dt, cheer);
+      if (cam) { kit.update(dt, cam); ground?.(cam); }
+    },
     dispose() {
+      kit.dispose();
       for (const g of geos) g.dispose();
       for (const m of mats) m.dispose();
     },
@@ -248,7 +255,10 @@ function sky(group: THREE.Group, L: Look, geos: THREE.BufferGeometry[], mats: TH
 
 // ── The land ────────────────────────────────────────────────────────────────
 
-function terrain(group: THREE.Group, track: Track, L: Look, geos: THREE.BufferGeometry[], mats: THREE.Material[]) {
+/** Terrain tiles: finer near the camera, coarser further off. */
+type TerrainLod = (cam: THREE.Camera) => void;
+
+function terrain(group: THREE.Group, track: Track, L: Look, geos: THREE.BufferGeometry[], mats: THREE.Material[]): TerrainLod {
   const road = track.road!;
   const isles = road.land.kind === "isles";
   const axis = (a0: number, a1: number) => {
@@ -306,14 +316,14 @@ function terrain(group: THREE.Group, track: Track, L: Look, geos: THREE.BufferGe
       col[k * 3] = c.r * v; col[k * 3 + 1] = c.g * v; col[k * 3 + 2] = c.b * v;
     }
   }
+  const cell = (i: number, j: number, out: number[], k = 1, i1 = nx - 1, j1 = nz - 1) => {
+    const ii = Math.min(i + k, i1), jj = Math.min(j + k, j1);
+    const a = j * nx + i, b = j * nx + ii, d = jj * nx + i, e = jj * nx + ii;
+    if (isles && !(valid[a] && valid[b] && valid[d] && valid[e])) return;
+    out.push(a, d, b, b, d, e);
+  };
   const idx: number[] = [];
-  for (let j = 0; j < nz - 1; j++) {
-    for (let i = 0; i < nx - 1; i++) {
-      const a = j * nx + i, b = a + 1, d = a + nx, e = d + 1;
-      if (isles && !(valid[a] && valid[b] && valid[d] && valid[e])) continue;
-      idx.push(a, d, b, b, d, e);
-    }
-  }
+  for (let j = 0; j < nz - 1; j++) for (let i = 0; i < nx - 1; i++) cell(i, j, idx);
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
   g.setAttribute("color", new THREE.BufferAttribute(col, 3));
@@ -323,10 +333,45 @@ function terrain(group: THREE.Group, track: Track, L: Look, geos: THREE.BufferGe
   const m = new THREE.MeshLambertMaterial({ vertexColors: true });
   addGrain(m, 0.21, 0.018, 1.1);
   mats.push(m);
-  const mesh = new THREE.Mesh(g, m);
-  mesh.name = "terrain";
-  group.add(mesh);
+  g.setIndex(null);
+  // In tiles (sharing the one set of points), so what is off screen is
+  // skipped, each with three levels of detail (every point, every 2nd, every 4th).
+  const T = 48;
+  const tiles: { mesh: THREE.Mesh; lods: THREE.BufferGeometry[]; c: THREE.Vector3; r: number }[] = [];
+  for (let tj = 0; tj < nz - 1; tj += T) {
+    for (let ti = 0; ti < nx - 1; ti += T) {
+      const i1 = Math.min(nx - 1, ti + T), j1 = Math.min(nz - 1, tj + T);
+      const lods: THREE.BufferGeometry[] = [];
+      for (const k of [1, 2, 4]) {
+        const ix: number[] = [];
+        for (let j = tj; j < j1; j += k) for (let i = ti; i < i1; i += k) cell(i, j, ix, k, i1, j1);
+        if (!ix.length) break;
+        const tg = new THREE.BufferGeometry();
+        for (const a of ["position", "color", "normal"]) tg.setAttribute(a, g.getAttribute(a));
+        tg.setIndex(ix);
+        // Bounds from this tile's own points (the shared list holds them all).
+        const bb = new THREE.Box3(), pt = new THREE.Vector3();
+        for (const q of ix) bb.expandByPoint(pt.fromArray(pos, q * 3));
+        tg.boundingBox = bb;
+        tg.boundingSphere = bb.getBoundingSphere(new THREE.Sphere());
+        geos.push(tg);
+        lods.push(tg);
+      }
+      if (!lods.length) continue;
+      const mesh = new THREE.Mesh(lods[0], m);
+      mesh.name = "terrain";
+      group.add(mesh);
+      tiles.push({ mesh, lods, c: lods[0].boundingSphere!.center, r: lods[0].boundingSphere!.radius });
+    }
+  }
   if (isles) islandUndersides(group, xs, zs, hs, valid, L, geos, mats);
+  return (cam) => {
+    for (const t of tiles) {
+      const d = Math.max(0, Math.hypot(t.c.x - cam.position.x, t.c.z - cam.position.z) - t.r);
+      const want = t.lods[d < 160 ? 0 : d < 420 ? 1 : 2] ?? t.lods[t.lods.length - 1];
+      if (t.mesh.geometry !== want) t.mesh.geometry = want;
+    }
+  };
 }
 
 /** Sky islands: rocky undersides hanging below the grass. */
