@@ -240,6 +240,8 @@ export class SunShadow {
 }
 
 export class Post {
+  /** Extra exposure for a moment (lightning). 0 = none. */
+  flash = 0;
   private level: Gfx = "medium";
   private scene!: THREE.WebGLRenderTarget;
   private rays!: THREE.WebGLRenderTarget;
@@ -375,6 +377,7 @@ export class Post {
     u.uRays.value = rays;
     u.uNear.value = cam.near; u.uFar.value = cam.far;
     u.uAspect.value = cam.aspect; u.uTime.value = this.time;
+    u.uExposure.value = G.exposure * (1 + this.flash);
     u.uTexel.value.set(1 / this.w, 1 / this.h);
     const corner = (x: number, y: number, out: THREE.Vector3) => out.set(x, y, 1).unproject(cam).sub(cam.position);
     corner(-1, -1, u.uRay00.value); corner(1, -1, u.uRay10.value); corner(-1, 1, u.uRay01.value); corner(1, 1, u.uRay11.value);

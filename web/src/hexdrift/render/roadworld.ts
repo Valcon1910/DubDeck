@@ -89,7 +89,7 @@ export const LOOKS: Partial<Record<BiomeId, Look>> = {
 };
 
 /** Fog, background and lights for a map (road maps have their own look; tile maps keep theirs). */
-export function setupScene(scene: THREE.Scene, biome: Biome, id: BiomeId, road: boolean, near = 1, far = 1): { sun: THREE.DirectionalLight } {
+export function setupScene(scene: THREE.Scene, biome: Biome, id: BiomeId, road: boolean, near = 1, far = 1): { sun: THREE.DirectionalLight; hemi?: THREE.HemisphereLight } {
   const L = road ? LOOKS[id] : undefined;
   const fog = L ? L.skyHorizon : biome.fog;
   scene.fog = new THREE.Fog(fog, biome.fogNear * near, biome.fogFar * far);
@@ -101,11 +101,12 @@ export function setupScene(scene: THREE.Scene, biome: Biome, id: BiomeId, road: 
     scene.add(sun);
     return { sun };
   }
-  scene.add(new THREE.HemisphereLight(L.hemiSky, L.hemiGround, L.hemiI));
+  const hemi = new THREE.HemisphereLight(L.hemiSky, L.hemiGround, L.hemiI);
+  scene.add(hemi);
   const sun = new THREE.DirectionalLight(L.sunColor, L.sunI);
   sun.position.set(...L.sun);
   scene.add(sun);
-  return { sun };
+  return { sun, hemi };
 }
 
 /** Collects triangles with colours (flat normals). */

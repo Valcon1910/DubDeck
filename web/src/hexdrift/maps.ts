@@ -66,7 +66,23 @@ export const ALL_MAPS: MapDef[] = [
         set: [["stand", 30, -1, 3], ["stand", 30, 1, 3], ["billboard", 200, -1, 2], ["pier", 150, 1, 30], ["beachbar", 420, 1, 6], ["guard_a", 240, 1, 20], ["stand", 3250, -1, 3], ["stand", 3250, 1, 3]],
       },
     },
-    medals: { vortex: 3000, gold: 3300, silver: 3800, bronze: 4600 }, since: 6, wip: true,
+    medals: { vortex: 3899, gold: 4261, silver: 4904, bronze: 6030 }, since: 6, wip: true,
+  },
+  {
+    id: "miami-storm", name: "Miami Storm", biome: "storm", difficulty: "Beginner",
+    blurb: "Midnight downpour downtown. Wide neon straights on soaked asphalt, a boost through the plaza and a back-alley cut for the brave. Brake early: the puddles bite.",
+    road: {
+      land: { kind: "coast", seed: 23, base: 3, amp: 3, scale: 300, sea: 0, shore: [1, 0, 260], fall: 26, shoulder: 0.15, verge: 6 },
+      start: [0, 0, 4, 0], bank: 3,
+      route: "H11 S60 B S200 C R90/70 S120 WB S160 W0 C R90/55 S90 @a S60 L90/60 S100 R90/60 @b S80 C B S220 R90/50 S140 C L60/90 S120 R60/90 S160 B S100 F",
+      alts: [{ from: "a", to: "b", via: [[0.5, 4]], hw: 5 }],
+      dress: {
+        kit: "miami",
+        zones: [[0, 330, "boulevard", "downtown"], [330, 1250, "downtown", "downtown"], [1250, 1900, "shops", "downtown"], [1900, 2600, "downtown", "shops"]],
+        set: [["stand", 30, -1, 3], ["stand", 30, 1, 3], ["billboard", 180, 1, 2], ["billboard", 700, -1, 2], ["billboard", 1500, 1, 2]],
+      },
+    },
+    medals: { vortex: 2809, gold: 3070, silver: 3533, bronze: 4344 }, since: 6, wip: true,
   },
   {
     id: "neon-downtown", blurb: "Midnight in the glass canyons. Long neon straights, a boost through the plaza and three tight turns that reward a clean line.", name: "Neon Downtown", biome: "city", difficulty: "Beginner",

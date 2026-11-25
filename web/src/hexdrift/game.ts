@@ -83,6 +83,8 @@ export class Game {
   private glow: Particles;
   private skids = new Skids();
   private weather: Weather;
+  /** Lightning on stormy maps: two quick flashes every 6-15 s (looks only, not part of the race). */
+  private storm: { hemi: THREE.HemisphereLight; base: number; next: number; t: number } | null = null;
   private wrTrail = new Trail({ style: "ribbon", color: "#ffe27a", color2: "#ff9a1a" }, false, 0.75);
   /** What happened in the steps since the last frame. */
   private ev = { hit: 0, land: 0, cp: 0, boost: false };
@@ -185,6 +187,7 @@ export class Game {
     const L = track.road ? LOOKS[map.biome] : undefined;
     this.post = new Post(this.renderer, gradeFor(map.biome, L), lit.sun.position, lit.sun.color.clone().multiplyScalar(L ? 1 : 0.9));
     this.sun = new SunShadow(lit.sun, this.scene);
+    if (map.biome === "storm" && lit.hemi) this.storm = { hemi: lit.hemi, base: lit.hemi.intensity, next: 4 + Math.random() * 6, t: -1 };
 
     this.world = buildWorld(track, biome, map.biome);
     this.scene.add(this.world.group);
@@ -600,6 +603,7 @@ export class Game {
     const sky = this.world.group.getObjectByName("sky");
     if (sky) sky.position.copy(this.camera.position);
     this.weather.update(dt, this.camera.position);
+    if (this.storm) this.lightning(dt);
 
     this.camera.getWorldDirection(this.camDir);
     this.sun.update(this.vx.set(x, y, z), this.camDir, this.post.sunDir);
@@ -881,6 +885,22 @@ export class Game {
   private applyGfx(level: Gfx) {
     this.post.setLevel(level);
     this.sun.setLevel(this.post.shadowSize);
+  }
+
+  private lightning(dt: number) {
+    const s = this.storm!;
+    if (s.t < 0) {
+      s.next -= dt;
+      if (s.next <= 0) { s.t = 0; s.next = 6 + Math.random() * 9; }
+      return;
+    }
+    s.t += dt;
+    // A bright strike, a short gap, a weaker second strike, then fade.
+    const t = s.t;
+    const f = t < 0.08 ? 1 : t < 0.16 ? 0.15 : t < 0.24 ? 0.7 : t < 0.7 ? 0.7 * (1 - (t - 0.24) / 0.46) : 0;
+    s.hemi.intensity = s.base * (1 + f * 2.2);
+    this.post.flash = f * 0.35;
+    if (t >= 0.7) { s.t = -1; s.hemi.intensity = s.base; this.post.flash = 0; }
   }
 
   dispose() {
