@@ -16,8 +16,8 @@ import { dcos, dsin, hash, noise, smooth } from "./math.ts";
 /** Spacing of the road's samples (and the length of its segments). */
 export const SEG = 2.5;
 const RB = 16; // bucket size of the road index
-const TB = 32; // bucket size of the ground index
-const bkey = (i: number, j: number) => (i + 8192) * 16384 + (j + 8192);
+export const TB = 32; // bucket size of the ground index
+export const bkey = (i: number, j: number) => (i + 8192) * 16384 + (j + 8192);
 const NONE = -1e9;
 const DEG = 3.141592653589793 / 180;
 

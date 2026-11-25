@@ -291,7 +291,9 @@ export function buildKit(group: THREE.Group, road: Road, night: boolean, sky: TH
   if (sg) {
     const sm = new THREE.MeshLambertMaterial({ vertexColors: true });
     geos.push(sg); mats.push(sm);
-    group.add(new THREE.Mesh(sg, sm));
+    const sm2 = new THREE.Mesh(sg, sm);
+    sm2.name = "road"; // flat: takes shadows, casts none
+    group.add(sm2);
   }
 
   loadKit(road.dress!.kit).then((kit) => {
@@ -318,7 +320,13 @@ export function buildKit(group: THREE.Group, road: Road, night: boolean, sky: TH
       const big = (c.kit[o]?.h ?? 0) > 18 && c.kit[o]?.solid !== false;
       const near = new THREE.InstancedMesh(g.near, mat, list.length), far = new THREE.InstancedMesh(g.far, mat, list.length);
       const block = big ? new THREE.InstancedMesh(g.block, mat, list.length) : null;
-      for (const im of [near, far, block]) { if (!im) continue; im.frustumCulled = false; im.count = 0; im.instanceMatrix.setUsage(THREE.DynamicDrawUsage); group.add(im); }
+      for (const im of [near, far, block]) {
+        if (!im) continue;
+        im.frustumCulled = false; im.count = 0; im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        // Only the near versions cast the sun's shadow (that's all it reaches).
+        im.receiveShadow = true; im.castShadow = im === near;
+        group.add(im);
+      }
       sets.push({ near, far, block, mats: M, xz: XZ, big, r: g.r, boats: BOATS[o] ? list : undefined });
     }
     const boatSets = sets.filter((s) => s.boats);
@@ -360,7 +368,11 @@ export function buildKit(group: THREE.Group, road: Road, night: boolean, sky: TH
     const tGeo = TRAFFIC.map((o) => kit.get(o)).filter((g): g is KitGeo => !!g);
     const tMesh = tGeo.map((g) => {
       const near = new THREE.InstancedMesh(g.near, mat, 64), far = new THREE.InstancedMesh(g.far, mat, 64);
-      for (const im of [near, far]) { im.frustumCulled = false; im.count = 0; im.instanceMatrix.setUsage(THREE.DynamicDrawUsage); group.add(im); }
+      for (const im of [near, far]) {
+        im.frustumCulled = false; im.count = 0; im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        im.receiveShadow = true; im.castShadow = im === near;
+        group.add(im);
+      }
       return { near, far };
     });
     const SL = c.streets.map((s) => Math.hypot(s.bx - s.ax, s.bz - s.az));
@@ -381,7 +393,7 @@ export function buildKit(group: THREE.Group, road: Road, night: boolean, sky: TH
     const heli = hg ? new THREE.Mesh(hg.near, mat) : null;
     const hp = new THREE.Vector3(), hv = new THREE.Vector3();
     let hyaw = 0, hset = false;
-    if (heli) { heli.frustumCulled = false; heli.name = "heli"; group.add(heli); }
+    if (heli) { heli.frustumCulled = false; heli.name = "heli"; heli.castShadow = true; group.add(heli); }
     const cx = { x: 1e9, z: 1e9 }, fwd = new THREE.Vector3();
     const far2 = fogFar * fogFar;
     /** Sends each placement of a set to its near, far or block mesh (or nowhere). */

@@ -78,6 +78,11 @@
 .hx-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 12px; }
 .hx-btn { padding: 10px 16px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.18); background: rgba(255, 255, 255, 0.08); cursor: pointer; text-decoration: none; font-weight: 600; }
 .hx-btn:hover { background: rgba(255, 255, 255, 0.16); }
+.hx-gfx { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 16px; }
+.hx-seg { display: inline-flex; border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 12px; overflow: hidden; }
+.hx-seg button { padding: 8px 12px; background: transparent; border: 0; color: inherit; font: inherit; font-size: 14px; cursor: pointer; min-height: 40px; }
+.hx-seg button + button { border-left: 1px solid rgba(255, 255, 255, 0.12); }
+.hx-seg button.on { background: rgba(255, 255, 255, 0.18); font-weight: 700; }
 .hx-btn-main { background: linear-gradient(90deg, #23b8ff, #b33dff); border-color: transparent; }
 
 /* ── Touch controls ── */

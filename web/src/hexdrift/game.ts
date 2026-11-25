@@ -8,7 +8,8 @@ import { COUNTDOWN, formatTime, HZ, newRace, pack, raceTicks, step, type Race } 
 import { CELL, groundAt, key, local } from "./sim/track.ts";
 import { propsOf } from "./sim/props.ts";
 import { buildWorld, GROUND, type World } from "./render/world.ts";
-import { setupScene } from "./render/roadworld.ts";
+import { LOOKS, setupScene } from "./render/roadworld.ts";
+import { GFX, gradeFor, guessGfx, Post, SunShadow, type Gfx } from "./render/post.ts";
 import { Particles } from "./render/particles.ts";
 import { Skids } from "./render/skids.ts";
 import { Weather, WEATHER } from "./render/weather.ts";
@@ -73,6 +74,7 @@ export class Game {
   private world: World;
   private car: CarModel;
   private shadow = blobShadow();
+  private castTick = 0;
   private trail: Trail;
   private fx = new FinishFx();
   private trailOn = 0;
@@ -115,6 +117,10 @@ export class Game {
   private minRatio: number;
   private lowered = 0;
   private frameMs = 16;
+  private post: Post;
+  private sun: SunShadow;
+  private gfxAuto = true;
+  private camDir = new THREE.Vector3();
   private resAt = 0;
   private hudCache = { time: "", speed: "", cps: "", count: "", split: "" };
   /** Your best run (splits are against this one). */
@@ -167,16 +173,30 @@ export class Game {
     this.maxRatio = Math.min(dpr, 2);
     this.minRatio = Math.min(dpr, 1);
     this.ratio = this.maxRatio;
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
+    // No canvas multisampling: frames are drawn into the HDR buffer (which has its own) and finished in render/post.ts.
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "high-performance" });
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.setPixelRatio(this.ratio);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.camera = new THREE.PerspectiveCamera(CAMS[this.cam].fov, 1, 0.5, 2600);
 
-    setupScene(this.scene, biome, map.biome, !!track.road);
+    const lit = setupScene(this.scene, biome, map.biome, !!track.road);
+    const L = track.road ? LOOKS[map.biome] : undefined;
+    this.post = new Post(this.renderer, gradeFor(map.biome, L), lit.sun.position, lit.sun.color.clone().multiplyScalar(L ? 1 : 0.9));
+    this.sun = new SunShadow(lit.sun, this.scene);
 
     this.world = buildWorld(track, biome, map.biome);
     this.scene.add(this.world.group);
+    // Everything takes the sun's shadow; the scenery casts it (not the land, sky or sea).
+    this.world.group.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || o.name === "sky") return;
+      m.receiveShadow = true;
+      m.castShadow = !["terrain", "water", "road"].includes(o.name);
+    });
     this.car = buildCar({ look, mapAccent: biome.accent, env: biome });
+    
     this.scene.add(this.car.root);
     this.scene.add(this.shadow.mesh);
     this.trail = new Trail(trailDef(itemOf("trail", look.trail) as Item));
@@ -233,6 +253,7 @@ export class Game {
   private resize() {
     const w = this.canvas.clientWidth || 1, h = this.canvas.clientHeight || 1;
     this.renderer.setSize(w, h, false);
+    this.post.setSize(this.canvas.width, this.canvas.height);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     const px = this.canvas.height || h;
@@ -515,8 +536,13 @@ export class Game {
       this.shadow.mesh.rotation.y = yaw;
       const s = 1 + (y - gh) * 0.06;
       this.shadow.mesh.scale.set(s, 1, s);
-      (this.shadow.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 1 - (y - gh) / 25);
+      // With real sun shadows the blob stays as a soft contact shadow.
+      (this.shadow.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 1 - (y - gh) / 25) * (this.post.shadowSize ? 0.55 : 1);
     } else this.shadow.mesh.visible = false;
+    // The car's Blender body arrives after loading (and changes in the garage): keep it casting.
+    if ((this.castTick = (this.castTick + 1) % 30) === 0 && this.post.shadowSize) {
+      this.car.root.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh && !m.castShadow && !(m.material as THREE.Material).transparent) { m.castShadow = true; m.receiveShadow = true; } });
+    }
 
     this.effects(x, y, z, yaw, road, dt, sdt);
 
@@ -575,7 +601,9 @@ export class Game {
     if (sky) sky.position.copy(this.camera.position);
     this.weather.update(dt, this.camera.position);
 
-    this.renderer.render(this.scene, this.camera);
+    this.camera.getWorldDirection(this.camDir);
+    this.sun.update(this.vx.set(x, y, z), this.camDir, this.post.sunDir);
+    this.post.render(this.scene, this.camera, dt);
     this.updateHud();
   }
 
@@ -829,6 +857,9 @@ export class Game {
     if (now - this.resAt < 2000) return;
     this.resAt = now;
     let r = this.ratio;
+    // Slow frames: first a lighter graphics level (when it's on Auto), then fewer pixels.
+    const lv = GFX.indexOf(this.post.gfx);
+    if (this.frameMs > 21 && this.gfxAuto && lv > 0) { this.applyGfx(GFX[lv - 1]); this.frameMs = 16; return; }
     // Few, big steps; and once it has had to step down twice, it stays put.
     if (this.frameMs > 21 && r > this.minRatio) { r = Math.max(this.minRatio, r - 0.35); this.lowered++; }
     else if (this.frameMs < 12 && r < this.maxRatio && this.lowered < 2) r = Math.min(this.maxRatio, r + 0.25);
@@ -839,8 +870,22 @@ export class Game {
     }
   }
 
+  /** Graphics: "auto" picks a level for the device and steps down if frames get slow. */
+  setGraphics(mode: Gfx | "auto") {
+    this.gfxAuto = mode === "auto";
+    this.applyGfx(mode === "auto" ? guessGfx() : mode);
+  }
+
+  get graphics(): Gfx { return this.post.gfx; }
+
+  private applyGfx(level: Gfx) {
+    this.post.setLevel(level);
+    this.sun.setLevel(this.post.shadowSize);
+  }
+
   dispose() {
     this.endIntro();
+    this.post.dispose();
     this.stop();
     this.ro.disconnect();
     document.removeEventListener("visibilitychange", this.onVis);

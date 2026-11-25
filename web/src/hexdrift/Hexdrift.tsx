@@ -597,6 +597,7 @@ function Play({ map }: { map: MapDef }) {
       return () => c.dispose();
     }
     game.current = g;
+    g.setGraphics(gfxPref());
     void allBests().then(() => {
       if (game.current !== g) return;
       const b = bestNow(map.id);
@@ -693,10 +694,35 @@ function Play({ map }: { map: MapDef }) {
             <button type="button" className="hx-btn" onClick={restart}>Restart</button>
             <a className="hx-btn" href={`#/hexdrift/map/${map.id}`}>Maps</a>
           </div>
+          {over === "pause" && <GraphicsPicker game={game.current} />}
           {gaming && <p className="hx-dim hx-small">Gaming Mode is on: hold its button for 3 seconds to turn it off.</p>}
         </div></div>
       )}
       {over && typeof over === "object" && <Finish map={map} result={over} next={next} onRestart={restart} signedIn={!!sb} />}
+    </div>
+  );
+}
+
+const GFX_MODES = ["auto", "low", "medium", "high"] as const;
+type GfxMode = (typeof GFX_MODES)[number];
+function gfxPref(): GfxMode {
+  const v = pref("hexdrift.gfx", "auto");
+  return (GFX_MODES as readonly string[]).includes(v) ? (v as GfxMode) : "auto";
+}
+
+/** Graphics level: Auto (fits the device, steps down if frames get slow) or a fixed one. */
+function GraphicsPicker({ game }: { game: Game | null }) {
+  const [mode, setMode] = useState<GfxMode>(gfxPref);
+  const label = (m: GfxMode) => m === "auto" ? `Auto${mode === "auto" && game ? ` (${game.graphics})` : ""}` : m[0].toUpperCase() + m.slice(1);
+  return (
+    <div className="hx-gfx" role="radiogroup" aria-label="Graphics">
+      <span className="hx-dim hx-small">Graphics</span>
+      <div className="hx-seg">
+        {GFX_MODES.map((m) => (
+          <button key={m} type="button" role="radio" aria-checked={mode === m} className={mode === m ? "on" : ""}
+            onClick={() => { setMode(m); setPref("hexdrift.gfx", m); game?.setGraphics(m); }}>{label(m)}</button>
+        ))}
+      </div>
     </div>
   );
 }

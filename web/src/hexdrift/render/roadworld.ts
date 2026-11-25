@@ -10,6 +10,7 @@ import { BOOST, FLUSH, GAP, landAt, MAT, roadDist, TUN, WALL_H, WALL_T, WL, WR, 
 import type { Biome, BiomeId } from "../maps.ts";
 import { buildProps } from "./props.ts";
 import { buildKit } from "./kit.ts";
+import { clampUnder } from "./under.ts";
 import { addGrain, noiseTex } from "./textures.ts";
 import type { World } from "./world.ts";
 
@@ -38,7 +39,7 @@ export const LOOKS: Partial<Record<BiomeId, Look>> = {
     ground: ["#7d9a4f", "#e8cf9c", "#9a8f80", "#ffffff", "#a5835a", "#c9b48a", "#cdbfae"], rock: "#9a8f80",
     sea: { shallow: "#2fc4c9", deep: "#145f8f", opacity: 0.86 },
     wet: 0, night: false,
-    sun: [-0.55, 0.22, 0.8], sunColor: "#ffc48a", sunI: 2.1, hemiSky: "#ffd6b8", hemiGround: "#7a5a6a", hemiI: 1.25,
+    sun: [-0.55, 0.22, 0.8], sunColor: "#ffc48a", sunI: 3.1, hemiSky: "#ffcfb8", hemiGround: "#6a4a64", hemiI: 0.95,
     skyTop: "#3d4fa8", skyHorizon: "#ff9a62", skyLow: "#ffb98a", sunDisc: "#fff0c8", clouds: 0.55, stars: 0,
     barrier: "jersey", asphalt: "#5a5660", line: "#f4f1ea", centre: "#f2c230", curbA: "#e8364c", curbB: "#f4f1ea",
     dirt: "#a5835a", sand: "#e2c48e", metal: "#8f95a8",
@@ -88,7 +89,7 @@ export const LOOKS: Partial<Record<BiomeId, Look>> = {
 };
 
 /** Fog, background and lights for a map (road maps have their own look; tile maps keep theirs). */
-export function setupScene(scene: THREE.Scene, biome: Biome, id: BiomeId, road: boolean, near = 1, far = 1) {
+export function setupScene(scene: THREE.Scene, biome: Biome, id: BiomeId, road: boolean, near = 1, far = 1): { sun: THREE.DirectionalLight } {
   const L = road ? LOOKS[id] : undefined;
   const fog = L ? L.skyHorizon : biome.fog;
   scene.fog = new THREE.Fog(fog, biome.fogNear * near, biome.fogFar * far);
@@ -98,12 +99,13 @@ export function setupScene(scene: THREE.Scene, biome: Biome, id: BiomeId, road: 
     const sun = new THREE.DirectionalLight("#ffffff", 1.7);
     sun.position.set(0.45, 1, 0.3);
     scene.add(sun);
-    return;
+    return { sun };
   }
   scene.add(new THREE.HemisphereLight(L.hemiSky, L.hemiGround, L.hemiI));
   const sun = new THREE.DirectionalLight(L.sunColor, L.sunI);
   sun.position.set(...L.sun);
   scene.add(sun);
+  return { sun };
 }
 
 /** Collects triangles with colours (flat normals). */
@@ -285,6 +287,7 @@ function terrain(group: THREE.Group, track: Track, L: Look, geos: THREE.BufferGe
         // Tucked a little under the road so it never shows through.
         const g = groundAt(track, xs[i], h + 2.5, zs[j], 0);
         if (g && g.h - h < 1.2) h -= 0.45;
+        h = clampUnder(road, xs[i], zs[j], h);
       }
       // Near a road: a kerb-side strip in the verge colour; further out, the land itself.
       let mat = t.mat === MAT.water ? MAT.water : landAt(road.land, xs[i], zs[j]).mat;
