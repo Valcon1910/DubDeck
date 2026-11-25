@@ -49,6 +49,24 @@ export interface LandDef {
   verge?: number;
   /** Main ground material (plain/dunes). */
   mat?: number;
+  /** Made in the studio: the ground raised or lowered and painted, on a grid of SCULPT m. */
+  sculpt?: Sculpt;
+}
+
+/** Terrain edits: [i, j, metres up] at grid points (i·SCULPT, j·SCULPT), and [i, j, material] painted there. */
+export interface Sculpt { h?: [number, number, number][]; m?: [number, number, number][] }
+export const SCULPT = 8;
+const skey = (i: number, j: number) => (i + 32768) * 65536 + (j + 32768);
+const sculpts = new WeakMap<Sculpt, { h: Map<number, number>; m: Map<number, number> }>();
+function sculptOf(S: Sculpt) {
+  let c = sculpts.get(S);
+  if (!c) {
+    c = { h: new Map(), m: new Map() };
+    for (const [i, j, v] of S.h ?? []) c.h.set(skey(i, j), v);
+    for (const [i, j, v] of S.m ?? []) c.m.set(skey(i, j), v);
+    sculpts.set(S, c);
+  }
+  return c;
 }
 
 export interface AltDef {
@@ -92,6 +110,12 @@ export interface Dress {
   zones: [number, number, Strip, Strip][];
   /** Hand-placed pieces: kit object, metres along the main road, side (-1 left, 1 right), gap from the road's edge, shift along. */
   set?: [string, number, number, number, number?][];
+  /** Placed in the studio: kit object, x, z, heading (degrees), lift off the ground (m). */
+  objs?: [string, number, number, number, number][];
+  /** Ground kept clear of scenery (under the studio's parts): x, z, radius. */
+  keep?: [number, number, number][];
+  /** false: no scenery but what's placed by hand. */
+  auto?: boolean;
 }
 
 /** Flags of the segment that starts at a sample. */
@@ -171,8 +195,24 @@ const ridge = (x: number, z: number, seed: number) => {
   return 1 - (n < 0 ? -n : n);
 };
 
-/** The land of the map without any road: height and material. */
+/** The land of the map without any road: height and material (with the studio's edits). */
 export function landAt(L: LandDef, x: number, z: number): { h: number; mat: number } {
+  const n = baseLand(L, x, z);
+  if (!L.sculpt || n.h <= NONE) return n;
+  const c = sculptOf(L.sculpt);
+  const u = x / SCULPT, v = z / SCULPT, i = Math.floor(u), j = Math.floor(v), fu = u - i, fv = v - j;
+  if (c.h.size) {
+    const a = c.h.get(skey(i, j)) ?? 0, b = c.h.get(skey(i + 1, j)) ?? 0, d = c.h.get(skey(i, j + 1)) ?? 0, e = c.h.get(skey(i + 1, j + 1)) ?? 0;
+    n.h += (a + (b - a) * fu) * (1 - fv) + (d + (e - d) * fu) * fv;
+  }
+  if (c.m.size) {
+    const m = c.m.get(skey(fu < 0.5 ? i : i + 1, fv < 0.5 ? j : j + 1));
+    if (m !== undefined) n.mat = m;
+  }
+  return n;
+}
+
+function baseLand(L: LandDef, x: number, z: number): { h: number; mat: number } {
   const sc = L.scale;
   switch (L.kind) {
     case "coast": {

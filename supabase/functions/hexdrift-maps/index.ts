@@ -8,7 +8,7 @@
 // Likes, plays, reports and moderation go straight to the database under its
 // row-level security (see the hexdrift_community migration).
 
-import { checkMap, cleanMap, roadDefOf, THEMES, versionOf, type CustomMap } from "../_shared/hexdrift/custom.ts";
+import { checkMap, cleanMap, roadDefOf, studioOf, THEMES, versionOf, type CustomMap } from "../_shared/hexdrift/custom.ts";
 import { buildRoadTrack } from "../_shared/hexdrift/track.ts";
 import { COUNTDOWN, newRace, PHYSICS_V, step } from "../_shared/hexdrift/race.ts";
 
@@ -123,7 +123,7 @@ Deno.serve(async (req) => {
     if (path) { if (picture) await unload(picture); picture = path; }
   }
   const row = {
-    id, author: email, local_id: m.id, name: m.name.trim(), theme: m.theme, pieces: m.pieces, version,
+    id, author: email, local_id: m.id, name: m.name.trim(), theme: m.theme, pieces: m.pieces, scene: studioOf(m), version,
     author_ticks: a.ticks, author_inputs: a.inputs, length_m: Math.round(check.length), checkpoints: check.road.gates.length,
     v: PHYSICS_V, updated_at: now, picture,
   };

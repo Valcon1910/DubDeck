@@ -8,7 +8,7 @@
 // hits them the same way on every device and in the record checker), so
 // the layout comes only from the track: hashes and road geometry, with
 // only + - * / sqrt and Math.floor / Math.imul.
-import { hash } from "./math.ts";
+import { dcos, dsin, hash } from "./math.ts";
 import { GAP, landAt, MAT, roadDist, roadTerrain, TUN, WL, WR, type Road, type Sample, type Strip } from "./road.ts";
 
 /** An object of a kit: its solid footprint (half sizes across a and deep b, centre shift cx/cz in its own frame), height, and room kept clear in front. */
@@ -308,6 +308,19 @@ export function compose(road: Road): Composed | null {
   };
   const at = (p: Sample, lat: number, along: number) => [p.x - p.dz * lat + p.dx * along, p.z + p.dx * lat + p.dz * along];
 
+  // ── Placed in the studio: exactly where they were put ──
+  for (const [o, x, z, deg, lift] of dress.objs ?? []) {
+    const d = kit[o];
+    if (!d) continue;
+    const a = deg * 0.017453292519943295, fx = dsin(a), fz = dcos(a);
+    let y = roadTerrain(road, x, z).h;
+    if (y < -1e7) y = d.hover || d.alt ? nearest(x, z).p.y - 0.7 : -1e7;
+    if (y < -1e7) continue;
+    occ.box(x, z, fx, fz, d.a, d.b, 1, true, true);
+    placed.push({ o, x, y: y - 0.3 + lift, z, fx, fz, v: hash(Math.floor(x), Math.floor(z), 91) });
+  }
+  for (const [x, z, r] of dress.keep ?? []) occ.box(x, z, 0, 1, r, r, 1, true, true);
+
   // ── Set pieces, by hand ──
   for (const [o, s, side, gap, shift] of dress.set ?? []) {
     let i = 0;
@@ -318,6 +331,12 @@ export function compose(road: Road): Composed | null {
     const [x, z] = at(p, side * off, shift ?? 0);
     // Faces the road.
     put(o, x, z, p.dz * side, -p.dx * side, hash(i, side, 90), 1, 0);
+  }
+
+  if (dress.auto === false) {
+    const res: Composed = { placed, streets, spurs, kit };
+    cache.set(road, res);
+    return res;
   }
 
   // ── Chevron boards round the sharp bends, on the outside, turned to the cars coming ──

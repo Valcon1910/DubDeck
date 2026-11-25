@@ -2,7 +2,9 @@
 // checkpoints) on one of the road themes; it turns into the same road the
 // built-in maps use (road.ts). Pure and deterministic, so the server can
 // rebuild a map and replay a run on it.
-import { buildRoad, LOOP_R, type RoadDef, type LandDef, type Strip, type Surf, type Road } from "./road.ts";
+import { buildRoad, LOOP_R, MAT, SCULPT, type RoadDef, type LandDef, type Sculpt, type Strip, type Surf, type Road } from "./road.ts";
+import { MATS, PART_LIMITS, SHAPES, type PartDef } from "./parts.ts";
+import { KITS } from "./kit.ts";
 import { chainOf, cleanGrid, piecesOfGrid, starterGrid, type Tile } from "./grid.ts";
 
 export type ThemeId = "miami" | "storm" | "alpine" | "baja" | "sky" | "space";
@@ -90,12 +92,31 @@ export interface CustomMap {
   pieces: Piece[];
   /** Made on the phone grid: the tiles (the pieces are worked out from them). */
   grid?: Tile[];
+  /** Studio: free parts, placed objects (from the theme's kit), terrain edits. */
+  parts?: PartDef[];
+  objs?: ObjDef[];
+  terrain?: Sculpt;
+  /** Studio: false keeps only what's placed by hand (no automatic scenery). */
+  scenery?: boolean;
+  /** Studio: how it looks (doesn't change the driving). */
+  env?: Env;
+  /** Studio: folder names for the object list (by index into parts, then objs). */
+  folders?: Folder[];
   /** The maker's own finish on the current version: proves it can be done and sets the medals. */
   author?: { ticks: number; inputs: string; hash: string };
   updated: number;
 }
 
-export const LIMITS = { pieces: 240, length: 8000, minLength: 150, nameLen: 32 };
+export const LIMITS = { pieces: 240, length: 8000, minLength: 150, nameLen: 32, objs: 400, sculpt: 8000, folders: 40 };
+
+/** A ready-made object from the theme's kit: name, where (x, z), heading (degrees), lift off the ground (m), folder. */
+export interface ObjDef { o: string; p: [number, number]; r?: number; y?: number; f?: number }
+export type Weather = "clear" | "rain" | "snow" | "storm";
+/** Time of day (hours, 0 to 24), fog (0 none to 1 thick), weather. Unset: the theme's own. */
+export interface Env { time?: number; fog?: number; weather?: Weather }
+export const WEATHERS: Weather[] = ["clear", "rain", "snow", "storm"];
+/** A folder in the studio's object list. */
+export interface Folder { name: string; open?: boolean }
 const START = 40, RUNOUT = 60;
 
 export const newMap = (theme: ThemeId = "miami"): CustomMap => ({
@@ -162,14 +183,30 @@ export function roadDefOf(m: CustomMap): RoadDef {
   }
   zones.push([from, total + 10, cur[0], cur[1]]);
   return {
-    land: th.land, start: [0, 0, th.y, 0], bank: th.bank, grav: th.grav, route: routeOf(m),
-    dress: { kit: th.kit, zones, set: [["stand", 25, -1, 3], ["stand", 25, 1, 3]].filter(() => th.kit !== "sky") as [string, number, number, number][] },
+    land: m.terrain && (m.terrain.h?.length || m.terrain.m?.length) ? { ...th.land, sculpt: m.terrain } : th.land,
+    start: [0, 0, th.y, 0], bank: th.bank, grav: th.grav, route: routeOf(m),
+    parts: m.parts?.length ? m.parts : undefined,
+    dress: {
+      kit: th.kit, zones, set: [["stand", 25, -1, 3], ["stand", 25, 1, 3]].filter(() => th.kit !== "sky") as [string, number, number, number][],
+      ...(m.objs?.length ? { objs: m.objs.map((o) => [o.o, o.p[0], o.p[1], o.r ?? 0, o.y ?? 0] as [string, number, number, number, number]) } : {}),
+      // Scenery keeps off the parts.
+      ...(m.parts?.length ? { keep: m.parts.map((q) => [q.p[0], q.p[2], Math.sqrt(q.z[0] * q.z[0] + q.z[2] * q.z[2]) / 2] as [number, number, number]) } : {}),
+      ...(m.scenery === false ? { auto: false } : {}),
+    },
   };
 }
 
 /** Changes whenever anything that affects driving changes (times only compare on the same version). */
 export function versionOf(m: CustomMap): string {
-  const s = `${m.theme}|${routeOf(m)}`;
+  let s = `${m.theme}|${routeOf(m)}`;
+  // What the studio adds that changes the driving (not folders, colours of looks, or the sky).
+  if (m.parts?.length || m.objs?.length || m.terrain?.h?.length || m.terrain?.m?.length || m.scenery === false) {
+    s += "|" + JSON.stringify([
+      (m.parts ?? []).map((q) => [q.s, q.p, q.z, q.r ?? 0, q.m ?? "solid"]),
+      (m.objs ?? []).map((o) => [o.o, o.p, o.r ?? 0, o.y ?? 0]),
+      m.terrain?.h ?? [], m.terrain?.m ?? [], m.scenery !== false,
+    ]);
+  }
   let h = 0x811c9dc5;
   for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193);
   return (h >>> 0).toString(36);
@@ -192,6 +229,8 @@ export function checkMap(m: CustomMap): Check {
     if (p.k === "O" && ((p.r ?? 0) < LOOP_R[0] || (p.r ?? 0) > LOOP_R[1])) problems.push({ piece: i, text: `Loops have a radius of ${LOOP_R[0]} to ${LOOP_R[1]} m.` });
     if (p.rise && Math.abs(p.rise) > Math.max(2, pieceLen(p) * 0.3)) problems.push({ piece: i, text: "Too steep: climb at most 3 m per 10 m." });
   }
+  if ((m.parts?.length ?? 0) > PART_LIMITS.count) problems.push({ piece: -1, text: `At most ${PART_LIMITS.count} parts.` });
+  if ((m.objs?.length ?? 0) > LIMITS.objs) problems.push({ piece: -1, text: `At most ${LIMITS.objs} objects.` });
   if (m.grid) {
     for (const t of chainOf(m.grid).problems) problems.push({ piece: -1, text: t });
     // Checkpoints and loops make three pieces each: the limit is on pieces.
@@ -244,7 +283,7 @@ export function medalsOf(author: number) {
 
 // ── Share codes: the map as text (for Community Maps and copy-paste) ──
 export function encodeMap(m: CustomMap): string {
-  const json = JSON.stringify(m.grid ? { v: 1, name: m.name, theme: m.theme, grid: m.grid } : { v: 1, name: m.name, theme: m.theme, pieces: m.pieces });
+  const json = JSON.stringify({ v: 1, name: m.name, theme: m.theme, ...(m.grid ? { grid: m.grid } : { pieces: m.pieces }), ...studioOf(m) });
   return "HX1." + btoa(unescape(encodeURIComponent(json))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
@@ -290,11 +329,105 @@ export function cleanMap(o: unknown, id: string): CustomMap | null {
     pieces.push(p);
   }
   const au = r.author as Record<string, unknown> | undefined;
+  const studio = cleanStudio(r, theme);
   return {
     v: 1, id: typeof r.id === "string" && /^u[0-9a-z]{4,12}$/.test(r.id) ? r.id : id,
     name: (typeof r.name === "string" ? r.name : "My map").slice(0, LIMITS.nameLen) || "My map",
-    theme, pieces, ...(grid ? { grid } : {}), updated: typeof r.updated === "number" ? r.updated : Date.now(),
+    theme, pieces, ...(grid ? { grid } : {}), ...studio, updated: typeof r.updated === "number" ? r.updated : Date.now(),
     author: au && typeof au.ticks === "number" && typeof au.inputs === "string" && typeof au.hash === "string" ? { ticks: au.ticks, inputs: au.inputs, hash: au.hash } : undefined,
   };
 }
 
+
+/** The studio's additions to a map (for share codes, storage and Community Maps). */
+export function studioOf(m: CustomMap): Partial<CustomMap> {
+  const o: Partial<CustomMap> = {};
+  if (m.parts?.length) o.parts = m.parts;
+  if (m.objs?.length) o.objs = m.objs;
+  if (m.terrain?.h?.length || m.terrain?.m?.length) o.terrain = m.terrain;
+  if (m.scenery === false) o.scenery = false;
+  if (m.env && Object.keys(m.env).length) o.env = m.env;
+  if (m.folders?.length) o.folders = m.folders;
+  return o;
+}
+
+/** Keeps only valid studio additions, clamped to the limits. */
+export function cleanStudio(r: Record<string, unknown>, theme: ThemeId): Partial<CustomMap> {
+  const out: Partial<CustomMap> = {};
+  const num = (v: unknown, lo: number, hi: number, d: number) => typeof v === "number" && v === v ? Math.min(hi, Math.max(lo, Math.round(v * 100) / 100)) : d;
+  const int = (v: unknown, lim: number) => typeof v === "number" && Number.isInteger(v) && v >= -lim && v <= lim;
+  const R = PART_LIMITS.reach, S = PART_LIMITS.size, s0 = PART_LIMITS.minSize;
+  const nf = Array.isArray(r.folders) ? Math.min(r.folders.length, LIMITS.folders) : 0;
+  const folder = (v: unknown) => int(v, 1000) && (v as number) >= 0 && (v as number) < nf ? v as number : undefined;
+  if (Array.isArray(r.parts)) {
+    const parts: PartDef[] = [];
+    for (const q of r.parts.slice(0, PART_LIMITS.count)) {
+      if (!q || typeof q !== "object") continue;
+      const p = q as Record<string, unknown>;
+      if (!SHAPES.includes(p.s as PartDef["s"]) || !Array.isArray(p.p) || !Array.isArray(p.z)) continue;
+      const d: PartDef = {
+        s: p.s as PartDef["s"],
+        p: [num(p.p[0], -R, R, 0), num(p.p[1], -500, 1500, 0), num(p.p[2], -R, R, 0)],
+        z: [num(p.z[0], s0, S, 4), num(p.z[1], s0, S, 4), num(p.z[2], s0, S, 4)],
+      };
+      if (Array.isArray(p.r) && p.r.some((a) => a)) d.r = [num(p.r[0], -360, 360, 0), num(p.r[1], -360, 360, 0), num(p.r[2], -360, 360, 0)];
+      if (MATS.includes(p.m as PartDef["m"] & string) && p.m !== "solid") d.m = p.m as PartDef["m"];
+      if (typeof p.c === "string" && /^#[0-9a-f]{6}$/i.test(p.c)) d.c = p.c.toLowerCase();
+      const f = folder(p.f);
+      if (f !== undefined) d.f = f;
+      parts.push(d);
+    }
+    if (parts.length) out.parts = parts;
+  }
+  const kit = KITS[THEMES[theme].kit] ?? {};
+  if (Array.isArray(r.objs)) {
+    const objs: ObjDef[] = [];
+    for (const q of r.objs.slice(0, LIMITS.objs)) {
+      if (!q || typeof q !== "object") continue;
+      const o = q as Record<string, unknown>;
+      if (typeof o.o !== "string" || !Object.hasOwn(kit, o.o) || !Array.isArray(o.p)) continue;
+      const d: ObjDef = { o: o.o, p: [num(o.p[0], -R, R, 0), num(o.p[1], -R, R, 0)] };
+      const rr = num(o.r, -360, 360, 0), y = num(o.y, -50, 300, 0);
+      if (rr) d.r = rr;
+      if (y) d.y = y;
+      const f = folder(o.f);
+      if (f !== undefined) d.f = f;
+      objs.push(d);
+    }
+    if (objs.length) out.objs = objs;
+  }
+  if (r.terrain && typeof r.terrain === "object") {
+    const t = r.terrain as Record<string, unknown>;
+    const lim = R / SCULPT;
+    const list = (v: unknown, lo: number, hi: number, whole: boolean) => {
+      const o: [number, number, number][] = [];
+      const seen = new Set<string>();
+      if (!Array.isArray(v)) return o;
+      for (const e of v.slice(0, LIMITS.sculpt)) {
+        if (!Array.isArray(e) || !int(e[0], lim) || !int(e[1], lim) || typeof e[2] !== "number" || e[2] !== e[2]) continue;
+        if (whole && !Number.isInteger(e[2])) continue;
+        const k = `${e[0]},${e[1]}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        const val = Math.min(hi, Math.max(lo, whole ? e[2] : Math.round(e[2] * 4) / 4));
+        if (val || whole) o.push([e[0], e[1], val]);
+      }
+      return o;
+    };
+    const h = list(t.h, -60, 60, false), m = list(t.m, 0, Object.keys(MAT).length - 1, true);
+    if (h.length || m.length) out.terrain = { ...(h.length ? { h } : {}), ...(m.length ? { m } : {}) };
+  }
+  if (r.scenery === false) out.scenery = false;
+  if (r.env && typeof r.env === "object") {
+    const e = r.env as Record<string, unknown>, env: Env = {};
+    if (typeof e.time === "number" && e.time === e.time) env.time = Math.min(24, Math.max(0, Math.round(e.time * 4) / 4));
+    if (typeof e.fog === "number" && e.fog === e.fog) env.fog = Math.min(1, Math.max(0, Math.round(e.fog * 100) / 100));
+    if (WEATHERS.includes(e.weather as Weather)) env.weather = e.weather as Weather;
+    if (Object.keys(env).length) out.env = env;
+  }
+  if (nf) out.folders = (r.folders as unknown[]).slice(0, nf).map((f) => {
+    const o = (f && typeof f === "object" ? f : {}) as Record<string, unknown>;
+    return { name: (typeof o.name === "string" ? o.name : "Folder").slice(0, 32) || "Folder", ...(o.open === false ? { open: false } : {}) };
+  });
+  return out;
+}
