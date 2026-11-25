@@ -46,6 +46,7 @@ function blockOf(g: THREE.BufferGeometry): THREE.BufferGeometry {
   }
   box.setAttribute("color", new THREE.BufferAttribute(C, 3));
   box.setAttribute("aKind", new THREE.BufferAttribute(K, 1));
+  box.setAttribute("aWin", new THREE.BufferAttribute(new Float32Array(nor.count).fill(-1), 1));
   return box;
 }
 
@@ -76,7 +77,30 @@ function loadKit(kit: string): Promise<Map<string, KitGeo> | null> {
         C[i * 3] = c.r; C[i * 3 + 1] = c.g; C[i * 3 + 2] = c.b;
         K[i] = kind;
       }
+      // Each small pane of glass gets its own number (to light whole windows at night).
+      const W = new Float32Array(n).fill(-1);
+      const index = src.getIndex();
+      if (kind === GLASS && index) {
+        const up = Array.from({ length: n }, (_, i) => i);
+        const find = (i: number): number => { while (up[i] !== i) { up[i] = up[up[i]]; i = up[i]; } return i; };
+        for (let t = 0; t < index.count; t += 3) {
+          const a = find(index.getX(t));
+          up[find(index.getX(t + 1))] = a; up[find(index.getX(t + 2))] = a;
+        }
+        const box = new Map<number, number[]>();
+        for (let i = 0; i < n; i++) {
+          const r = find(i), b = box.get(r);
+          const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+          if (!b) box.set(r, [x, y, z, x, y, z]);
+          else { b[0] = Math.min(b[0], x); b[1] = Math.min(b[1], y); b[2] = Math.min(b[2], z); b[3] = Math.max(b[3], x); b[4] = Math.max(b[4], y); b[5] = Math.max(b[5], z); }
+        }
+        for (let i = 0; i < n; i++) {
+          const r = find(i), b = box.get(r)!;
+          if (Math.hypot(b[3] - b[0], b[4] - b[1], b[5] - b[2]) < 4) W[i] = ((r * 2654435761) >>> 0) / 4294967296;
+        }
+      }
       const g = new THREE.BufferGeometry();
+      g.setAttribute("aWin", new THREE.BufferAttribute(W, 1));
       g.setAttribute("position", new THREE.BufferAttribute(P, 3));
       g.setAttribute("normal", new THREE.BufferAttribute(N, 3));
       g.setAttribute("color", new THREE.BufferAttribute(C, 3));
@@ -116,16 +140,21 @@ function kitMaterial(time: { value: number }, night: number, sky: THREE.Color): 
     sh.vertexShader = sh.vertexShader
       .replace("#include <common>", `#include <common>
 attribute float aKind;
-varying float vKind;
+attribute float aWin;
+flat varying float vWin;
+flat varying float vKind;
 varying vec3 vLoc;
 varying vec3 vNrm;
-varying float vSeed;`)
+flat varying float vSeed;`)
       .replace("#include <begin_vertex>", `#include <begin_vertex>
 vKind = aKind;
+vWin = aWin;
 vLoc = position;
 vNrm = normal;
 #ifdef USE_INSTANCING
-vSeed = fract(sin(dot(instanceMatrix[3].xz, vec2(12.9898, 78.233))) * 43758.5453);
+vec2 sp = fract(instanceMatrix[3].xz * vec2(0.1031, 0.1030));
+sp += dot(sp, sp.yx + 33.33);
+vSeed = fract((sp.x + sp.y) * sp.x);
 #else
 vSeed = 0.5;
 #endif`);
@@ -134,17 +163,19 @@ vSeed = 0.5;
 uniform float uTime;
 uniform float uNight;
 uniform vec3 uSky;
-varying float vKind;
+flat varying float vKind;
+flat varying float vWin;
 varying vec3 vLoc;
 varying vec3 vNrm;
-varying float vSeed;
-float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }`)
+flat varying float vSeed;
+// A hash without sin (steady in float precision).
+float hash2(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }`)
       .replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
 if (vKind > 0.5 && vKind < 1.5) {
   // Windows: sky and a sheen by day; at night some rooms are lit.
   vec2 g = vec2((vLoc.x + vLoc.z) / 2.4, vLoc.y / 3.2);
   vec2 cell = floor(g);
-  float h = hash2(cell + vSeed * 91.0);
+  float h = vWin >= 0.0 ? fract(vWin * 7.13 + vSeed * 3.71) : hash2(cell + vSeed * 91.0);
   // Far away a window is smaller than a pixel: use the average instead of flickering.
   float aa = clamp(1.6 - max(fwidth(g.x), fwidth(g.y)) * 3.0, 0.0, 1.0);
   float up = clamp(vNrm.y * 0.5 + 0.5, 0.0, 1.0);
@@ -235,6 +266,8 @@ function streets(c: Composed, road: Road, night: boolean): THREE.BufferGeometry 
   return g;
 }
 
+/** Boats that cruise, and their speeds (m/s). */
+const BOATS: Record<string, number> = { yacht: 4, sailboat: 2.5 };
 const TRAFFIC = ["sedan_r", "sedan_b", "sedan_w", "taxi", "sedan_r", "van", "sedan_w", "police", "bus", "sedan_b"];
 /** Near versions within this (plus the object's size); small things vanish past FAR_SMALL. */
 const NEAR = 70, MID = 240, FAR_SMALL = 320;
@@ -266,9 +299,10 @@ export function buildKit(group: THREE.Group, road: Road, night: boolean, sky: TH
     const mat = kitMaterial(time, night ? 1 : 0.3, sky);
     mats.push(mat);
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), up = new THREE.Vector3(0, 1, 0);
+    const e = new THREE.Euler();
 
     // ── Still objects ──
-    interface Set { near: THREE.InstancedMesh; far: THREE.InstancedMesh; block: THREE.InstancedMesh | null; mats: Float32Array; xz: Float32Array; big: boolean; r: number }
+    interface Set { near: THREE.InstancedMesh; far: THREE.InstancedMesh; block: THREE.InstancedMesh | null; mats: Float32Array; xz: Float32Array; big: boolean; r: number; boats?: Placed[] }
     const sets: Set[] = [];
     const byObj = new Map<string, Placed[]>();
     for (const p of c.placed) { const l = byObj.get(p.o); if (l) l.push(p); else byObj.set(p.o, [p]); }
@@ -285,8 +319,40 @@ export function buildKit(group: THREE.Group, road: Road, night: boolean, sky: TH
       const near = new THREE.InstancedMesh(g.near, mat, list.length), far = new THREE.InstancedMesh(g.far, mat, list.length);
       const block = big ? new THREE.InstancedMesh(g.block, mat, list.length) : null;
       for (const im of [near, far, block]) { if (!im) continue; im.frustumCulled = false; im.count = 0; im.instanceMatrix.setUsage(THREE.DynamicDrawUsage); group.add(im); }
-      sets.push({ near, far, block, mats: M, xz: XZ, big, r: g.r });
+      sets.push({ near, far, block, mats: M, xz: XZ, big, r: g.r, boats: BOATS[o] ? list : undefined });
     }
+    const boatSets = sets.filter((s) => s.boats);
+    // Each boat's circle: the widest that stays on deep water.
+    const sea = road.land.sea ?? 0;
+    const radius = new Map<Placed, number>();
+    for (const s of boatSets) for (const p of s.boats!) {
+      const ph = p.v * 6.283;
+      const fits = (R: number) => {
+        for (let k = 0; k < 12; k++) {
+          const a = (k / 12) * 6.283;
+          const x = p.x + R * (Math.cos(a) - Math.cos(ph)), z = p.z + R * (Math.sin(a) - Math.sin(ph));
+          if (roadTerrain(road, x, z).h > sea - 1.5) return false;
+        }
+        return true;
+      };
+      radius.set(p, [45, 25, 12].find(fits) ?? 0);
+    }
+    /** Boats cruise in slow circles, bobbing and leaning into the turn. */
+    const sail = (t: number) => {
+      for (const s of boatSets) {
+        const sp = BOATS[s.boats![0].o];
+        s.boats!.forEach((p, i) => {
+          // Slow circles (some each way) through where it was placed.
+          const R = radius.get(p) ?? 0, ph = p.v * 6.283, w = R ? (p.v < 0.5 ? 1 : -1) * sp / R : 0;
+          const ang = t * w + ph;
+          const x = p.x + R * (Math.cos(ang) - Math.cos(ph)), z = p.z + R * (Math.sin(ang) - Math.sin(ph));
+          const hx = w ? -Math.sin(ang) * Math.sign(w) : p.fx, hz = w ? Math.cos(ang) * Math.sign(w) : p.fz;
+          e.set(Math.sin(t * 0.9 + ph) * 0.03, Math.atan2(hx, hz), Math.sin(t * 1.3 + ph) * 0.05 + w * 1.2, "YXZ");
+          m4.compose(v.set(x, p.y + Math.sin(t * 1.1 + ph) * 0.18, z), q.setFromEuler(e), one).toArray(s.mats, i * 16);
+          s.xz[i * 2] = x; s.xz[i * 2 + 1] = z;
+        });
+      }
+    };
 
     // ── Traffic ──
     interface Car { st: number; t: number; dir: number; speed: number; type: number }
@@ -302,16 +368,24 @@ export function buildKit(group: THREE.Group, road: Road, night: boolean, sky: TH
     const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
     const nearStreets: number[] = [];
 
-    let wait = 0;
+    let wait = 0, clock = 0;
+    const view = { ux: 0, uz: 1 };
+    // Street ends, to turn onto the next street at a junction.
+    const key = (x: number, z: number) => Math.round(x / 3) * 100003 + Math.round(z / 3);
+    const ends = new Map<number, number[]>();
+    c.streets.forEach((st, i) => {
+      for (const k of [key(st.ax, st.az), key(st.bx, st.bz)]) { const l = ends.get(k); if (l) l.push(i); else ends.set(k, [i]); }
+    });
+    // The TV helicopter: hangs ahead of the camera, high up, and turns to follow.
+    const hg = kit.get("heli");
+    const heli = hg ? new THREE.Mesh(hg.near, mat) : null;
+    const hp = new THREE.Vector3(), hv = new THREE.Vector3();
+    let hyaw = 0, hset = false;
+    if (heli) { heli.frustumCulled = false; heli.name = "heli"; group.add(heli); }
     const cx = { x: 1e9, z: 1e9 }, fwd = new THREE.Vector3();
-    const pick = (cam: THREE.Camera) => {
-      cam.getWorldDirection(fwd);
-      const fl = Math.hypot(fwd.x, fwd.z) || 1;
-      const ux = fwd.x / fl, uz = fwd.z / fl;
-      const px = cam.position.x, pz = cam.position.z;
-      cx.x = px; cx.z = pz;
-      const far2 = fogFar * fogFar;
-      for (const s of sets) {
+    const far2 = fogFar * fogFar;
+    /** Sends each placement of a set to its near, far or block mesh (or nowhere). */
+    const fill = (s: Set, px: number, pz: number, ux: number, uz: number) => {
         let nn = 0, nf = 0, nb = 0;
         const n = s.xz.length / 2;
         const lim = s.big ? far2 : FAR_SMALL * FAR_SMALL;
@@ -330,7 +404,15 @@ export function buildKit(group: THREE.Group, road: Road, night: boolean, sky: TH
         s.near.count = nn; s.far.count = nf;
         s.near.instanceMatrix.needsUpdate = true; s.far.instanceMatrix.needsUpdate = true;
         if (s.block) { s.block.count = nb; s.block.instanceMatrix.needsUpdate = true; }
-      }
+    };
+    const pick = (cam: THREE.Camera) => {
+      cam.getWorldDirection(fwd);
+      const fl = Math.hypot(fwd.x, fwd.z) || 1;
+      const ux = fwd.x / fl, uz = fwd.z / fl;
+      const px = cam.position.x, pz = cam.position.z;
+      cx.x = px; cx.z = pz;
+      for (const s of sets) fill(s, px, pz, ux, uz);
+      view.ux = ux; view.uz = uz;
       // Streets near the camera get cars (the same ones while they stay near).
       nearStreets.length = 0;
       c.streets.forEach((st, i) => {
@@ -347,17 +429,45 @@ export function buildKit(group: THREE.Group, road: Road, night: boolean, sky: TH
     };
     const counts = tMesh.map(() => ({ n: 0, f: 0 }));
     live = (dt, cam) => {
+      clock += dt;
       wait -= dt;
+      if (boatSets.length) sail(clock);
       if (wait <= 0 || Math.hypot(cam.position.x - cx.x, cam.position.z - cx.z) > 25) { pick(cam); wait = 0.12; }
+      else for (const s of boatSets) fill(s, cam.position.x, cam.position.z, view.ux, view.uz);
+      if (heli) {
+        const want = hv.set(cam.position.x + view.ux * 110 - view.uz * 22, 0, cam.position.z + view.uz * 110 + view.ux * 22);
+        want.y = roadTerrain(road, want.x, want.z).h + 22;
+        if (!hset || hp.distanceTo(want) > 400) { hp.copy(want); hset = true; }
+        const k = Math.min(1, dt * 2.5);
+        const mx = (want.x - hp.x) * k, mz = (want.z - hp.z) * k;
+        hp.x += mx; hp.z += mz; hp.y += (Math.max(want.y, hp.y - 2) - hp.y) * k;
+        // Faces the race (back toward the camera), nose down a little when moving.
+        const face = Math.atan2(cam.position.x - hp.x, cam.position.z - hp.z);
+        let dy = face - hyaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+        hyaw += dy * Math.min(1, dt * 1.5);
+        const sp = Math.hypot(mx, mz) / Math.max(dt, 1e-3);
+        heli.position.set(hp.x, hp.y + Math.sin(clock * 1.7) * 0.6, hp.z);
+        heli.rotation.set(Math.min(0.25, sp * 0.006), hyaw, Math.sin(clock * 0.8) * 0.04, "YXZ");
+      }
       for (const k of counts) { k.n = 0; k.f = 0; }
       for (const car of cars) {
-        const st = c.streets[car.st], L = SL[car.st];
+        let st = c.streets[car.st], L = SL[car.st];
         car.t += (car.dir * car.speed * dt) / L;
-        if (car.t > 1) car.t -= 1; else if (car.t < 0) car.t += 1;
+        if (car.t > 1 || car.t < 0) {
+          // At a junction: carry on along another street from here (or turn back).
+          const ex = car.t > 1 ? st.bx : st.ax, ez = car.t > 1 ? st.bz : st.az;
+          const next = (ends.get(key(ex, ez)) ?? []).filter((i) => i !== car.st && nearStreets.includes(i));
+          if (next.length) {
+            car.st = next[Math.floor(rnd() * next.length)];
+            st = c.streets[car.st]; L = SL[car.st];
+            const atA = Math.hypot(st.ax - ex, st.az - ez) < Math.hypot(st.bx - ex, st.bz - ez);
+            car.dir = atA ? 1 : -1; car.t = atA ? 0 : 1;
+          } else { car.dir = -car.dir; car.t = car.t > 1 ? 1 : 0; }
+        }
         const ux = (st.bx - st.ax) / L, uz = (st.bz - st.az) / L;
         const fx = ux * car.dir, fz = uz * car.dir;
         const lane = 2.2; // drive on the right
-        const x = st.ax + (st.bx - st.ax) * car.t + fz * lane, z = st.az + (st.bz - st.az) * car.t - fx * lane;
+        const x = st.ax + (st.bx - st.ax) * car.t - fz * lane, z = st.az + (st.bz - st.az) * car.t + fx * lane;
         q.setFromAxisAngle(up, Math.atan2(fx, fz));
         m4.compose(v.set(x, roadTerrain(road, x, z).h + 0.06, z), q, one);
         const dx = x - cam.position.x, dz = z - cam.position.z;

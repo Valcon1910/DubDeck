@@ -54,7 +54,7 @@ const MIXES: Record<string, Partial<Record<Strip, Mix>>> = {
     downtown: { front: ["office_a", "condo_b", "shops_a", "shops_b", "garage", "condo_a"], back: ["office_a", "condo_b", "condo_a", "garage", "shops_b"], filler: ["palm_mid", "planter", "palm_mid", "busstop", "billboard", "planter", "lamp2"], setback: 4, tall: ["office_a", "condo_b"] },
     shops: { front: ["shops_a", "shops_b", "deco_b", "foodtruck"], back: ["deco_d", "condo_a", "shops_a"], filler: ["palm_mid", "planter", "lamp2", "busstop", "palm_mid"], setback: 3 },
     beach: { front: [], back: ["guard_a", "guard_b", "beachbar"], filler: ["palm_tall", "palm_pair", "palm_mid"], setback: 3 },
-    park: { front: [], back: ["palm_pair", "palm_tall"], filler: ["palm_mid", "planter"], setback: 4 },
+    park: { front: [], back: ["palm_pair", "beachbar", "palm_tall", "foodtruck", "palm_pair", "planter", "busstop"], filler: ["palm_mid", "planter", "lamp2"], setback: 4 },
   },
 };
 
