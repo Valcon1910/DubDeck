@@ -2,7 +2,7 @@
 // the HUD, the finish screen and Gaming Mode; the game itself is in game.ts.
 // Loaded only when someone opens it, so it adds nothing to the rest of the site.
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { MAPS, BIOMES, medalFor, type MapDef, type Medal } from "./maps.ts";
+import { ALL_MAPS, MAPS, BIOMES, medalFor, type MapDef, type Medal } from "./maps.ts";
 import { formatTime } from "./sim/race.ts";
 import { Controls, type Action } from "./input.ts";
 import { Game } from "./game.ts";
@@ -18,6 +18,7 @@ import { mapStill, spectator } from "./render/spectator.ts";
 import { isMuted, play, setMuted, wireUiSounds } from "./ui/sound.ts";
 import { IconBack, IconCamera, IconCrown, IconFlag, IconFullscreen, IconGamepad, IconGarage, IconLock, IconMedal, IconMute, IconPause, IconPlay, IconRestart, IconRoute, IconSound, IconTrophy } from "./ui/icons.tsx";
 import type { IntroStage } from "./game.ts";
+import { cropStyle, readCrop, stripCrop } from "../vortex/crop";
 import "./hexdrift.css";
 
 const MEDAL_NAME: Record<Exclude<Medal, null>, string> = { vortex: "Vortex", gold: "Gold", silver: "Silver", bronze: "Bronze" };
@@ -46,7 +47,8 @@ function readView(): View {
   if (parts[1] === "maps") return { kind: "maps" };
   if (parts[1] === "map") { const m = MAPS.find((x) => x.id === parts[2]); return m ? { kind: "map", map: m } : { kind: "maps" }; }
   if (parts[1] === "player" && parts[2]) return { kind: "player", email: decodeURIComponent(parts[2]).toLowerCase() };
-  const map = MAPS.find((m) => m.id === parts[1]);
+  // Maps still being built open by address on the dev server only.
+  const map = (import.meta.env.DEV ? ALL_MAPS : MAPS).find((m) => m.id === parts[1]);
   if (!map) return { kind: "menu" };
   return parts[2] === "records" ? { kind: "records", map } : { kind: "play", map };
 }
@@ -596,6 +598,7 @@ function Play({ map }: { map: MapDef }) {
       return () => c.dispose();
     }
     game.current = g;
+    g.setGraphics(gfxPref());
     void allBests().then(() => {
       if (game.current !== g) return;
       const b = bestNow(map.id);
@@ -692,10 +695,35 @@ function Play({ map }: { map: MapDef }) {
             <button type="button" className="hx-btn" onClick={restart}>Restart</button>
             <a className="hx-btn" href={`#/hexdrift/map/${map.id}`}>Maps</a>
           </div>
+          {over === "pause" && <GraphicsPicker game={game.current} />}
           {gaming && <p className="hx-dim hx-small">Gaming Mode is on: hold its button for 3 seconds to turn it off.</p>}
         </div></div>
       )}
       {over && typeof over === "object" && <Finish map={map} result={over} next={next} onRestart={restart} signedIn={!!sb} />}
+    </div>
+  );
+}
+
+const GFX_MODES = ["auto", "low", "medium", "high"] as const;
+type GfxMode = (typeof GFX_MODES)[number];
+function gfxPref(): GfxMode {
+  const v = pref("hexdrift.gfx", "auto");
+  return (GFX_MODES as readonly string[]).includes(v) ? (v as GfxMode) : "auto";
+}
+
+/** Graphics level: Auto (fits the device, steps down if frames get slow) or a fixed one. */
+function GraphicsPicker({ game }: { game: Game | null }) {
+  const [mode, setMode] = useState<GfxMode>(gfxPref);
+  const label = (m: GfxMode) => m === "auto" ? `Auto${mode === "auto" && game ? ` (${game.graphics})` : ""}` : m[0].toUpperCase() + m.slice(1);
+  return (
+    <div className="hx-gfx" role="radiogroup" aria-label="Graphics">
+      <span className="hx-dim hx-small">Graphics</span>
+      <div className="hx-seg">
+        {GFX_MODES.map((m) => (
+          <button key={m} type="button" role="radio" aria-checked={mode === m} className={mode === m ? "on" : ""}
+            onClick={() => { setMode(m); setPref("hexdrift.gfx", m); game?.setGraphics(m); }}>{label(m)}</button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -814,7 +842,9 @@ function TouchPad({ controls }: { controls: React.RefObject<Controls | null> }) 
 function Avatar({ p, email, size = 32 }: { p: Profile | undefined; email: string; size?: number }) {
   const name = displayName(p, email);
   return p?.avatar
-    ? <img className="hx-av" src={p.avatar} alt="" width={size} height={size} loading="lazy" />
+    ? <span className="hx-av hx-av-frame" style={{ width: size, height: size }}>
+        <img src={stripCrop(p.avatar)} style={cropStyle(readCrop(p.avatar))} alt="" width={size} height={size} loading="lazy" />
+      </span>
     : <span className="hx-av" style={{ width: size, height: size, fontSize: size * 0.45 }} aria-hidden="true">{name.slice(0, 1).toUpperCase()}</span>;
 }
 

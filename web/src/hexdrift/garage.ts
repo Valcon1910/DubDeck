@@ -15,6 +15,11 @@ export const BODIES: BodyDef[] = [
   { id: "rig", name: "Cyber Rig", need: 0, blurb: "Steel-panelled electric truck", paint: "#b4b8bd", accent: "#1c1d21" },
   { id: "zenith", name: "Zenith", need: 6, blurb: "Mid-engine track car, big wing", paint: "#ffcc12", accent: "#15161a" },
   { id: "formula", name: "Formula X", need: 12, blurb: "Open-wheel single-seater", paint: "#ff8a1f", accent: "#15161a" },
+  { id: "brawler", name: "Brawler", need: 0, blurb: "70s muscle fastback", paint: "#c2421a", accent: "#f4f1e8" },
+  { id: "kaze", name: "Kaze R", need: 4, blurb: "90s twin-turbo coupe", paint: "#e9ecef", accent: "#c8102e" },
+  { id: "scrambler", name: "Scrambler", need: 2, blurb: "Rally hatchback, mud flaps and all", paint: "#1d4fd8", accent: "#ffd21a" },
+  { id: "dune", name: "Dune Runner", need: 8, blurb: "Desert trophy truck", paint: "#f2efe6", accent: "#ff6a13" },
+  { id: "endura", name: "Endura", need: 16, blurb: "Endurance hypercar, Le Mans style", paint: "#0c7a5a", accent: "#e9f04a" },
 ];
 
 export const PAINTS: Item[] = [
@@ -42,6 +47,8 @@ export const WINGS: Item[] = [
   { id: "high", name: "High wing", need: 0 },
   { id: "low", name: "Lip", need: 0 },
   { id: "twin", name: "Twin deck", need: 5 },
+  { id: "duck", name: "Ducktail", need: 3 },
+  { id: "gt", name: "GT wing", need: 9 },
   { id: "swan", name: "Swan neck", need: 11 },
 ];
 
@@ -58,7 +65,10 @@ export const EXTRAS: Item[] = [
   { id: "none", name: "Nothing", need: 0 },
   { id: "antenna", name: "Antenna", need: 0 },
   { id: "lights", name: "Light bar", need: 4 },
+  { id: "rack", name: "Roof rack", need: 2 },
+  { id: "pod", name: "Rally lights", need: 6 },
   { id: "fin", name: "Shark fin", need: 8 },
+  { id: "box", name: "Roof box", need: 10 },
   { id: "scoop", name: "Roof scoop", need: 14 },
 ];
 

@@ -14,6 +14,7 @@ import { BIOMES, trackOf, type MapDef } from "../maps.ts";
 import { terrainAt } from "../sim/terrain.ts";
 import type { Track } from "../sim/track.ts";
 import { buildWorld, type World } from "./world.ts";
+import { setupScene } from "./roadworld.ts";
 
 /** Height above the road: the checkpoint arches are 9 tall. */
 const ABOVE = 12.5;
@@ -77,12 +78,7 @@ class Stage {
       const biome = BIOMES[map.biome];
       const track = trackOf(map);
       const scene = new THREE.Scene();
-      scene.fog = new THREE.Fog(biome.fog, biome.fogNear * 1.4, biome.fogFar * 1.5);
-      scene.background = new THREE.Color(biome.fog);
-      scene.add(new THREE.HemisphereLight(biome.sky, biome.ground, 1.5));
-      const sun = new THREE.DirectionalLight("#ffffff", 1.7);
-      sun.position.set(0.45, 1, 0.3);
-      scene.add(sun);
+      setupScene(scene, biome, map.biome, !!track.road, 1.4, 1.5);
       const world = buildWorld(track, biome, map.biome);
       scene.add(world.group);
       b = { world, scene, track, used: 0, ...routeOf(track) };
@@ -160,7 +156,7 @@ class Stage {
     this.camera.lookAt(this.look);
     const sky = c.b.world.group.getObjectByName("sky");
     if (sky) sky.position.copy(this.pos);
-    c.b.world.update(dt);
+    c.b.world.update(dt, 0, this.camera);
     this.renderer.render(c.b.scene, this.camera);
   }
 

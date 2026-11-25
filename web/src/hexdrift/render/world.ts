@@ -6,6 +6,7 @@ import { CELL, CURVE_IN, CURVE_OUT, DIRV, HALF_W, LEVEL, surface, THICK, WALL_H,
 import { NO_GROUND, terrainAt } from "../sim/terrain.ts";
 import type { Biome, BiomeId } from "../maps.ts";
 import { buildProps, type Breakables } from "./props.ts";
+import { buildRoadWorld } from "./roadworld.ts";
 
 const ARCH_H = 9;
 
@@ -76,12 +77,13 @@ export interface World {
   group: THREE.Group;
   /** Lamp posts, cones, fences...: knocked over by the car (only for show). */
   breakables: Breakables;
-  /** Animates the world (the crowd; cheer 0..1). */
-  update(dt: number, cheer?: number): void;
+  /** Animates the world (the crowd; cheer 0..1). The camera picks what is drawn on kit maps. */
+  update(dt: number, cheer?: number, cam?: THREE.Camera): void;
   dispose(): void;
 }
 
 export function buildWorld(track: Track, biome: Biome, biomeId: BiomeId): World {
+  if (track.road) return buildRoadWorld(track, biome, biomeId);
   const b = new Builder();
   const mats: THREE.Material[] = [];
   const geos: THREE.BufferGeometry[] = [];
@@ -283,6 +285,11 @@ export const GROUND: Record<BiomeId, { flat: string; bank: string; low: string }
   glacier: { flat: "#f2f8ff", bank: "#a9cfe8", low: "#5fa8d8" },
   sky: { flat: "#86d46c", bank: "#8c7a68", low: "#6b5d50" },
   desert: { flat: "#ecc985", bank: "#c99a52", low: "#b07a3a" },
+  miami: { flat: "#e6cf9e", bank: "#c9a774", low: "#7aa86a" },
+  storm: { flat: "#3a3f4e", bank: "#2a2e3a", low: "#1a1d26" },
+  alpine: { flat: "#8a8f7a", bank: "#6f6a60", low: "#4f6a3f" },
+  space: { flat: "#6a6f8a", bank: "#3f4258", low: "#25273a" },
+  baja: { flat: "#d9b27a", bank: "#b98a52", low: "#a07040" },
 };
 
 /**

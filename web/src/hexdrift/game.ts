@@ -8,6 +8,8 @@ import { COUNTDOWN, formatTime, HZ, newRace, pack, raceTicks, step, type Race } 
 import { CELL, groundAt, key, local } from "./sim/track.ts";
 import { propsOf } from "./sim/props.ts";
 import { buildWorld, GROUND, type World } from "./render/world.ts";
+import { LOOKS, setupScene } from "./render/roadworld.ts";
+import { GFX, gradeFor, guessGfx, Post, SunShadow, type Gfx } from "./render/post.ts";
 import { Particles } from "./render/particles.ts";
 import { Skids } from "./render/skids.ts";
 import { Weather, WEATHER } from "./render/weather.ts";
@@ -72,6 +74,7 @@ export class Game {
   private world: World;
   private car: CarModel;
   private shadow = blobShadow();
+  private castTick = 0;
   private trail: Trail;
   private fx = new FinishFx();
   private trailOn = 0;
@@ -80,6 +83,8 @@ export class Game {
   private glow: Particles;
   private skids = new Skids();
   private weather: Weather;
+  /** Lightning on stormy maps: two quick flashes every 6-15 s (looks only, not part of the race). */
+  private storm: { hemi: THREE.HemisphereLight; base: number; next: number; t: number } | null = null;
   private wrTrail = new Trail({ style: "ribbon", color: "#ffe27a", color2: "#ff9a1a" }, false, 0.75);
   /** What happened in the steps since the last frame. */
   private ev = { hit: 0, land: 0, cp: 0, boost: false };
@@ -114,6 +119,10 @@ export class Game {
   private minRatio: number;
   private lowered = 0;
   private frameMs = 16;
+  private post: Post;
+  private sun: SunShadow;
+  private gfxAuto = true;
+  private camDir = new THREE.Vector3();
   private resAt = 0;
   private hudCache = { time: "", speed: "", cps: "", count: "", split: "" };
   /** Your best run (splits are against this one). */
@@ -166,21 +175,31 @@ export class Game {
     this.maxRatio = Math.min(dpr, 2);
     this.minRatio = Math.min(dpr, 1);
     this.ratio = this.maxRatio;
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
+    // No canvas multisampling: frames are drawn into the HDR buffer (which has its own) and finished in render/post.ts.
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "high-performance" });
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.setPixelRatio(this.ratio);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.camera = new THREE.PerspectiveCamera(CAMS[this.cam].fov, 1, 0.5, 2600);
 
-    this.scene.fog = new THREE.Fog(biome.fog, biome.fogNear, biome.fogFar);
-    this.scene.background = new THREE.Color(biome.fog);
-    this.scene.add(new THREE.HemisphereLight(biome.sky, biome.ground, 1.5));
-    const sun = new THREE.DirectionalLight("#ffffff", 1.7);
-    sun.position.set(0.45, 1, 0.3);
-    this.scene.add(sun);
+    const lit = setupScene(this.scene, biome, map.biome, !!track.road);
+    const L = track.road ? LOOKS[map.biome] : undefined;
+    this.post = new Post(this.renderer, gradeFor(map.biome, L), lit.sun.position, lit.sun.color.clone().multiplyScalar(L ? 1 : 0.9));
+    this.sun = new SunShadow(lit.sun, this.scene);
+    if (map.biome === "storm" && lit.hemi) this.storm = { hemi: lit.hemi, base: lit.hemi.intensity, next: 4 + Math.random() * 6, t: -1 };
 
     this.world = buildWorld(track, biome, map.biome);
     this.scene.add(this.world.group);
-    this.car = buildCar({ look, mapAccent: biome.accent });
+    // Everything takes the sun's shadow; the scenery casts it (not the land, sky or sea).
+    this.world.group.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || o.name === "sky") return;
+      m.receiveShadow = true;
+      m.castShadow = !["terrain", "water", "road"].includes(o.name);
+    });
+    this.car = buildCar({ look, mapAccent: biome.accent, env: biome });
+    
     this.scene.add(this.car.root);
     this.scene.add(this.shadow.mesh);
     this.trail = new Trail(trailDef(itemOf("trail", look.trail) as Item));
@@ -237,6 +256,7 @@ export class Game {
   private resize() {
     const w = this.canvas.clientWidth || 1, h = this.canvas.clientHeight || 1;
     this.renderer.setSize(w, h, false);
+    this.post.setSize(this.canvas.width, this.canvas.height);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     const px = this.canvas.height || h;
@@ -519,8 +539,13 @@ export class Game {
       this.shadow.mesh.rotation.y = yaw;
       const s = 1 + (y - gh) * 0.06;
       this.shadow.mesh.scale.set(s, 1, s);
-      (this.shadow.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 1 - (y - gh) / 25);
+      // With real sun shadows the blob stays as a soft contact shadow.
+      (this.shadow.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 1 - (y - gh) / 25) * (this.post.shadowSize ? 0.55 : 1);
     } else this.shadow.mesh.visible = false;
+    // The car's Blender body arrives after loading (and changes in the garage): keep it casting.
+    if ((this.castTick = (this.castTick + 1) % 30) === 0 && this.post.shadowSize) {
+      this.car.root.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh && !m.castShadow && !(m.material as THREE.Material).transparent) { m.castShadow = true; m.receiveShadow = true; } });
+    }
 
     this.effects(x, y, z, yaw, road, dt, sdt);
 
@@ -578,8 +603,11 @@ export class Game {
     const sky = this.world.group.getObjectByName("sky");
     if (sky) sky.position.copy(this.camera.position);
     this.weather.update(dt, this.camera.position);
+    if (this.storm) this.lightning(dt);
 
-    this.renderer.render(this.scene, this.camera);
+    this.camera.getWorldDirection(this.camDir);
+    this.sun.update(this.vx.set(x, y, z), this.camDir, this.post.sunDir);
+    this.post.render(this.scene, this.camera, dt);
     this.updateHud();
   }
 
@@ -636,7 +664,7 @@ export class Game {
     const grounded = this.coast ? true : car.grounded;
     if (grounded && (running || this.coast)) {
       const off = !this.coast && car.offroad;
-      const ice = !off && road?.piece.ice === true;
+      const ice = !off && road?.ice === true;
       const slipK = this.coast ? Math.min(1, this.coast.v / 20) : Math.max(0, Math.min(1, (Math.abs(car.slip) - 2.5) / 6));
       const lastIn = this.race.inputs[this.race.inputs.length - 1] ?? 0;
       const brakeK = (lastIn & 32) && car.speed > 10 ? 0.7 : 0;
@@ -694,7 +722,7 @@ export class Game {
     // The crowd jumps at the start and goes wild at the finish.
     const want = this.race.phase === "finished" ? 1 : this.race.phase === "countdown" || (running && this.race.tick - COUNTDOWN < 150) ? 0.45 : 0;
     this.cheer = want;
-    this.world.update(sdt, this.cheer);
+    this.world.update(sdt, this.cheer, this.camera);
     this.smoke.update(sdt);
     this.glow.update(sdt);
     this.skids.update();
@@ -706,7 +734,9 @@ export class Game {
     if (!list) return 0;
     let lift = 0;
     for (const s of list) {
-      const dx = p.x - s.x, dz = p.z - s.z, m = 1.2;
+      let dx = p.x - s.x, dz = p.z - s.z;
+      const m = 1.2;
+      if (s.fx !== undefined && s.fz !== undefined) { const lx = dx * s.fz - dz * s.fx; dz = dx * s.fx + dz * s.fz; dx = lx; }
       const inside = s.box ? Math.abs(dx) < s.a + m && Math.abs(dz) < s.b + m : (dx / (s.a + m)) ** 2 + (dz / (s.b + m)) ** 2 < 1;
       if (inside && p.y < s.top + 1.5 && s.top - p.y < 14) lift = Math.max(lift, s.top + 1.5 - p.y);
     }
@@ -718,8 +748,17 @@ export class Game {
     const car = this.race.car;
     const v = Math.sqrt(car.vx * car.vx + car.vz * car.vz);
     if (v < 0.5) return;
-    const fin = this.race.track.pieces[this.race.track.pieces.length - 1];
-    const room = Math.max(4, CELL / 2 - 4 - local(fin, car.x, car.z).w);
+    const tr = this.race.track;
+    let room: number;
+    if (tr.road) {
+      // Whatever's left of the road past the line.
+      const f = tr.road.finish;
+      const past = (car.x - f.x) * f.fx + (car.z - f.z) * f.fz;
+      room = Math.max(6, tr.road.runout - past - 6);
+    } else {
+      const fin = tr.pieces[tr.pieces.length - 1];
+      room = Math.max(4, CELL / 2 - 4 - local(fin, car.x, car.z).w);
+    }
     this.coast = {
       x: car.x, y: car.y, z: car.z, yaw: car.yaw, yaw0: car.yaw,
       dx: car.vx / v, dz: car.vz / v, v, v0: v, dec: (v * v) / (2 * room),
@@ -822,6 +861,9 @@ export class Game {
     if (now - this.resAt < 2000) return;
     this.resAt = now;
     let r = this.ratio;
+    // Slow frames: first a lighter graphics level (when it's on Auto), then fewer pixels.
+    const lv = GFX.indexOf(this.post.gfx);
+    if (this.frameMs > 21 && this.gfxAuto && lv > 0) { this.applyGfx(GFX[lv - 1]); this.frameMs = 16; return; }
     // Few, big steps; and once it has had to step down twice, it stays put.
     if (this.frameMs > 21 && r > this.minRatio) { r = Math.max(this.minRatio, r - 0.35); this.lowered++; }
     else if (this.frameMs < 12 && r < this.maxRatio && this.lowered < 2) r = Math.min(this.maxRatio, r + 0.25);
@@ -832,8 +874,38 @@ export class Game {
     }
   }
 
+  /** Graphics: "auto" picks a level for the device and steps down if frames get slow. */
+  setGraphics(mode: Gfx | "auto") {
+    this.gfxAuto = mode === "auto";
+    this.applyGfx(mode === "auto" ? guessGfx() : mode);
+  }
+
+  get graphics(): Gfx { return this.post.gfx; }
+
+  private applyGfx(level: Gfx) {
+    this.post.setLevel(level);
+    this.sun.setLevel(this.post.shadowSize);
+  }
+
+  private lightning(dt: number) {
+    const s = this.storm!;
+    if (s.t < 0) {
+      s.next -= dt;
+      if (s.next <= 0) { s.t = 0; s.next = 6 + Math.random() * 9; }
+      return;
+    }
+    s.t += dt;
+    // A bright strike, a short gap, a weaker second strike, then fade.
+    const t = s.t;
+    const f = t < 0.08 ? 1 : t < 0.16 ? 0.15 : t < 0.24 ? 0.7 : t < 0.7 ? 0.7 * (1 - (t - 0.24) / 0.46) : 0;
+    s.hemi.intensity = s.base * (1 + f * 2.2);
+    this.post.flash = f * 0.35;
+    if (t >= 0.7) { s.t = -1; s.hemi.intensity = s.base; this.post.flash = 0; }
+  }
+
   dispose() {
     this.endIntro();
+    this.post.dispose();
     this.stop();
     this.ro.disconnect();
     document.removeEventListener("visibilitychange", this.onVis);

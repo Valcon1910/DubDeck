@@ -19,3 +19,19 @@ export function dsin(x: number): number {
 export const dcos = (x: number): number => dsin(x + HALF_PI);
 
 export const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
+
+// Hashing and smooth value noise (Math.imul and Math.floor are exact everywhere).
+export function hash(ix: number, iz: number, seed: number) {
+  let h = Math.imul(ix, 374761393) ^ Math.imul(iz, 668265263) ^ Math.imul(seed, 1442695041);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+export const smooth = (t: number) => t * t * (3 - 2 * t);
+/** Smooth value noise, 0..1. */
+export function noise(x: number, z: number, seed: number) {
+  const ix = Math.floor(x), iz = Math.floor(z);
+  const fx = smooth(x - ix), fz = smooth(z - iz);
+  const a = hash(ix, iz, seed), b = hash(ix + 1, iz, seed), c = hash(ix, iz + 1, seed), d = hash(ix + 1, iz + 1, seed);
+  return a + (b - a) * fx + (c - a) * fz + (a - b - c + d) * fx * fz;
+}
+
