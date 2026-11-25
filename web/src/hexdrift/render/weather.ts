@@ -14,6 +14,11 @@ export const WEATHER: Record<BiomeId, Spec> = {
   glacier: { kind: "snow", count: 1800, box: [70, 34, 70], vel: [1.5, -3.2, 0.8], color: "#ffffff", alpha: 0.95, size: 0.3, len: 0 },
   canyon: { kind: "dust", count: 900, box: [80, 22, 80], vel: [9, 0.4, 3], color: "#ffd2a8", alpha: 0.35, size: 0.32, len: 0 },
   desert: { kind: "dust", count: 1000, box: [80, 18, 80], vel: [11, 0.2, -4], color: "#fff0cc", alpha: 0.38, size: 0.28, len: 0 },
+  miami: { kind: "dust", count: 260, box: [90, 24, 90], vel: [2.5, 0.3, 1], color: "#fff0d8", alpha: 0.3, size: 0.18, len: 0 },
+  storm: { kind: "rain", count: 3400, box: [70, 36, 70], vel: [-6, -46, 3], color: "#b4c8ff", alpha: 0.45, size: 0, len: 1.8 },
+  alpine: { kind: "snow", count: 700, box: [80, 34, 80], vel: [1, -2.4, 0.5], color: "#ffffff", alpha: 0.8, size: 0.22, len: 0 },
+  space: { kind: "wind", count: 220, box: [140, 60, 140], vel: [0, 0, 30], color: "#9fe8ff", alpha: 0.18, size: 0, len: 9 },
+  baja: { kind: "dust", count: 900, box: [80, 18, 80], vel: [10, 0.3, -3], color: "#f3dcb2", alpha: 0.36, size: 0.3, len: 0 },
   sky: { kind: "wind", count: 160, box: [110, 50, 110], vel: [3, 0, 26], color: "#ffffff", alpha: 0.16, size: 0, len: 7 },
 };
 

@@ -4,6 +4,9 @@
 // what you hit). Roads sit on embankments that blend into rolling biome
 // ground; gaps cut ravines whose bottom sends you back to the last checkpoint.
 // Only + - * / and sqrt, so every device and the record checker agree exactly.
+import { hash, noise } from "./math.ts";
+export { hash };
+import { roadTerrain } from "./road.ts";
 import { CELL, CURVE_IN, CURVE_OUT, DIRV, HALF_W, heightAlong, local, type Piece, type Track } from "./track.ts";
 
 /** How far the road surface sits above the ground right beside it. */
@@ -16,20 +19,6 @@ export const RAVINE = 7;
 const ISLAND = 12;
 
 const NONE = -1e9;
-
-export function hash(ix: number, iz: number, seed: number) {
-  let h = Math.imul(ix, 374761393) ^ Math.imul(iz, 668265263) ^ Math.imul(seed, 1442695041);
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-}
-const smooth = (t: number) => t * t * (3 - 2 * t);
-/** Smooth value noise, 0..1. */
-function noise(x: number, z: number, seed: number) {
-  const ix = Math.floor(x), iz = Math.floor(z);
-  const fx = smooth(x - ix), fz = smooth(z - iz);
-  const a = hash(ix, iz, seed), b = hash(ix + 1, iz, seed), c = hash(ix, iz + 1, seed), d = hash(ix + 1, iz + 1, seed);
-  return a + (b - a) * fx + (c - a) * fz + (a - b - c + d) * fx * fz;
-}
 
 /** Distance from a point to a piece's road area (0 on the road). */
 export function distTo(p: Piece, u: number, w: number) {
@@ -45,10 +34,15 @@ export function distTo(p: Piece, u: number, w: number) {
   return Math.sqrt(du * du + dw * dw);
 }
 
-export interface TerrainInfo { h: number; ravine: boolean }
+export interface TerrainInfo {
+  h: number; ravine: boolean;
+  /** Road maps: top speed on this ground, and what it is (MAT in road.ts). */
+  rough?: number; mat?: number;
+}
 
 /** Ground height at (x, z); h is very low where there's nothing (sky maps). */
 export function terrainAt(track: Track, x: number, z: number): TerrainInfo {
+  if (track.road) return roadTerrain(track.road, x, z);
   const cx = Math.round(x / CELL), cz = Math.round(z / CELL);
   const sky = track.sky === true;
   const bank = 0.4;

@@ -2,9 +2,10 @@
 // Built-in maps. Medal times are in steps (1/60 s); "vortex" is the author
 // time. They were set from the autopilot (sim/bot.ts) with
 // `node scripts/hexdrift-maps.ts`, which also checks each map can be finished.
-import { buildTrack, type Track } from "./track.ts";
+import { buildRoadTrack, buildTrack, type Track } from "./track.ts";
+import type { RoadDef } from "./road.ts";
 
-export type BiomeId = "city" | "canyon" | "glacier" | "sky" | "desert";
+export type BiomeId = "city" | "canyon" | "glacier" | "sky" | "desert" | "miami" | "storm" | "alpine" | "space" | "baja";
 
 export interface Biome {
   name: string;
@@ -18,6 +19,11 @@ export const BIOMES: Record<BiomeId, Biome> = {
   canyon: { name: "Canyon", sky: "#f2b38a", fog: "#e9a27a", ground: "#b8532f", road: "#5b4a42", roadAlt: "#53433c", edge: "#f4e2c4", wall: "#8b3a1e", accent: "#ffe066", fogNear: 160, fogFar: 640 },
   glacier: { name: "Glacier", sky: "#bfe3ff", fog: "#d9efff", ground: "#eef7ff", road: "#5a6b80", roadAlt: "#536276", edge: "#ffffff", wall: "#7fd0ff", accent: "#3dbbff", fogNear: 120, fogFar: 520 },
   sky: { name: "Sky", sky: "#7cc7ff", fog: "#bfe6ff", ground: "#ffffff", road: "#4c5672", roadAlt: "#454e69", edge: "#ffe27a", wall: "#ffffff", accent: "#ff7ad9", fogNear: 200, fogFar: 760 },
+  miami: { name: "Miami", sky: "#ff9a6b", fog: "#ffb38a", ground: "#d8b98a", road: "#4a4552", roadAlt: "#46414e", edge: "#ffffff", wall: "#f2e6da", accent: "#ff4fa3", fogNear: 260, fogFar: 1400 },
+  storm: { name: "Storm", sky: "#0b1024", fog: "#151b33", ground: "#1a1f2e", road: "#25262e", roadAlt: "#23242c", edge: "#dfe8ff", wall: "#3a4258", accent: "#2ee6ff", fogNear: 90, fogFar: 700 },
+  alpine: { name: "Alpine", sky: "#7fb6ff", fog: "#cfe3f7", ground: "#6f8f5a", road: "#4b4d55", roadAlt: "#47494f", edge: "#ffffff", wall: "#c9ced6", accent: "#ff5a3d", fogNear: 300, fogFar: 1800 },
+  space: { name: "Space", sky: "#05030f", fog: "#0a0720", ground: "#1b1830", road: "#2b2d3e", roadAlt: "#282a3a", edge: "#7cf7ff", wall: "#5b3dff", accent: "#ff3df2", fogNear: 600, fogFar: 2600 },
+  baja: { name: "Baja", sky: "#9cc8f0", fog: "#efd9b4", ground: "#d9b27a", road: "#9a7552", roadAlt: "#93704e", edge: "#fff3d6", wall: "#b9874f", accent: "#ff7a1a", fogNear: 260, fogFar: 1600 },
   desert: { name: "Desert", sky: "#ffd9a0", fog: "#ffe2b4", ground: "#e8c27a", road: "#6b5b4b", roadAlt: "#625344", edge: "#fff3d6", wall: "#c98a3d", accent: "#ff6b3d", fogNear: 180, fogFar: 720 },
 };
 
@@ -28,7 +34,10 @@ export interface MapDef {
   difficulty: "Beginner" | "Medium" | "Hard" | "Expert";
   /** One or two sentences for the map's page. */
   blurb: string;
-  recipe: string;
+  /** Tile maps: the route as tiles. */
+  recipe?: string;
+  /** Road maps: smooth roads over real terrain. */
+  road?: RoadDef;
   medals: { vortex: number; gold: number; silver: number; bronze: number };
   /**
    * The oldest physics version whose times still count on this map (for its
@@ -36,9 +45,25 @@ export interface MapDef {
    * changes so old times no longer compare; leave it when it doesn't.
    */
   since: number;
+  /** Still being built: left out of the game. */
+  wip?: boolean;
 }
 
-export const MAPS: MapDef[] = [
+export const ALL_MAPS: MapDef[] = [
+  {
+    id: "miami-sunset", name: "Miami Sunset", biome: "miami", difficulty: "Medium",
+    blurb: "Golden hour on the beach boulevard. Six lanes wide, palms and hotels on one side, the sea on the other. Cut across the sand, fly the marina and thread the downtown alley.",
+    road: {
+      land: { kind: "coast", seed: 11, base: 3, amp: 4, scale: 260, sea: 0, shore: [-1, 0, 90], fall: 26, shoulder: 0.15, verge: 6 },
+      start: [0, 0, 3.2, 0], bank: 4,
+      route: "H12 S60 B S140 @a L22/240 S60 R22/240 @b S120 C S80 L90/110 U9 S140 L90/150 D9 S120 C H8 S40 @c R90/40 S50 L90/40 @d S90 L90/70 S40 J3 S30 G34/-3 S70 C H11 L90/90 B S180 R45/120 S80 F S70",
+      alts: [
+        { from: "a", to: "b", via: [[0.5, 22]], hw: 7, surf: "sand", flush: true },
+        { from: "c", to: "d", via: [[0.5, -8]], hw: 4.5 },
+      ],
+    },
+    medals: { vortex: 3000, gold: 3300, silver: 3800, bronze: 4600 }, since: 6, wip: true,
+  },
   {
     id: "neon-downtown", blurb: "Midnight in the glass canyons. Long neon straights, a boost through the plaza and three tight turns that reward a clean line.", name: "Neon Downtown", biome: "city", difficulty: "Beginner",
     recipe: "W+ S3 C R S2 B S2 R S C S3 L S2 R S2 C S2 R S4 B F",
@@ -66,10 +91,16 @@ export const MAPS: MapDef[] = [
   },
 ];
 
+/** The maps in the game. */
+export const MAPS: MapDef[] = ALL_MAPS.filter((m) => !m.wip);
+
 const built = new Map<string, Track>();
 export function trackOf(m: MapDef): Track {
   let t = built.get(m.id);
-  if (!t) { t = buildTrack(m.recipe, { sky: m.biome === "sky", theme: m.biome }); built.set(m.id, t); }
+  if (!t) {
+    t = m.road ? buildRoadTrack(m.road, m.biome) : buildTrack(m.recipe!, { sky: m.biome === "sky", theme: m.biome });
+    built.set(m.id, t);
+  }
   return t;
 }
 

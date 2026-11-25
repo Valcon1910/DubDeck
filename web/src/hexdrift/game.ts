@@ -636,7 +636,7 @@ export class Game {
     const grounded = this.coast ? true : car.grounded;
     if (grounded && (running || this.coast)) {
       const off = !this.coast && car.offroad;
-      const ice = !off && road?.piece.ice === true;
+      const ice = !off && road?.ice === true;
       const slipK = this.coast ? Math.min(1, this.coast.v / 20) : Math.max(0, Math.min(1, (Math.abs(car.slip) - 2.5) / 6));
       const lastIn = this.race.inputs[this.race.inputs.length - 1] ?? 0;
       const brakeK = (lastIn & 32) && car.speed > 10 ? 0.7 : 0;

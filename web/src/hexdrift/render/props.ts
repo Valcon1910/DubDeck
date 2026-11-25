@@ -207,6 +207,11 @@ const THEME_BREAKS: Record<BiomeId, { edge?: BreakKind; fence: boolean; bits: Br
   glacier: { fence: true, bits: ["snowman", "sapling", "sapling", "crate"] },
   desert: { fence: true, bits: ["cactus", "barrel", "cactus"], curve: "cone" },
   sky: { edge: "lantern", fence: false, bits: ["crate"] },
+  miami: { edge: "lamp", fence: false, bits: ["bin", "cone"], curve: "cone" },
+  storm: { edge: "lamp", fence: false, bits: ["bin", "cone", "barrel"], curve: "cone" },
+  alpine: { fence: true, bits: ["snowman", "sapling", "crate"], curve: "cone" },
+  space: { edge: "lantern", fence: false, bits: ["crate", "barrel"] },
+  baja: { fence: true, bits: ["cactus", "barrel", "crate"], curve: "cone" },
 };
 
 interface Bit {

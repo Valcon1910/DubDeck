@@ -4,7 +4,8 @@
 // a list of bytes: replaying them gives the exact same drive (ghosts, and
 // record checks on the server later).
 import { clamp, dcos, dsin } from "./math.ts";
-import { CELL, DIRV, groundAt, HALF_W, heightAlong, key, local, CURVE_IN, CURVE_OUT, LEVEL, THICK, WALL_H, WALL_T, yawOf, type Piece, type Track } from "./track.ts";
+import { CELL, DIRV, groundAt, HALF_W, heightAlong, key, local, CURVE_IN, CURVE_OUT, LEVEL, THICK, WALL_H, WALL_T, yawOf, type Piece, type Spot, type Track } from "./track.ts";
+import { roadSolids } from "./road.ts";
 import { NO_GROUND, terrainAt } from "./terrain.ts";
 import { hitSolids } from "./props.ts";
 
@@ -53,12 +54,15 @@ export interface Car {
   // Read-outs for effects and sounds (never read back by the physics):
   hit: number; // speed lost into a wall or a solid this step
   land: number; // speed downwards when it landed this step
+  /** Top speed on the ground it's driving on (off the road). */
+  rough: number;
 }
 
-function place(car: Car, p: Piece) {
-  car.x = p.x * CELL; car.z = p.z * CELL; car.y = p.y * LEVEL;
+function place(car: Car, p: Spot) {
+  car.x = p.x; car.z = p.z; car.y = p.y;
   car.vx = car.vy = car.vz = 0;
-  car.yaw = yawOf(p.d); car.yawRate = 0;
+  car.yaw = p.yaw; car.yawRate = 0;
+  car.rough = VMAX_OFF;
   car.grounded = true; car.nx = 0; car.ny = 1; car.nz = 0;
   car.speed = 0; car.slip = 0; car.boosting = 0; car.offroad = false; car.drift = 0; car.hit = 0; car.land = 0;
 }
@@ -71,7 +75,7 @@ export interface Race {
   phase: Phase;
   tick: number; // steps since the start (countdown included)
   cps: Set<number>;
-  respawnAt: Piece;
+  respawnAt: Spot;
   inputs: number[]; // one byte per running step
   /** Checkpoint split times, in steps since GO. */
   splits: number[];
@@ -80,8 +84,8 @@ export interface Race {
 
 export function newRace(track: Track): Race {
   const car = {} as Car;
-  place(car, track.start);
-  return { track, car, phase: "countdown", tick: 0, cps: new Set(), respawnAt: track.start, inputs: [], splits: [], finishTicks: 0 };
+  place(car, track.spawn);
+  return { track, car, phase: "countdown", tick: 0, cps: new Set(), respawnAt: track.spawn, inputs: [], splits: [], finishTicks: 0 };
 }
 
 /** Steps since GO (the race time). */
@@ -104,10 +108,11 @@ export function step(r: Race, byte: number) {
   if (byte & 128) { respawn(r); return; }
 
   const fx = dsin(car.yaw), fz = dcos(car.yaw);
+  const grav = GRAVITY * r.track.grav;
   if (car.grounded) {
     const off = car.offroad;
     const g = off ? null : groundAt(r.track, car.x, car.y, car.z, 0.6);
-    const ice = g?.piece.ice === true;
+    const ice = g?.ice === true;
     const nx = car.nx, ny = car.ny, nz = car.nz;
     // Forward and right along the road's surface.
     let tx = fx - nx * (fx * nx + fz * nz), ty = -ny * (fx * nx + fz * nz), tz = fz - nz * (fx * nx + fz * nz);
@@ -117,7 +122,7 @@ export function step(r: Race, byte: number) {
     let vf = car.vx * tx + car.vy * ty + car.vz * tz;
     let vl = car.vx * rx + car.vy * ry + car.vz * rz;
 
-    if (gas) vf += ENGINE * (1 - vf / (off ? VMAX_OFF : VMAX)) * DT * (vf < 0 ? 2.5 : 1);
+    if (gas) vf += ENGINE * (1 - vf / (off ? car.rough : VMAX)) * DT * (vf < 0 ? 2.5 : 1);
     if (off) vf -= vf * 1.2 * DT; // grass and sand are slow
     if (brake) {
       if (vf > 0.5) vf -= 58 * DT;
@@ -130,14 +135,14 @@ export function step(r: Race, byte: number) {
     car.drift += ((drift ? 1 : 0) - car.drift) * Math.min(1, (drift ? 9 : 2.6) * DT);
     const dr = car.drift;
     vf -= vf * 0.12 * dr * DT;
-    if (g && g.piece.t === "boost") { vf = Math.min(vf + BOOST * DT, VMAX * 1.45); car.boosting = 40; }
+    if (g && g.boost) { vf = Math.min(vf + BOOST * DT, VMAX * 1.45); car.boosting = 40; }
     if (car.boosting > 0) car.boosting--;
 
-    const grip = (10 - 8.5 * dr) * (ice ? 0.2 : 1) * (off ? 0.6 : 1);
+    const grip = (10 - 8.5 * dr) * (ice ? 0.2 : 1) * (off ? 0.6 : 1) * (g ? g.grip : 1);
     vl -= vl * Math.min(1, grip * DT);
     car.vx = tx * vf + rx * vl; car.vy = ty * vf + ry * vl; car.vz = tz * vf + rz * vl;
     // Gravity along the slope.
-    car.vx -= GRAVITY * DT * (0 - nx * ny); car.vy -= GRAVITY * DT * (1 - ny * ny); car.vz -= GRAVITY * DT * (0 - nz * ny);
+    car.vx -= grav * DT * (0 - nx * ny); car.vy -= grav * DT * (1 - ny * ny); car.vz -= grav * DT * (0 - nz * ny);
 
     const sp = vf < 0 ? -vf : vf;
     let target = -steer * 2.0 * Math.min(1, sp / 6) / (1 + sp / 50) * (vf < 0 ? -1 : 1);
@@ -145,7 +150,7 @@ export function step(r: Race, byte: number) {
     car.yawRate += (target - car.yawRate) * Math.min(1, (ice ? 2.5 : 5) * DT);
     car.speed = vf; car.slip = vl;
   } else {
-    car.vy -= GRAVITY * DT;
+    car.vy -= grav * DT;
     car.yawRate += (-steer * 1.6 - car.yawRate) * Math.min(1, 6 * DT);
     car.speed = car.vx * fx + car.vz * fz;
     car.slip = 0;
@@ -168,7 +173,7 @@ export function step(r: Race, byte: number) {
     car.y = g.h;
     settle(car, g.nx, g.ny, g.nz);
     car.offroad = false;
-    reached(r, g.piece);
+    if (g.piece) reached(r, g.piece);
   } else if (ter.h > NO_GROUND && car.y <= ter.h + (car.grounded && car.offroad ? 0.9 : 0.05)) {
     if (ter.ravine) { respawn(r); return; }
     if (py < ter.h - 0.9) {
@@ -186,13 +191,19 @@ export function step(r: Race, byte: number) {
       const n = 1 / Math.sqrt(ax * ax + 1 + az * az);
       settle(car, ax * n, n, az * n);
       car.offroad = true;
+      car.rough = ter.rough ?? VMAX_OFF;
     }
   } else {
     car.grounded = false;
     car.offroad = false;
     car.nx = 0; car.ny = 1; car.nz = 0;
   }
-  solids(r, px, pz);
+  if (r.track.road) {
+    const w = roadSolids(r.track.road, car, px, pz, CAR_R, CAR_H);
+    if (w > car.hit) car.hit = w;
+    gates(r, px, pz);
+    if (r.phase !== "running") return;
+  } else solids(r, px, pz);
   const hard = hitSolids(r.track, car, CAR_R, CAR_H);
   if (hard > car.hit) car.hit = hard;
   if (car.y < r.track.minY - 30) respawn(r);
@@ -291,10 +302,32 @@ function push(car: Car, p: Piece, c: number, w: number, y0: number, y1: number, 
 function reached(r: Race, p: Piece) {
   if (p.t === "checkpoint" && p.cp !== undefined && !r.cps.has(p.cp)) {
     r.cps.add(p.cp);
-    r.respawnAt = p;
+    r.respawnAt = { x: p.x * CELL, y: p.y * LEVEL, z: p.z * CELL, yaw: yawOf(p.d) };
     r.splits.push(raceTicks(r));
   }
   if (p.t === "finish" && r.cps.size === r.track.checkpoints) {
+    r.phase = "finished";
+    r.finishTicks = r.tick - COUNTDOWN;
+  }
+}
+
+/** Road maps: checkpoints and the finish are lines across the road, crossed going forwards. */
+function gates(r: Race, px: number, pz: number) {
+  const road = r.track.road!, car = r.car;
+  const cross = (g: { x: number; y: number; z: number; fx: number; fz: number; hw: number }) => {
+    const a0 = (px - g.x) * g.fx + (pz - g.z) * g.fz, a1 = (car.x - g.x) * g.fx + (car.z - g.z) * g.fz;
+    if (!(a0 < 0 && a1 >= 0)) return false;
+    const lat = -(car.x - g.x) * g.fz + (car.z - g.z) * g.fx;
+    const dy = car.y - g.y;
+    return lat < g.hw + 3 && lat > -g.hw - 3 && dy < 14 && dy > -6;
+  };
+  for (const g of road.gates) {
+    if (r.cps.has(g.cp) || !cross(g)) continue;
+    r.cps.add(g.cp);
+    r.respawnAt = { x: g.x, y: g.y, z: g.z, yaw: g.yaw };
+    r.splits.push(raceTicks(r));
+  }
+  if (r.cps.size === r.track.checkpoints && cross(road.finish)) {
     r.phase = "finished";
     r.finishTicks = r.tick - COUNTDOWN;
   }

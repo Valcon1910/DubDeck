@@ -4,6 +4,7 @@
 // physics fast and identical everywhere.
 
 import { dcos, dsin } from "./math.ts";
+import { buildRoad, roadGround, type Road, type RoadDef } from "./road.ts";
 
 export const CELL = 20; // size of a grid cell
 export const HALF_W = 7; // half the road width
@@ -36,12 +37,20 @@ export interface Piece {
 export const DIRV: readonly (readonly [number, number])[] = [[0, 1], [-1, 0], [0, -1], [1, 0]];
 export const yawOf = (d: Dir) => -d * (Math.PI / 2);
 
+/** Where a car is put down (the start, a checkpoint). */
+export interface Spot { x: number; y: number; z: number; yaw: number }
+
 export interface Track {
-  pieces: Piece[]; // in driving order (start first)
+  pieces: Piece[]; // in driving order (start first); empty on road maps
+  /** Road maps (smooth roads instead of tiles). */
+  road?: Road;
+  spawn: Spot;
+  /** Gravity as a share of normal. */
+  grav: number;
   cells: Map<number, Piece[]>;
   checkpoints: number;
   minY: number;
-  start: Piece;
+  start?: Piece;
   /** Points along the middle of the road, in order, about 5 units apart. */
   line: { x: number; y: number; z: number }[];
   /** Empty cells jumped over (G), for the ravines under them. */
@@ -96,10 +105,18 @@ export function slope(p: Piece) {
   return p.t === "up" ? LEVEL / CELL : p.t === "down" ? -LEVEL / CELL : p.t === "ramp" ? RAMP_RISE / CELL : 0;
 }
 
-export interface Ground { h: number; piece: Piece; nx: number; ny: number; nz: number }
+export interface Ground {
+  h: number; nx: number; ny: number; nz: number;
+  /** The tile (tile maps only). */
+  piece?: Piece;
+  boost: boolean; ice: boolean;
+  /** Tyre grip as a share of asphalt's. */
+  grip: number;
+}
 
 /** The highest road under (px, pz) that isn't more than `reach` above py. */
 export function groundAt(track: Track, px: number, py: number, pz: number, reach = 1): Ground | null {
+  if (track.road) return roadGround(track.road, px, py, pz, reach);
   const list = track.cells.get(key(Math.round(px / CELL), Math.round(pz / CELL)));
   if (!list) return null;
   let best: Ground | null = null;
@@ -110,7 +127,7 @@ export function groundAt(track: Track, px: number, py: number, pz: number, reach
     const k = slope(p);
     const [fx, fz] = DIRV[p.d];
     const n = 1 / Math.sqrt(1 + k * k);
-    best = { h, piece: p, nx: -k * fx * n, ny: n, nz: -k * fz * n };
+    best = { h, piece: p, nx: -k * fx * n, ny: n, nz: -k * fz * n, boost: p.t === "boost", ice: p.ice === true, grip: 1 };
   }
   return best;
 }
@@ -177,8 +194,10 @@ export function buildTrack(recipe: string, opts: { sky?: boolean; theme?: string
     const k = key(p.x, p.z);
     cells.set(k, [...(cells.get(k) ?? []), p]);
   }
+  const st = pieces[0];
   return {
-    pieces, cells, checkpoints: cp, start: pieces[0], line, gaps, sky: opts.sky, theme: opts.theme,
+    pieces, cells, checkpoints: cp, start: st, line, gaps, sky: opts.sky, theme: opts.theme,
+    spawn: { x: st.x * CELL, y: st.y * LEVEL, z: st.z * CELL, yaw: yawOf(st.d) }, grav: 1,
     minY: Math.min(...pieces.map((p) => p.y * LEVEL - (p.t === "down" ? LEVEL : 0))),
   };
 }
@@ -211,4 +230,18 @@ function gapLine(x: number, z: number, y: number, d: Dir) {
     const w = -CELL / 2 + ((i + 0.5) / 4) * CELL;
     return { x: x * CELL + fx * w, y: y * LEVEL, z: z * CELL + fz * w };
   });
+}
+
+/** A road map as a track. */
+export function buildRoadTrack(def: RoadDef, theme: string): Track {
+  const road = buildRoad(def);
+  const main = road.strands[0].pts;
+  const line: Track["line"] = [];
+  for (let i = 0; i < main.length; i += 2) line.push({ x: main[i].x, y: main[i].y, z: main[i].z });
+  const s0 = main[0];
+  return {
+    pieces: [], cells: new Map(), checkpoints: road.gates.length, line, gaps: [], theme, road,
+    sky: def.land.kind === "isles" || def.land.kind === "void",
+    spawn: { x: s0.x, y: s0.y, z: s0.z, yaw: s0.yaw }, grav: road.grav, minY: road.minY,
+  };
 }
