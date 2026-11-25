@@ -709,6 +709,40 @@ function realWheelGeo(r: number, w: number, style: RimStyle, tyre: Tyre): WheelG
   return res;
 }
 
+/** Tail lights with the car's lights on (they brighten when braking). */
+const TAIL_ON = "#c0142c";
+
+/** Metallic flake: tiny mirror chips in the paint that glint as the car
+ * turns. Worked out from the surface position (the bodies have no texture
+ * coordinates) and faded out once a chip is smaller than a pixel, so it shows
+ * up close (garage, podium) and never shimmers on a phone screen in a race. */
+function flake<T extends THREE.MeshPhysicalMaterial>(m: T, on: boolean): T {
+  if (!on) return m;
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader
+      .replace("#include <common>", "#include <common>\nvarying vec3 vFlakePos;")
+      .replace("#include <project_vertex>", "#include <project_vertex>\nvFlakePos = transformed;");
+    sh.fragmentShader = sh.fragmentShader
+      .replace("#include <common>", "#include <common>\nvarying vec3 vFlakePos;")
+      .replace("#include <opaque_fragment>", `
+        {
+          vec3 cell = floor(vFlakePos * 200.0);
+          float h = fract(sin(dot(cell, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+          vec3 tilt = vec3(fract(h * 13.7), fract(h * 71.3), fract(h * 29.1)) - 0.5;
+          vec3 fn = normalize(normal + tilt * 0.9);
+          vec3 key = normalize((viewMatrix * vec4(0.35, 1.0, 0.45, 0.0)).xyz);
+          vec3 v = normalize(vViewPosition);
+          float glint = pow(max(dot(reflect(v, fn), key), 0.0), 60.0) * step(0.5, h);
+          // Only where a chip covers a pixel or more (no sub-pixel shimmer).
+          float fine = clamp(1.6 - 1.4 * length(fwidth(vFlakePos * 200.0)), 0.0, 1.0);
+          outgoingLight += mix(diffuseColor.rgb, vec3(1.0), 0.6) * glint * fine * 1.2;
+        }
+        #include <opaque_fragment>`);
+  };
+  m.customProgramCacheKey = () => "flake";
+  return m;
+}
+
 export function buildCar(opts: CarOptions = {}): CarModel {
   const look = opts.look ?? DEFAULT_LOOK;
   const ghost = opts.ghost ?? false;
@@ -752,18 +786,18 @@ export function buildCar(opts: CarOptions = {}): CarModel {
   const M: Record<Part, THREE.Material> = ghostM
     ? { paint: ghostM, accent: ghostM, trim: ghostM, gloss: ghostM, glass: ghostM, lamp: ghostM, tail: ghostM, metal: ghostM, chrome: ghostM, white: ghostM }
     : {
-      paint: keep(new THREE.MeshPhysicalMaterial({
+      paint: keep(flake(new THREE.MeshPhysicalMaterial({
         color: chromePaint ? "#c9d0da" : color, envMap: env, side: THREE.DoubleSide,
         metalness: chromePaint ? 1 : steel ? 0.85 : 0.45, roughness: chromePaint ? 0.06 : steel ? 0.38 : 0.34,
         clearcoat: steel || chromePaint ? 0 : 1, clearcoatRoughness: 0.05, envMapIntensity: 0.85, emissive: obsidian ? "#0b0820" : "#000000",
-      })),
+      }), !steel && !chromePaint)),
       // Details sit on the paint: drawn a hair in front so they never flicker.
       accent: pbr(accent, 0.3, 0.35, D),
       trim: pbr("#16171b", 0.1, 0.75, { envMapIntensity: 0.6, ...D }),
       gloss: pbr("#0b0c0f", 0.3, 0.12, D),
       glass: pbr("#0a101d", 0.2, 0.03, { envMapIntensity: 1.3, emissive: "#03050a", ...D }),
       lamp: keep(new THREE.MeshBasicMaterial({ color: "#f4f8ff", side: THREE.DoubleSide, ...D })),
-      tail: keep(new THREE.MeshBasicMaterial({ color: "#8a1020", side: THREE.DoubleSide, ...D })),
+      tail: keep(new THREE.MeshBasicMaterial({ color: TAIL_ON, side: THREE.DoubleSide, ...D })),
       metal: pbr("#9aa1ad", 0.9, 0.32, D),
       chrome: pbr("#eef1f6", 1, 0.07, D),
       white: pbr("#f2f4f8", 0.1, 0.3, D),
@@ -891,7 +925,7 @@ export function buildCar(opts: CarOptions = {}): CarModel {
         w.spin.rotation.x += (speed / w.r) * dt;
         if (w.front) w.pivot.rotation.y = steerAngle;
       }
-      if (!ghost && brake !== braking) { braking = brake; tailM.color.set(brake ? "#ff2a3d" : "#8a1020"); }
+      if (!ghost && brake !== braking) { braking = brake; tailM.color.set(brake ? "#ff2a3d" : TAIL_ON); }
     },
     setBoost(on) {
       for (const f of flames) { f.visible = on; f.scale.z = on ? 0.8 + Math.random() * 0.5 : 1; }

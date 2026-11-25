@@ -238,15 +238,30 @@ def rim_y5():
 
 
 def rim_aero():
-    """Off-road: deep dish, six wide spokes and a bolted beadlock ring."""
+    """The electric truck's aero cover: a flat dish folded into twelve
+    facets like a turbine, round a small hub."""
     rr = 0.60
-    obs = [barrel("rim_aero", rr), hub_cap("cap")]
-    for k in range(6):
-        obs.append(spoke(rr, 2 * math.pi * k / 6, 0.075, 0.09, 0.08, x0=0.19, x1=0.3, segs=6, crown=0.75))
-    ring = spin("bead", "rim", [(0.36, rr - 0.075), (0.378, rr - 0.07), (0.384, rr - 0.03), (0.378, rr + 0.012), (0.356, rr + 0.02)], 48)
-    sharp(ring, 40); obs.append(ring)
-    for k in range(16):
-        obs.append(cyl("bolt", "rim", 6, 0.011, 0.38, 0.393, rr - 0.03, 2 * math.pi * (k + 0.5) / 16))
+    obs = [barrel("rim_aero", rr)]
+    b = bmesh.new()
+    ro = rr - 0.055
+    centre = b.verts.new(P(0.335, 0, 0))
+    ring_in, ring_out = [], []
+    for k in range(12):
+        a = 2 * math.pi * k / 12
+        ridge = k % 2 == 0
+        ring_in.append(b.verts.new(P(0.335 if ridge else 0.322, *yz(0.12, a))))
+        ring_out.append(b.verts.new(P(0.312 if ridge else 0.292, *yz(ro, a + (0.12 if ridge else 0.0)))))
+    for k in range(12):
+        j = (k + 1) % 12
+        b.faces.new((centre, ring_in[k], ring_in[j]))
+        b.faces.new((ring_in[k], ring_out[k], ring_out[j], ring_in[j]))
+    bmesh.ops.recalc_face_normals(b, faces=b.faces)
+    for f in b.faces:
+        if f.normal.x < 0: f.normal_flip()  # Blender x is the axle: face outwards
+    cover = link("cover", b, "rim")
+    cover.data.set_sharp_from_angle(angle=math.radians(5))
+    obs.append(cover)
+    obs.append(spin("hub", "rim", [(0.36, 0.0), (0.36, 0.05), (0.348, 0.075), (0.336, 0.09)], 24))
     return join("rim_aero", obs)
 
 

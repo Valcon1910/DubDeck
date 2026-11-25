@@ -309,10 +309,23 @@ def box(material, c, size, bevel=0.0, sub=0):
     return ob
 
 
-def mirror_pod(s, z, y):
-    box("paint", (s * 1.03, y + 0.02, z - 0.02), (0.12, 0.11, 0.2), sub=2)
-    box("trim", (s * 0.95, y - 0.02, z + 0.02), (0.12, 0.03, 0.06), bevel=0.01)
-    box("glass", (s * 1.035, y + 0.02, z - 0.115), (0.09, 0.08, 0.01), bevel=0.003)
+def mirror_pod(s, z, y, xb=0.95):
+    """A door mirror: a slim stalk, a housing tapered towards the front with
+    softened edges, and mirror glass on its back face."""
+    hx = s * (xb + 0.17)
+    bm = bmesh.new()
+    bmesh.ops.create_cube(bm, size=1)
+    for v in bm.verts:
+        gx, gy, gz = v.co.x, v.co.z, -v.co.y          # -0.5..0.5 each, game axes
+        front = gz > 0
+        k = 0.62 if front else 1.0                    # tapered nose
+        v.co = G(hx + gx * 0.21 * k + (s * 0.02 if front else 0), y + gy * 0.11 * (0.8 if front else 1.0), z + gz * 0.1)
+    ob = link("mirror", bm, "paint")
+    m = ob.modifiers.new("bev", "BEVEL"); m.width = 0.028; m.segments = 3
+    apply_mod(ob, m)
+    smooth(ob)
+    box("chrome", (hx, y, z - 0.052), (0.17, 0.08, 0.006), bevel=0.003)
+    box("trim", (s * (xb + 0.04), y - 0.025, z + 0.01), (0.12, 0.022, 0.055), bevel=0.006)
 
 
 def lathe(name, material, prof, steps=48):
