@@ -166,3 +166,30 @@ test("keyboard hints show only where there's a keyboard", async ({ page, isMobil
   await page.goto("/#/hexdrift");
   await expect(page.locator(".hx-help")).toHaveCount(isMobile ? 0 : 1);
 });
+
+test("Map editor: make a map, add pieces, undo, drive it and set the author time", async ({ page }) => {
+  test.setTimeout(150_000);
+  await page.goto("/#/hexdrift");
+  await page.getByRole("link", { name: "Create" }).click();
+  await expect(page.getByRole("heading", { name: "My maps" })).toBeVisible();
+  await page.locator(".hx-ed-theme", { hasText: "Baja" }).click();
+  await expect(page).toHaveURL(/#\/hexdrift\/editor\/u[0-9a-z]+$/);
+  const pieces = page.locator(".hx-ed-piece");
+  await expect(pieces).toHaveCount(6);
+  await page.locator(".hx-ed-add").getByRole("button", { name: "Right" }).click();
+  await page.locator(".hx-ed-add").getByRole("button", { name: "Straight" }).click();
+  await expect(pieces).toHaveCount(8);
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(pieces).toHaveCount(7);
+  // Edits are kept on the device.
+  await page.reload();
+  await expect(pieces).toHaveCount(7);
+  await expect(page.locator(".hx-ed-info")).toContainText("Drive to the finish");
+  await page.getByRole("link", { name: "Drive" }).click();
+  await expect(page).toHaveURL(/#\/hexdrift\/test\/u/);
+  await expect.poll(async () => (await hook(page)) !== null).toBe(true);
+  await autopilot(page);
+  await expect(page.locator(".hx-finish")).toContainText("New author time", { timeout: 120_000 });
+  await page.getByRole("link", { name: "Back to editor" }).click();
+  await expect(page.locator(".hx-ed-info")).toContainText("Author");
+});
