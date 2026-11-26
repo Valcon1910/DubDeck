@@ -205,6 +205,12 @@ test("Map editor: make a map, add pieces, undo, drive it and set the author time
   await expect(page.locator(".hx-finish")).toContainText("New author time", { timeout: 120_000 });
   await page.getByRole("link", { name: "Back to editor" }).click();
   await expect(page.locator(".hx-ed-info")).toContainText("Author");
+  // Publishing needs a rating (and a name of the maker's own), and the rating is kept.
+  const hard = page.getByRole("radio", { name: "Hard" });
+  await hard.click();
+  await expect(hard).toHaveAttribute("aria-checked", "true");
+  await page.reload();
+  await expect(page.getByRole("radio", { name: "Hard" })).toHaveAttribute("aria-checked", "true");
 });
 
 test("Map editor: maps made from pieces still open in the piece editor", async ({ page }) => {

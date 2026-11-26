@@ -99,6 +99,8 @@ export interface CustomMap {
   terrain?: Sculpt;
   /** Studio: false keeps only what's placed by hand (no automatic scenery). */
   scenery?: boolean;
+  /** How hard the maker says it is (needed to publish). */
+  rating?: Rating;
   /** Studio: how it looks (doesn't change the driving). */
   env?: Env;
   /** Studio: folder names for the object list (by index into parts, then objs). */
@@ -106,6 +108,21 @@ export interface CustomMap {
   /** The maker's own finish on the current version: proves it can be done and sets the medals. */
   author?: { ticks: number; inputs: string; hash: string };
   updated: number;
+}
+
+export const RATINGS = ["Beginner", "Medium", "Hard", "Expert"] as const;
+export type Rating = typeof RATINGS[number];
+
+/** Names a map can't be published under: the one every new map starts with, the themes and the built-in maps. */
+const MADE = ["my map", "miami sunset", "miami storm", "alpine pass", "baja rally", "sky kingdom", "cloud kingdom", "interstellar", "neon downtown", "canyon rush", "glacier run", "sunset ring"];
+/** Why the map can't be published yet (its name or rating), or "". */
+export function publishNeeds(m: Pick<CustomMap, "name" | "rating">): string {
+  const n = m.name.trim().toLowerCase().replace(/\s+/g, " ");
+  if (n.length < 3) return "Give the map a name (3 letters or more)";
+  // New maps start as "<theme> <number>" (or "My map"): those don't count.
+  if (MADE.includes(n) || Object.values(THEMES).some((t) => n === t.name.toLowerCase() || new RegExp(`^${t.name.toLowerCase()} \\d+$`).test(n))) return "Give the map a name of your own";
+  if (!m.rating || !RATINGS.includes(m.rating)) return "Rate how hard the map is";
+  return "";
 }
 
 export const LIMITS = { pieces: 240, length: 8000, minLength: 150, nameLen: 32, objs: 400, sculpt: 8000, folders: 40 };
@@ -349,6 +366,7 @@ export function studioOf(m: CustomMap): Partial<CustomMap> {
   if (m.scenery === false) o.scenery = false;
   if (m.env && Object.keys(m.env).length) o.env = m.env;
   if (m.folders?.length) o.folders = m.folders;
+  if (m.rating) o.rating = m.rating;
   return o;
 }
 
@@ -430,5 +448,6 @@ export function cleanStudio(r: Record<string, unknown>, theme: ThemeId): Partial
     const o = (f && typeof f === "object" ? f : {}) as Record<string, unknown>;
     return { name: (typeof o.name === "string" ? o.name : "Folder").slice(0, 32) || "Folder", ...(o.open === false ? { open: false } : {}) };
   });
+  if (RATINGS.includes(r.rating as Rating)) out.rating = r.rating as Rating;
   return out;
 }

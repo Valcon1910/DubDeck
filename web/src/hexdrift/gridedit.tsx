@@ -10,6 +10,7 @@ import { BIOMES } from "./maps.ts";
 import { formatTime } from "./sim/race.ts";
 import { authorOf, deleteMap, myMap, saveMap } from "./mymaps.ts";
 import { publishedOf, publishMap } from "./community.ts";
+import { PublishBox } from "./pubbox.tsx";
 import { IconBack } from "./ui/icons.tsx";
 import type { BotReply } from "./botworker.ts";
 
@@ -280,14 +281,8 @@ export function GridEditor({ id, sb, me }: { id: string; sb: SupabaseClient | nu
             ))}
           </div>
 
-          <div className="hx-ed-pub">
-            {pub && <a href={`#/hexdrift/c/${pub.id}`}>{pub.version === versionOf(map) ? "Published" : "Published (an older version)"}</a>}
-            <button type="button" className="hx-btn" disabled={!sb || publishing || !author || check.problems.length > 0 || (!!pub && pub.version === versionOf(map))} onClick={() => void publish()}
-              title={!sb ? "Sign in to Chat to publish" : !author ? "Drive it to the finish first" : check.problems.length ? "Fix the problems first" : ""}>
-              {publishing ? "Checking your run…" : pub ? "Update in Community Maps" : "Publish to Community Maps"}
-            </button>
-            {!sb ? <span className="hx-dim hx-small">Sign in to Chat to publish.</span> : !author ? <span className="hx-dim hx-small">Drive it to the finish first: your time sets the medals.</span> : null}
-          </div>
+          <PublishBox map={map} signedIn={!!sb} author={!!author} problems={check.problems.length} pub={pub} publishing={publishing}
+            onRate={(r) => { const m = { ...map, rating: r }; setMap(m); saveMap(m); }} onPublish={() => void publish()} />
 
           <details className="hx-ed-more">
             <summary>Map settings</summary>

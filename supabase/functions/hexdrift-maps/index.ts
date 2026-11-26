@@ -8,7 +8,7 @@
 // Likes, plays, reports and moderation go straight to the database under its
 // row-level security (see the hexdrift_community migration).
 
-import { checkMap, cleanMap, roadDefOf, studioOf, THEMES, versionOf, type CustomMap } from "../_shared/hexdrift/custom.ts";
+import { checkMap, cleanMap, publishNeeds, roadDefOf, studioOf, THEMES, versionOf, type CustomMap } from "../_shared/hexdrift/custom.ts";
 import { buildRoadTrack } from "../_shared/hexdrift/track.ts";
 import { COUNTDOWN, newRace, PHYSICS_V, step } from "../_shared/hexdrift/race.ts";
 
@@ -92,7 +92,8 @@ Deno.serve(async (req) => {
   const raw = body?.map as Record<string, unknown> | undefined;
   const m = cleanMap(raw, "");
   if (!m || !m.id || typeof raw?.id !== "string" || m.id !== raw.id) return json({ error: "That isn't a map" }, 400);
-  if (!m.name.trim()) return json({ error: "Give the map a name" }, 400);
+  const need = publishNeeds(m);
+  if (need) return json({ error: need }, 400);
 
   const check = checkMap(m);
   if (!check.road || check.problems.length) return json({ error: check.problems[0]?.text ?? "This road can't be built" }, 422);
