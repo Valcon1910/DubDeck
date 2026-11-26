@@ -7,6 +7,8 @@ import { Editor, MyMaps } from "./editor.tsx";
 import { GridEditor } from "./gridedit.tsx";
 import { Studio } from "./studio.tsx";
 import { Community, CommunityMap } from "./communityview.tsx";
+import { Party, PartyHome, type PartyRun } from "./party.tsx";
+import { isRoomCode } from "./room.ts";
 import { getMap, isCommunity, mapDefFrom, markPlayed } from "./community.ts";
 import { emailFrom, pidOf, playerHref, profileHref } from "../vortex/profileLink.ts";
 import { authorOf, bestInputs, finishOn, mapDefOf, myBest, myMap, savePicture } from "./mymaps.ts";
@@ -50,13 +52,15 @@ type View =
   | { kind: "community" }
   | { kind: "cmap"; id: string }
   | { kind: "crace"; id: string }
-  | { kind: "crecords"; id: string };
+  | { kind: "crecords"; id: string }
+  | { kind: "party"; code?: string };
 
 /**
  * #/hexdrift (title), #/hexdrift/maps, #/hexdrift/map/<map> (its page),
  * #/hexdrift/<map> (race), #/hexdrift/<map>/records, #/hexdrift/player/<profile id>,
  * #/hexdrift/editor (my maps), #/hexdrift/editor/<id> (editing), #/hexdrift/test/<id> (driving one),
- * #/hexdrift/community, #/hexdrift/c/<id> (a community map), #/hexdrift/c/<id>/race, #/hexdrift/c/<id>/records
+ * #/hexdrift/community, #/hexdrift/c/<id> (a community map), #/hexdrift/c/<id>/race, #/hexdrift/c/<id>/records,
+ * #/hexdrift/party (make or join a room), #/hexdrift/party/<code> (a room)
  */
 function readView(): View {
   const parts = location.hash.replace(/^#\/?/, "").split("?")[0].split("/");
@@ -65,6 +69,7 @@ function readView(): View {
   if (parts[1] === "editor") return parts[2] ? { kind: "edit", id: parts[2], mode: parts[3] } : { kind: "mymaps" };
   if (parts[1] === "test" && parts[2]) return { kind: "test", id: parts[2] };
   if (parts[1] === "community") return { kind: "community" };
+  if (parts[1] === "party") return isRoomCode(parts[2] ?? "") ? { kind: "party", code: parts[2] } : { kind: "party" };
   if (parts[1] === "c" && /^c[0-9a-z]{8}$/.test(parts[2] ?? "")) return parts[3] === "race" ? { kind: "crace", id: parts[2] } : parts[3] === "records" ? { kind: "crecords", id: parts[2] } : { kind: "cmap", id: parts[2] };
   if (parts[1] === "map") { const m = MAPS.find((x) => x.id === parts[2]); return m ? { kind: "map", map: m } : { kind: "maps" }; }
   if (parts[1] === "player" && parts[2]) return { kind: "player", id: parts[2] };
@@ -106,6 +111,9 @@ export function Hexdrift() {
   const sb = CHAT_ON && chat?.status === "ready" ? chat.sb : null;
   const me = chat?.me ?? "";
   const profiles = chat?.profiles ?? EMPTY;
+  // Tests run two pages against a stand-in for the live channel (development only).
+  const fake = import.meta.env.DEV ? (window as { __hxParty?: { sb: SupabaseClient; me: string } }).__hxParty : undefined;
+  const partySb = sb ?? fake?.sb ?? null, partyMe = sb ? me : fake?.me ?? me;
   const [toast, setToast] = useState("");
   const [rev, setRev] = useState(0);
   const sync = useCallback(async () => {
@@ -134,7 +142,7 @@ export function Hexdrift() {
   // Every press in the menus gets a sound; every screen change a whoosh.
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => wireUiSounds(root.current!), []);
-  const viewKey = view.kind + ("map" in view ? `:${view.map.id}` : "email" in view ? `:${view.email}` : "id" in view ? `:${view.id}` : "");
+  const viewKey = view.kind + ("map" in view ? `:${view.map.id}` : "code" in view ? `:${view.code}` : "id" in view ? `:${view.id}` : "");
   const firstView = useRef(true);
   useEffect(() => {
     if (firstView.current) { firstView.current = false; return; }
@@ -154,6 +162,10 @@ export function Hexdrift() {
             : view.kind === "cmap" ? <CommunityMap id={view.id} sb={sb} me={me} who={(e) => nameOf(profiles, e)} offline={<NeedOnlineText />} />
             : view.kind === "crace" || view.kind === "crecords" ? <CommunityRun id={view.id} records={view.kind === "crecords"} />
             : view.kind === "test" ? <TestDrive id={view.id} />
+            : view.kind === "party" ? (view.code && partySb
+              ? <Party code={view.code} sb={partySb} me={partyMe} myName={nameOf(profiles, partyMe)} nameOf={(e) => nameOf(profiles, e)}
+                  race={(map, run, key) => <Play key={key} map={map} party={run} />} />
+              : <PartyHome signedIn={!!partySb} offline={<NeedOnlineText />} />)
             : view.kind === "maps" ? <MapSelect />
             : view.kind === "map" ? <MapDetail map={view.map} />
             : <Title />}
@@ -299,6 +311,7 @@ function Title() {
           <div className="hx-cta">
             <a className="hx-big" href="#/hexdrift/maps" data-sound="confirm"><IconPlay size={22} /><span>Play</span></a>
             <a className="hx-big hx-big-2" href="#/hexdrift/garage"><IconGarage size={22} /><span>Garage</span></a>
+            <a className="hx-big hx-big-2" href="#/hexdrift/party"><IconCrown size={22} /><span>Party</span></a>
             <a className="hx-big hx-big-2" href="#/hexdrift/community"><IconFlag size={22} /><span>Community</span></a>
             <a className="hx-big hx-big-2" href="#/hexdrift/editor"><IconRoute size={22} /><span>Create</span></a>
           </div>
@@ -593,7 +606,10 @@ function CommunityRun({ id, records }: { id: string; records: boolean }) {
   return records ? <Records map={def} home={home} race={`${home}/race`} /> : <Play map={def} home={home} />;
 }
 
-function Play({ map, custom, home, practice }: { map: MapDef; custom?: CustomMap; home?: string; practice?: boolean }) {
+function Play({ map, custom, home, practice, party }: { map: MapDef; custom?: CustomMap; home?: string; practice?: boolean; party?: PartyRun }) {
+  // A party race: the room decides the start, nothing is saved, no restarts.
+  const partyRef = useRef(party);
+  partyRef.current = party;
   // Where "back" goes: the editor for your own maps, the map's page for community maps.
   const back = custom ? `#/hexdrift/editor/${custom.id}` : home;
   const host = useRef<HTMLDivElement>(null);
@@ -627,6 +643,7 @@ function Play({ map, custom, home, practice }: { map: MapDef; custom?: CustomMap
   }, []);
 
   const restart = useCallback(() => {
+    if (partyRef.current) return;
     setOver(null);
     clearLive();
     bootLive = null;
@@ -635,7 +652,8 @@ function Play({ map, custom, home, practice }: { map: MapDef; custom?: CustomMap
   const pause = useCallback((p: boolean) => {
     const g = game.current;
     if (!g || g.race.phase === "finished") return;
-    g.setPaused(p);
+    // The others keep racing: the menu opens, the car doesn't stop.
+    if (!partyRef.current) g.setPaused(p);
     setOver(p ? "pause" : null);
   }, []);
 
@@ -654,6 +672,7 @@ function Play({ map, custom, home, practice }: { map: MapDef; custom?: CustomMap
     try {
       g = new Game(host.current!, map, { time: time.current, speed: speed.current, cps: cps.current, count: count.current, split: split.current }, {
         onFinish(ticks, inputs) {
+          if (partyRef.current) { partyRef.current.finished(ticks); return; }
           clearLive();
           bootLive = null;
           // A practice run from part way along: nothing is kept.
@@ -684,16 +703,25 @@ function Play({ map, custom, home, practice }: { map: MapDef; custom?: CustomMap
             setOver((o) => o && typeof o === "object" && o.ticks === ticks ? { ...o, online: res ?? "waiting" } : o);
           });
         },
-        onHidden() { pause(true); },
+        onHidden() { if (!partyRef.current) pause(true); },
         onIntro(s) { setIntro(s); },
         onPicture(jpeg) { if (cmRef.current) savePicture(cmRef.current, jpeg); },
-      }, c, (Number(pref("hexdrift.cam", "0")) || 0) % 3, readLook(), !practice && !(bootLive && bootLive.map === map.id && bootLive.inputs.length > 0));
+      }, c, (Number(pref("hexdrift.cam", "0")) || 0) % 3, readLook(), !practice && !party && !(bootLive && bootLive.map === map.id && bootLive.inputs.length > 0));
     } catch (e) {
       setError(e instanceof Error ? e.message : "This device can't show 3D graphics.");
       return () => c.dispose();
     }
     game.current = g;
     g.setGraphics(gfxPref());
+    const p = partyRef.current;
+    if (p) {
+      g.start();
+      if (import.meta.env.DEV) Object.assign(window, { __hexdrift: g });
+      const detach = p.attach(g);
+      const onTouch = () => setTouch(true);
+      window.addEventListener("touchstart", onTouch, { once: true, passive: true });
+      return () => { detach(); window.removeEventListener("touchstart", onTouch); g.dispose(); c.dispose(); game.current = null; };
+    }
     if (cmRef.current) {
       g.wantPicture = cmRef.current.id.startsWith("u") && !practice;
       const b = myBest(cmRef.current);
@@ -735,7 +763,7 @@ function Play({ map, custom, home, practice }: { map: MapDef; custom?: CustomMap
 
   // The world record's gold ghost (unless it's yours).
   useEffect(() => {
-    if (!sb || custom) return;
+    if (!sb || custom || party) return;
     let alive = true;
     void recordRun(sb, map.id).then((r) => {
       const g = game.current;
@@ -764,20 +792,20 @@ function Play({ map, custom, home, practice }: { map: MapDef; custom?: CustomMap
       {intro !== "done" && <Intro map={map} stage={intro} best={best} />}
       <div className="hx-hud" aria-live="off">
         <div className="hx-hud-top">
-          <span className="hx-chip"><span className="hx-dim">CP</span> <span ref={cps}>0/0</span></span>
+          <span className="hx-hud-l"><span className="hx-chip"><span className="hx-dim">CP</span> <span ref={cps}>0/0</span></span>{party?.hud}</span>
           <span className="hx-time" ref={time}>0:00.000</span>
           <span className="hx-hud-btns">
-            <button type="button" className="hx-icon" aria-label="Restart (R)" title="Restart (R)" onClick={restart}><IconRestart /></button>
+            {!party && <button type="button" className="hx-icon" aria-label="Restart (R)" title="Restart (R)" onClick={restart}><IconRestart /></button>}
             <button type="button" className="hx-icon" aria-label="Camera (C)" title="Camera (C)" onClick={() => setPref("hexdrift.cam", String(game.current?.cycleCamera() ?? 0))}><IconCamera /></button>
             <GamingButton compact />
             <button type="button" className="hx-icon" aria-label="Pause (Esc)" title="Pause (Esc)" onClick={() => pause(true)}><IconPause /></button>
           </span>
         </div>
-        <div className="hx-targets">
+        {!party && <div className="hx-targets">
           {best && <span><MedalIcon m={medals.vortex ? medalFor({ ...map, medals }, best.t) : null} size={12} />Best {formatTime(best.t)}</span>}
           {medals.vortex ? <span><MedalIcon m="gold" size={12} />{formatTime(medals.gold)}</span> : <span>Finish to set the author time</span>}
           {wrName && <span className="hx-wr-chip"><IconCrown size={13} />{wrName}</span>}
-        </div>
+        </div>}
         <div className="hx-split" ref={split} />
         <div className="hx-count" ref={count} />
         <div className="hx-speed"><span ref={speed}>0</span><em>km/h</em></div>
@@ -785,7 +813,19 @@ function Play({ map, custom, home, practice }: { map: MapDef; custom?: CustomMap
 
       {touch && <TouchPad controls={controls} />}
 
-      {(over === "pause" || over === "restored") && (
+      {party?.overlay}
+      {party && over === "pause" && (
+        <div className="hx-over"><div className="hx-panel">
+          <h2>Menu</h2>
+          <p className="hx-dim">Party race: your car keeps going while this is open.</p>
+          <div className="hx-row">
+            <button type="button" className="hx-btn hx-btn-main" onClick={() => setOver(null)} autoFocus>Back to the race</button>
+            <a className="hx-btn" href={party.leave}>Leave the room</a>
+          </div>
+          <GraphicsPicker game={game.current} />
+        </div></div>
+      )}
+      {!party && (over === "pause" || over === "restored") && (
         <div className="hx-over"><div className="hx-panel">
           <h2>{over === "restored" ? "Run restored" : "Paused"}</h2>
           <p className="hx-dim">{over === "restored" ? "The page reloaded, so your run was rebuilt exactly where you left it." : map.name}</p>
@@ -798,7 +838,7 @@ function Play({ map, custom, home, practice }: { map: MapDef; custom?: CustomMap
           {gaming && <p className="hx-dim hx-small">Gaming Mode is on: hold its button for 3 seconds to turn it off.</p>}
         </div></div>
       )}
-      {over && typeof over === "object" && <Finish map={{ ...map, medals }} result={over} next={next} onRestart={restart} signedIn={!!sb} back={back} backLabel={custom ? "Back to editor" : "Map page"} />}
+      {!party && over && typeof over === "object" && <Finish map={{ ...map, medals }} result={over} next={next} onRestart={restart} signedIn={!!sb} back={back} backLabel={custom ? "Back to editor" : "Map page"} />}
     </div>
   );
 }

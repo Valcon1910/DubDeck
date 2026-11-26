@@ -45,13 +45,39 @@ function unpackCar(b: ArrayBuffer): CarState | null {
   return { x: a[0], y: a[1], z: a[2], yaw: a[3], speed: a[4], steer: a[5], boost: a[6] > 0.5, dist: a[7], lap: done ? a[8] - 1000 : a[8], done, t: a[9], nx: a[10], ny: a[11], nz: a[12], tx: a[13], ty: a[14], tz: a[15] };
 }
 
+/** Party modes: one race, or rounds where the last one in is out each time. */
+export type Mode = "race" | "elim";
 /** Messages to the whole room (reliable, through the live channel). */
 export type RoomMsg =
-  | { k: "settings"; map: string; mode: string; laps: number }
-  | { k: "start"; map: string; mode: string; laps: number; id: string }
+  /** The host's choices (sent again when someone joins). race: the one under way, if any. */
+  | { k: "settings"; map: string; mode: Mode; laps: number; race?: string }
+  | { k: "start"; map: string; mode: Mode; laps: number; id: string; who: string[]; round: number }
+  /** Your game has loaded; the host says go once everyone's has (or after a wait). */
+  | { k: "loaded"; id: string }
+  | { k: "go"; id: string }
   | { k: "finish"; id: string; ticks: number }
-  | { k: "out"; id: string; email: string }
+  /** The host closes a race: everyone in order, and who's out (elimination). */
+  | { k: "result"; id: string; order: string[]; out: string[] }
   | { k: "lobby" };
+
+const str = (v: unknown, n = 80): v is string => typeof v === "string" && v.length <= n;
+const emails = (v: unknown): v is string[] => Array.isArray(v) && v.length <= ROOM_MAX * 2 && v.every((e) => str(e, 320));
+/** Messages come from other players' browsers: only well-formed ones get through. */
+export function validMsg(m: unknown): RoomMsg | null {
+  if (!m || typeof m !== "object") return null;
+  const o = m as Record<string, unknown>;
+  const mode = o.mode === "race" || o.mode === "elim";
+  const laps = typeof o.laps === "number" && Number.isInteger(o.laps) && o.laps >= 1 && o.laps <= 9;
+  switch (o.k) {
+    case "settings": return str(o.map) && mode && laps && (o.race === undefined || str(o.race)) ? o as RoomMsg : null;
+    case "start": return str(o.map) && mode && laps && str(o.id) && emails(o.who) && typeof o.round === "number" ? o as RoomMsg : null;
+    case "loaded": case "go": return str(o.id) ? o as RoomMsg : null;
+    case "finish": return str(o.id) && typeof o.ticks === "number" && Number.isInteger(o.ticks) && o.ticks > 0 && o.ticks < 1e7 ? o as RoomMsg : null;
+    case "result": return str(o.id) && emails(o.order) && emails(o.out) ? o as RoomMsg : null;
+    case "lobby": return o as RoomMsg;
+    default: return null;
+  }
+}
 
 interface Peer { pc: RTCPeerConnection; ch: RTCDataChannel | null; open: boolean; pending: RTCIceCandidateInit[] }
 export type Link = "connecting" | "open" | "failed";
@@ -103,8 +129,9 @@ export class Room {
     ch.on("presence", { event: "sync" }, () => this.sync());
     ch.on("broadcast", { event: "signal" }, ({ payload }) => void this.signal(payload as Signal));
     ch.on("broadcast", { event: "msg" }, ({ payload }) => {
-      const p = payload as { from?: string; m?: RoomMsg };
-      if (p?.from && p.m && this.members.some((x) => x.email === p.from)) this.ev.msg(p.from, p.m);
+      const p = payload as { from?: unknown; m?: unknown };
+      const m = validMsg(p?.m);
+      if (m && typeof p.from === "string" && this.members.some((x) => x.email === p.from)) this.ev.msg(p.from, m);
     });
     ch.subscribe((st) => {
       if (st === "SUBSCRIBED") void ch.track(this.me);
