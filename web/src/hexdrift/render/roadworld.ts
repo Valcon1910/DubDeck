@@ -298,7 +298,9 @@ function sky(group: THREE.Group, L: Look, geos: THREE.BufferGeometry[], mats: TH
   mats.push(m);
   const mesh = new THREE.Mesh(g, m);
   mesh.frustumCulled = false;
-  mesh.renderOrder = -10;
+  // Drawn after the solid things, at the far plane: only the pixels nothing
+  // else covers run the sky (it was the costliest thing on screen when drawn first).
+  mesh.renderOrder = 10;
   mesh.name = "sky";
   // The dome moves with the camera (set in the vertex shader).
   group.add(mesh);
