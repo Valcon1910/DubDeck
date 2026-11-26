@@ -460,7 +460,11 @@ export function buildKit(group: THREE.Group, road: Road, night: boolean, sky: TH
     });
     // The TV helicopter: hangs ahead of the camera, high up, and turns to follow.
     const hg = kit.get("heli");
-    const heli = hg ? new THREE.Mesh(hg.near, mat) : null;
+    // Its own copy of the material: sharing it with the instanced kit made
+    // three.js switch shader programs back and forth every frame.
+    const heliMat = hg ? mat.clone() : null;
+    if (heliMat) mats.push(heliMat);
+    const heli = hg ? new THREE.Mesh(hg.near, heliMat!) : null;
     const hp = new THREE.Vector3(), hv = new THREE.Vector3();
     let hyaw = 0, hset = false;
     if (heli) { heli.frustumCulled = false; heli.name = "heli"; heli.castShadow = true; group.add(heli); }

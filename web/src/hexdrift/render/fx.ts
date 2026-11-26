@@ -57,7 +57,7 @@ export class Trail {
       }
     }
     this.geo.setIndex(idx);
-    this.mat = new THREE.MeshBasicMaterial({ map: soft(), vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, opacity: opacity ?? (ghost ? 0.35 : 1) });
+    this.mat = new THREE.MeshBasicMaterial({ map: soft(), vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true, opacity: opacity ?? (ghost ? 0.35 : 1) });
     this.mesh = new THREE.Mesh(this.geo, this.mat);
     this.mesh.frustumCulled = false;
   }
@@ -178,7 +178,7 @@ export class FinishFx {
     pts.frustumCulled = false;
     this.group.add(pts);
     const rg = new THREE.RingGeometry(0.85, 1, 48); rg.rotateX(-Math.PI / 2);
-    this.ring = new THREE.Mesh(rg, new THREE.MeshBasicMaterial({ color: "#7af7ff", transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+    this.ring = new THREE.Mesh(rg, new THREE.MeshBasicMaterial({ color: "#7af7ff", transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, forceSinglePass: true }));
     this.group.add(this.ring);
     const bg = new THREE.BufferGeometry();
     bg.setAttribute("position", new THREE.BufferAttribute(this.boltPos, 3).setUsage(THREE.DynamicDrawUsage));
