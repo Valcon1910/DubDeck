@@ -960,7 +960,7 @@ button.vx-chat-person:hover { background: var(--surface-2); }
 .vx-swipe .vx-chat-item.vx-dragging { transition: none; }
 
 /* ── New-message cards (top right, everywhere but Gaming Mode) ── */
-.vx-pops { position: fixed; top: max(12px, env(safe-area-inset-top)); right: 12px; z-index: 70; display: flex; flex-direction: column; gap: 8px; width: min(340px, calc(100vw - 24px)); pointer-events: none; }
+.vx-pops { position: fixed; top: var(--hx-party-h, max(12px, env(safe-area-inset-top))); right: 12px; z-index: 70; display: flex; flex-direction: column; gap: 8px; width: min(340px, calc(100vw - 24px)); pointer-events: none; }
 .vx-pop {
   position: relative; display: flex; align-items: center; pointer-events: auto; border-radius: 16px; overflow: hidden;
   background: color-mix(in srgb, var(--surface, #fff) 88%, transparent); border: 1px solid var(--border, rgb(0 0 0 / 0.1));

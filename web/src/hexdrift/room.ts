@@ -26,9 +26,7 @@ const MAX_RATE = 8;
 /** New races stop at this many messages in a month (the plan allows 2 million, chat included). */
 export const MONTH_CAP = 1_800_000;
 
-const LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ"; // no I or O (they read like 1 and 0)
-export const newRoomCode = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => LETTERS[b % LETTERS.length]).join("");
-export const isRoomCode = (s: string) => /^[A-Z]{6}$/.test(s);
+export { newRoomCode, isRoomCode } from "./partyhub.ts";
 
 export interface Member {
   email: string; name: string;
