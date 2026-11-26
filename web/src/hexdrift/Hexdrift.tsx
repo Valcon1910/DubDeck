@@ -5,6 +5,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { ALL_MAPS, MAPS, BIOMES, medalFor, type MapDef, type Medal } from "./maps.ts";
 import { Editor, MyMaps } from "./editor.tsx";
 import { GridEditor } from "./gridedit.tsx";
+import { Studio } from "./studio.tsx";
 import { Community, CommunityMap } from "./communityview.tsx";
 import { getMap, isCommunity, mapDefFrom, markPlayed } from "./community.ts";
 import { profileHref } from "../vortex/profileLink.ts";
@@ -44,7 +45,7 @@ type View =
   | { kind: "player"; email: string }
   | { kind: "garage" }
   | { kind: "mymaps" }
-  | { kind: "edit"; id: string }
+  | { kind: "edit"; id: string; mode?: string }
   | { kind: "test"; id: string }
   | { kind: "community" }
   | { kind: "cmap"; id: string }
@@ -61,7 +62,7 @@ function readView(): View {
   const parts = location.hash.replace(/^#\/?/, "").split("?")[0].split("/");
   if (parts[1] === "garage") return { kind: "garage" };
   if (parts[1] === "maps") return { kind: "maps" };
-  if (parts[1] === "editor") return parts[2] ? { kind: "edit", id: parts[2] } : { kind: "mymaps" };
+  if (parts[1] === "editor") return parts[2] ? { kind: "edit", id: parts[2], mode: parts[3] } : { kind: "mymaps" };
   if (parts[1] === "test" && parts[2]) return { kind: "test", id: parts[2] };
   if (parts[1] === "community") return { kind: "community" };
   if (parts[1] === "c" && /^c[0-9a-z]{8}$/.test(parts[2] ?? "")) return parts[3] === "race" ? { kind: "crace", id: parts[2] } : parts[3] === "records" ? { kind: "crecords", id: parts[2] } : { kind: "cmap", id: parts[2] };
@@ -148,7 +149,7 @@ export function Hexdrift() {
             : view.kind === "player" ? <Player email={view.email} />
             : view.kind === "garage" ? <Garage />
             : view.kind === "mymaps" ? <MyMaps />
-            : view.kind === "edit" ? (myMap(view.id)?.grid ? <GridEditor id={view.id} sb={sb} me={me} /> : <Editor id={view.id} sb={sb} me={me} />)
+            : view.kind === "edit" ? <EditRoute id={view.id} mode={view.mode} sb={sb} me={me} />
             : view.kind === "community" ? <Community sb={sb} me={me} who={(e) => nameOf(profiles, e)} offline={<NeedOnlineText />} />
             : view.kind === "cmap" ? <CommunityMap id={view.id} sb={sb} me={me} who={(e) => nameOf(profiles, e)} offline={<NeedOnlineText />} />
             : view.kind === "crace" || view.kind === "crecords" ? <CommunityRun id={view.id} records={view.kind === "crecords"} />
@@ -546,6 +547,19 @@ function IphoneTip() {
 interface Result { ticks: number; best: Best | null; isBest: boolean; online?: "sending" | "waiting" | Submitted; author?: boolean }
 type Over = null | "pause" | "restored" | Result;
 
+/**
+ * Which editor opens a map: the studio on computers (a mouse and a wide
+ * screen), the tile or piece editor on phones. /tiles and /simple ask for one.
+ */
+function EditRoute({ id, mode, sb, me }: { id: string; mode?: string; sb: SupabaseClient | null; me: string }) {
+  const [wide] = useState(() => matchMedia("(min-width: 1100px) and (pointer: fine)").matches);
+  const grid = !!myMap(id)?.grid;
+  if (mode === "tiles" && grid) return <GridEditor id={id} sb={sb} me={me} />;
+  if (mode === "simple" && !grid) return <Editor id={id} sb={sb} me={me} />;
+  if (wide && mode !== "tiles" && mode !== "simple") return <Studio id={id} sb={sb} me={me} />;
+  return grid ? <GridEditor id={id} sb={sb} me={me} /> : <Editor id={id} sb={sb} me={me} />;
+}
+
 /** Driving one of your maps: times stay on this device; your fastest sets the author time. */
 function TestDrive({ id }: { id: string }) {
   const [cm] = useState(() => myMap(id));
@@ -673,7 +687,7 @@ function Play({ map, custom, home, practice }: { map: MapDef; custom?: CustomMap
         onHidden() { pause(true); },
         onIntro(s) { setIntro(s); },
         onPicture(jpeg) { if (cmRef.current) savePicture(cmRef.current, jpeg); },
-      }, c, (Number(pref("hexdrift.cam", "0")) || 0) % 3, readLook(), !(bootLive && bootLive.map === map.id && bootLive.inputs.length > 0));
+      }, c, (Number(pref("hexdrift.cam", "0")) || 0) % 3, readLook(), !practice && !(bootLive && bootLive.map === map.id && bootLive.inputs.length > 0));
     } catch (e) {
       setError(e instanceof Error ? e.message : "This device can't show 3D graphics.");
       return () => c.dispose();

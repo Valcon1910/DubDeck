@@ -2,8 +2,9 @@
 // Built-in maps. Medal times are in steps (1/60 s); "vortex" is the author
 // time. They were set from the autopilot (sim/bot.ts) with
 // `node scripts/hexdrift-maps.ts`, which also checks each map can be finished.
-import { buildRoadTrack, buildTrack, type Track } from "./track.ts";
+import { buildRoadTrack, buildTrack, startFrom, type Spot, type Track } from "./track.ts";
 import type { RoadDef } from "./road.ts";
+import type { Env } from "./custom.ts";
 
 export type BiomeId = "city" | "canyon" | "glacier" | "sky" | "desert" | "miami" | "storm" | "alpine" | "space" | "baja";
 
@@ -39,6 +40,10 @@ export interface MapDef {
   /** Road maps: smooth roads over real terrain. */
   road?: RoadDef;
   medals: { vortex: number; gold: number; silver: number; bronze: number };
+  /** Made in the studio: time of day, fog and weather. */
+  env?: Env;
+  /** A practice run from somewhere along the map (the studio's "drive from here"). */
+  from?: Spot;
   /**
    * The oldest physics version whose times still count on this map (for its
    * best time and medal). Raise it to the current PHYSICS_V when the map
@@ -174,7 +179,7 @@ export function trackOf(m: MapDef): Track {
     t = m.road ? buildRoadTrack(m.road, m.biome) : buildTrack(m.recipe!, { sky: m.biome === "sky", theme: m.biome });
     built.set(m.id, t);
   }
-  return t;
+  return m.from ? startFrom(t, m.from) : t;
 }
 
 export type Medal = "vortex" | "gold" | "silver" | "bronze" | null;

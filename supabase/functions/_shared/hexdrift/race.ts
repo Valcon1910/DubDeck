@@ -93,7 +93,7 @@ export interface Race {
 export function newRace(track: Track): Race {
   const car = {} as Car;
   place(car, track.spawn);
-  return { track, car, phase: "countdown", tick: 0, cps: new Set(), respawnAt: track.spawn, inputs: [], splits: [], finishTicks: 0 };
+  return { track, car, phase: "countdown", tick: 0, cps: new Set(track.passed ?? []), respawnAt: track.spawn, inputs: [], splits: [], finishTicks: 0 };
 }
 
 /** Steps since GO (the race time). */

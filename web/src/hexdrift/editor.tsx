@@ -120,66 +120,8 @@ function label(p: Piece) {
   return "CP";
 }
 
-// ── The editor ──────────────────────────────────────────────────────────────
-export function Editor({ id, sb, me }: { id: string; sb: SupabaseClient | null; me: string }) {
-  const [map, setMapState] = useState<CustomMap | null>(() => myMap(id));
-  const [sel, setSel] = useState(() => Math.max(0, (map?.pieces.length ?? 1) - 1));
-  const undo = useRef<CustomMap[]>([]);
-  const redo = useRef<CustomMap[]>([]);
-  const [msg, setMsg] = useState("");
-  const [tab, setTab] = useState<"shape" | "road" | "extras">("shape");
-  const [wide, setWide] = useState(() => matchMedia("(min-width: 900px) and (pointer: fine)").matches);
-  useEffect(() => {
-    const q = matchMedia("(min-width: 900px) and (pointer: fine)");
-    const f = () => setWide(q.matches);
-    q.addEventListener("change", f);
-    return () => q.removeEventListener("change", f);
-  }, []);
-
-  const check = useMemo(() => map ? checkMap(map) : null, [map]);
-  // The autopilot drives the map in the background: can it be finished?
-  const [bot, setBot] = useState("");
-  const worker = useRef<Worker | null>(null);
-  useEffect(() => () => worker.current?.terminate(), []);
-  useEffect(() => setBot((b) => (b === "…" ? b : "")), [map]);
-  const runBot = useCallback(() => {
-    if (!map) return;
-    worker.current?.terminate();
-    const w = new Worker(new URL("./botworker.ts", import.meta.url), { type: "module" });
-    worker.current = w;
-    setBot("…");
-    const m = map;
-    w.onmessage = (e: MessageEvent<BotReply>) => {
-      const r = e.data;
-      w.terminate();
-      if (worker.current === w) worker.current = null;
-      if (r.ok) setBot(`The autopilot finished in ${formatTime(r.ticks)}. You can beat that.`);
-      else if (r.error) setBot(`The autopilot couldn't drive it: ${r.error}`);
-      else { const i = pieceAt(m, r.s); setSel(i); setBot(`The autopilot got stuck around piece ${i + 1}. It's careful, so a human may still make it.`); }
-    };
-    w.postMessage(m);
-  }, [map]);
-
-  const commit = useCallback((next: CustomMap, keepSel?: number) => {
-    setMapState((cur) => {
-      if (cur) { undo.current.push(cur); if (undo.current.length > 100) undo.current.shift(); }
-      redo.current = [];
-      return next;
-    });
-    if (!saveMap(next)) setMsg("This device's storage is full: the change isn't saved.");
-    if (keepSel !== undefined) setSel(keepSel);
-  }, []);
-  const back = useCallback((from: React.RefObject<CustomMap[]>, to: React.RefObject<CustomMap[]>) => {
-    setMapState((cur) => {
-      const prev = from.current.pop();
-      if (!prev || !cur) return cur;
-      to.current.push(cur);
-      saveMap(prev);
-      setSel((s) => Math.min(s, prev.pieces.length - 1));
-      return prev;
-    });
-  }, []);
-
+/** Editing the piece list: change, add, remove, move and copy pieces. */
+export function usePieceOps(map: CustomMap | null, sel: number, commit: (m: CustomMap, keepSel?: number) => void, setMsg: (s: string) => void) {
   const edit = useCallback((change: Partial<Piece>, at = sel) => {
     if (!map) return;
     const pieces = map.pieces.map((p, i) => {
@@ -225,92 +167,19 @@ export function Editor({ id, sb, me }: { id: string; sb: SupabaseClient | null; 
     pieces.splice(sel + 1, 0, { ...map.pieces[sel] });
     commit({ ...map, pieces }, sel + 1);
   }, [map, sel, commit]);
+  return { edit, add, remove, move, dup };
+}
 
-  // Studio keys: arrows pick, S/L/R/C/G add, Delete removes, Ctrl+Z undoes.
-  useEffect(() => {
-    const k = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement).closest("input, textarea, select")) return;
-      const z = e.key.toLowerCase() === "z" && (e.ctrlKey || e.metaKey);
-      if (z) { e.preventDefault(); if (e.shiftKey) back(redo, undo); else back(undo, redo); return; }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") { e.preventDefault(); back(redo, undo); return; }
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-      const n = map?.pieces.length ?? 0;
-      if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); if (e.altKey) move(-1); else setSel((s) => Math.max(0, s - 1)); }
-      else if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); setSel((s) => Math.min(n - 1, s + 1)); }
-      else if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); remove(); }
-      else if (e.key === "d") dup();
-      else if ("slrcg".includes(e.key.toLowerCase()) && e.key.length === 1) add(e.key.toUpperCase() as Piece["k"]);
-      else if (e.key === "Enter") location.hash = `#/hexdrift/test/${id}`;
-    };
-    window.addEventListener("keydown", k);
-    return () => window.removeEventListener("keydown", k);
-  }, [map, add, remove, move, dup, back, id]);
+export type PieceOps = ReturnType<typeof usePieceOps>;
 
-  // Community Maps: is this map out, and is the published copy this version?
-  const [pub, setPub] = useState<{ id: string; version: string } | null>(null);
-  const [publishing, setPublishing] = useState(false);
-  useEffect(() => {
-    if (!sb || !me) return;
-    let alive = true;
-    void publishedOf(sb, me, id).then((p) => { if (alive) setPub(p); }).catch(() => {});
-    return () => { alive = false; };
-  }, [sb, me, id]);
-  const publish = useCallback(async () => {
-    if (!sb || !map) return;
-    setPublishing(true);
-    const r = await publishMap(sb, map);
-    setPublishing(false);
-    if (r.ok) { setPub({ id: r.id, version: versionOf(map) }); setMsg(r.updated ? (r.changed ? "Updated. The road changed, so its leaderboard starts fresh." : "Updated.") : "Published! It's in Community Maps now."); }
-    else setMsg(r.error);
-  }, [sb, map]);
-  useEffect(() => { if (!msg) return; const t = setTimeout(() => setMsg(""), 4000); return () => clearTimeout(t); }, [msg]);
-
-  if (!map || !check) {
-    return <div className="hx-menu"><a className="hx-back" href="#/hexdrift/editor"><IconBack /> My maps</a><p>That map isn't on this device.</p></div>;
-  }
+/** The pieces in order, the add buttons and the picked piece's settings. */
+export function RoadPanel({ map, sel, setSel, ops, bad, wide }: { map: CustomMap; sel: number; setSel: (i: number) => void; ops: PieceOps; bad: Set<number>; wide: boolean }) {
+  const [tab, setTab] = useState<"shape" | "road" | "extras">("shape");
+  const { edit, add, remove, move, dup } = ops;
   const p = map.pieces[sel];
   const c = carried(map, sel);
-  const author = authorOf(map);
-  const bad = new Set(check.problems.map((q) => q.piece));
-  const broken = !check.road;
-  const share = async () => {
-    const code = encodeMap(map);
-    try { await navigator.clipboard.writeText(code); setMsg("Map code copied. Anyone can add it under My maps."); }
-    catch { window.prompt("Copy this map code:", code); }
-  };
-
   return (
-    <div className={`hx-ed ${wide ? "hx-ed-wide" : ""}`}>
-      <header className="hx-ed-bar">
-        <a className="hx-icon" href="#/hexdrift/editor" aria-label="My maps" title="My maps"><IconBack /></a>
-        <input className="hx-ed-name" value={map.name} maxLength={LIMITS.nameLen} aria-label="Map name"
-          onChange={(e) => { const next = { ...map, name: e.target.value }; setMapState(next); saveMap(next); }} />
-        <button type="button" className="hx-icon" aria-label="Undo" title="Undo (Ctrl+Z)" disabled={!undo.current.length} onClick={() => back(undo, redo)}>↶</button>
-        <button type="button" className="hx-icon" aria-label="Redo" title="Redo (Ctrl+Shift+Z)" disabled={!redo.current.length} onClick={() => back(redo, undo)}>↷</button>
-        <a className={`hx-btn hx-btn-main ${broken ? "hx-off" : ""}`} href={broken ? undefined : `#/hexdrift/test/${map.id}`} aria-disabled={broken} title="Drive it (Enter)">Drive</a>
-      </header>
-
-      <div className="hx-ed-stage">
-        <Preview map={map} check={check} sel={sel} onPick={setSel} />
-        {wide && <Profile map={map} check={check} sel={sel} onPick={setSel} />}
-      </div>
-
-      <div className="hx-ed-side">
-      <div className="hx-ed-info">
-        <span>{(check.length / 1000).toFixed(2)} km · {map.pieces.filter((q) => q.k === "C").length} CP</span>
-        <span>{author ? <>Author {formatTime(author.ticks)} · Gold {formatTime(medalsOf(author.ticks).gold)}</> : "Drive to the finish to set the author time"}</span>
-        <button type="button" className="hx-linkbtn" disabled={broken || bot === "…"} onClick={runBot}>{bot === "…" ? "Autopilot driving…" : "Autopilot test"}</button>
-      </div>
-      {bot && bot !== "…" && <p className="hx-ed-bot" role="status">{bot}</p>}
-      {check.problems.length > 0 && (
-        <ul className="hx-ed-problems" role="status">
-          {check.problems.slice(0, 3).map((q, i) => (
-            <li key={i}>{q.piece >= 0 ? <button type="button" onClick={() => setSel(q.piece)}>Piece {q.piece + 1}</button> : null} {q.text}</li>
-          ))}
-        </ul>
-      )}
-
-      <div className="hx-ed-panel">
+    <>
         <div className="hx-ed-strip" role="listbox" aria-label="Pieces">
           {map.pieces.map((q, i) => (
             <button key={i} type="button" role="option" aria-selected={i === sel} className={`hx-ed-piece k-${q.k} ${i === sel ? "on" : ""} ${bad.has(i) ? "bad" : ""}`}
@@ -384,6 +253,156 @@ export function Editor({ id, sb, me }: { id: string; sb: SupabaseClient | null; 
             </>}
           </div>
         )}
+    </>
+  );
+}
+
+// ── The editor ──────────────────────────────────────────────────────────────
+export function Editor({ id, sb, me }: { id: string; sb: SupabaseClient | null; me: string }) {
+  const [map, setMapState] = useState<CustomMap | null>(() => myMap(id));
+  const [sel, setSel] = useState(() => Math.max(0, (map?.pieces.length ?? 1) - 1));
+  const undo = useRef<CustomMap[]>([]);
+  const redo = useRef<CustomMap[]>([]);
+  const [msg, setMsg] = useState("");
+  const [wide, setWide] = useState(() => matchMedia("(min-width: 900px) and (pointer: fine)").matches);
+  useEffect(() => {
+    const q = matchMedia("(min-width: 900px) and (pointer: fine)");
+    const f = () => setWide(q.matches);
+    q.addEventListener("change", f);
+    return () => q.removeEventListener("change", f);
+  }, []);
+
+  const check = useMemo(() => map ? checkMap(map) : null, [map]);
+  // The autopilot drives the map in the background: can it be finished?
+  const [bot, setBot] = useState("");
+  const worker = useRef<Worker | null>(null);
+  useEffect(() => () => worker.current?.terminate(), []);
+  useEffect(() => setBot((b) => (b === "…" ? b : "")), [map]);
+  const runBot = useCallback(() => {
+    if (!map) return;
+    worker.current?.terminate();
+    const w = new Worker(new URL("./botworker.ts", import.meta.url), { type: "module" });
+    worker.current = w;
+    setBot("…");
+    const m = map;
+    w.onmessage = (e: MessageEvent<BotReply>) => {
+      const r = e.data;
+      w.terminate();
+      if (worker.current === w) worker.current = null;
+      if (r.ok) setBot(`The autopilot finished in ${formatTime(r.ticks)}. You can beat that.`);
+      else if (r.error) setBot(`The autopilot couldn't drive it: ${r.error}`);
+      else { const i = pieceAt(m, r.s); setSel(i); setBot(`The autopilot got stuck around piece ${i + 1}. It's careful, so a human may still make it.`); }
+    };
+    w.postMessage(m);
+  }, [map]);
+
+  const commit = useCallback((next: CustomMap, keepSel?: number) => {
+    setMapState((cur) => {
+      if (cur) { undo.current.push(cur); if (undo.current.length > 100) undo.current.shift(); }
+      redo.current = [];
+      return next;
+    });
+    if (!saveMap(next)) setMsg("This device's storage is full: the change isn't saved.");
+    if (keepSel !== undefined) setSel(keepSel);
+  }, []);
+  const back = useCallback((from: React.RefObject<CustomMap[]>, to: React.RefObject<CustomMap[]>) => {
+    setMapState((cur) => {
+      const prev = from.current.pop();
+      if (!prev || !cur) return cur;
+      to.current.push(cur);
+      saveMap(prev);
+      setSel((s) => Math.min(s, prev.pieces.length - 1));
+      return prev;
+    });
+  }, []);
+
+  const ops = usePieceOps(map, sel, commit, setMsg);
+  const { add, remove, move, dup } = ops;
+
+  // Studio keys: arrows pick, S/L/R/C/G add, Delete removes, Ctrl+Z undoes.
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement).closest("input, textarea, select")) return;
+      const z = e.key.toLowerCase() === "z" && (e.ctrlKey || e.metaKey);
+      if (z) { e.preventDefault(); if (e.shiftKey) back(redo, undo); else back(undo, redo); return; }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") { e.preventDefault(); back(redo, undo); return; }
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const n = map?.pieces.length ?? 0;
+      if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); if (e.altKey) move(-1); else setSel((s) => Math.max(0, s - 1)); }
+      else if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); setSel((s) => Math.min(n - 1, s + 1)); }
+      else if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); remove(); }
+      else if (e.key === "d") dup();
+      else if ("slrcg".includes(e.key.toLowerCase()) && e.key.length === 1) add(e.key.toUpperCase() as Piece["k"]);
+      else if (e.key === "Enter") location.hash = `#/hexdrift/test/${id}`;
+    };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [map, add, remove, move, dup, back, id]);
+
+  // Community Maps: is this map out, and is the published copy this version?
+  const [pub, setPub] = useState<{ id: string; version: string } | null>(null);
+  const [publishing, setPublishing] = useState(false);
+  useEffect(() => {
+    if (!sb || !me) return;
+    let alive = true;
+    void publishedOf(sb, me, id).then((p) => { if (alive) setPub(p); }).catch(() => {});
+    return () => { alive = false; };
+  }, [sb, me, id]);
+  const publish = useCallback(async () => {
+    if (!sb || !map) return;
+    setPublishing(true);
+    const r = await publishMap(sb, map);
+    setPublishing(false);
+    if (r.ok) { setPub({ id: r.id, version: versionOf(map) }); setMsg(r.updated ? (r.changed ? "Updated. The road changed, so its leaderboard starts fresh." : "Updated.") : "Published! It's in Community Maps now."); }
+    else setMsg(r.error);
+  }, [sb, map]);
+  useEffect(() => { if (!msg) return; const t = setTimeout(() => setMsg(""), 4000); return () => clearTimeout(t); }, [msg]);
+
+  if (!map || !check) {
+    return <div className="hx-menu"><a className="hx-back" href="#/hexdrift/editor"><IconBack /> My maps</a><p>That map isn't on this device.</p></div>;
+  }
+  const author = authorOf(map);
+  const bad = new Set(check.problems.map((q) => q.piece));
+  const broken = !check.road;
+  const share = async () => {
+    const code = encodeMap(map);
+    try { await navigator.clipboard.writeText(code); setMsg("Map code copied. Anyone can add it under My maps."); }
+    catch { window.prompt("Copy this map code:", code); }
+  };
+
+  return (
+    <div className={`hx-ed ${wide ? "hx-ed-wide" : ""}`}>
+      <header className="hx-ed-bar">
+        <a className="hx-icon" href="#/hexdrift/editor" aria-label="My maps" title="My maps"><IconBack /></a>
+        <input className="hx-ed-name" value={map.name} maxLength={LIMITS.nameLen} aria-label="Map name"
+          onChange={(e) => { const next = { ...map, name: e.target.value }; setMapState(next); saveMap(next); }} />
+        <button type="button" className="hx-icon" aria-label="Undo" title="Undo (Ctrl+Z)" disabled={!undo.current.length} onClick={() => back(undo, redo)}>↶</button>
+        <button type="button" className="hx-icon" aria-label="Redo" title="Redo (Ctrl+Shift+Z)" disabled={!redo.current.length} onClick={() => back(redo, undo)}>↷</button>
+        <a className={`hx-btn hx-btn-main ${broken ? "hx-off" : ""}`} href={broken ? undefined : `#/hexdrift/test/${map.id}`} aria-disabled={broken} title="Drive it (Enter)">Drive</a>
+      </header>
+
+      <div className="hx-ed-stage">
+        <Preview map={map} check={check} sel={sel} onPick={setSel} />
+        {wide && <Profile map={map} check={check} sel={sel} onPick={setSel} />}
+      </div>
+
+      <div className="hx-ed-side">
+      <div className="hx-ed-info">
+        <span>{(check.length / 1000).toFixed(2)} km · {map.pieces.filter((q) => q.k === "C").length} CP</span>
+        <span>{author ? <>Author {formatTime(author.ticks)} · Gold {formatTime(medalsOf(author.ticks).gold)}</> : "Drive to the finish to set the author time"}</span>
+        <button type="button" className="hx-linkbtn" disabled={broken || bot === "…"} onClick={runBot}>{bot === "…" ? "Autopilot driving…" : "Autopilot test"}</button>
+      </div>
+      {bot && bot !== "…" && <p className="hx-ed-bot" role="status">{bot}</p>}
+      {check.problems.length > 0 && (
+        <ul className="hx-ed-problems" role="status">
+          {check.problems.slice(0, 3).map((q, i) => (
+            <li key={i}>{q.piece >= 0 ? <button type="button" onClick={() => setSel(q.piece)}>Piece {q.piece + 1}</button> : null} {q.text}</li>
+          ))}
+        </ul>
+      )}
+
+      <div className="hx-ed-panel">
+        <RoadPanel map={map} sel={sel} setSel={setSel} ops={ops} bad={bad} wide={wide} />
 
         <div className="hx-ed-pub">
           {pub && <a href={`#/hexdrift/c/${pub.id}`}>{pub.version === versionOf(map) ? "Published" : "Published (an older version)"}</a>}
@@ -410,7 +429,7 @@ export function Editor({ id, sb, me }: { id: string; sb: SupabaseClient | null; 
   );
 }
 
-function Chips<T extends string | number>({ label, values, value, onPick, step, min, max }: {
+export function Chips<T extends string | number>({ label, values, value, onPick, step, min, max }: {
   label: string; values: [string, T][]; value: T | undefined; onPick: (v: T) => void; step?: number; min?: number; max?: number;
 }) {
   const n = typeof value === "number" && step !== undefined;
