@@ -85,6 +85,9 @@ const BUMP_R = 1.25, BUMP_AT = 1.15;
 
 const snap = (r: Race): Snap => ({ x: r.car.x, y: r.car.y, z: r.car.z, yaw: r.car.yaw, nx: r.car.nx, ny: r.car.ny, nz: r.car.nz, loop: r.car.loop >= 0, tx: r.car.tx, ty: r.car.ty, tz: r.car.tz });
 
+/** Other cars by quality level: full detail within, plainer within, drawn within (metres). */
+const CAR_LOD: Record<Gfx, [number, number, number]> = { high: [45, 160, 700], medium: [25, 90, 450], low: [12, 45, 260] };
+
 export class Game {
   race: Race;
   autopilot = false;
@@ -147,6 +150,8 @@ export class Game {
   private post: Post;
   private sun: SunShadow;
   private gfxAuto = true;
+  private gfxLevel: Gfx = "high";
+  private view = new THREE.Vector3();
   private camDir = new THREE.Vector3();
   private resAt = 0;
   private hudCache = { time: "", speed: "", cps: "", count: "", split: "" };
@@ -503,8 +508,19 @@ export class Game {
     }
   }
 
+  /** Other cars and ghosts: full detail close by, plainer further out, gone behind you or far off. */
+  private carLod(m: CarModel): boolean {
+    const p = m.root.position, c = this.camera.position;
+    const dx = p.x - c.x, dz = p.z - c.z, d = Math.hypot(dx, dz);
+    const [full, lite, far] = CAR_LOD[this.gfxLevel];
+    if (d > far || (d > 15 && dx * this.view.x + dz * this.view.z < -0.3 * d)) return false;
+    m.setDetail(d < full ? 0 : d < lite ? 1 : 2);
+    return true;
+  }
+
   private drawRemotes(alpha: number, dt: number) {
     const now = performance.now(), ease = Math.exp(-dt * 7);
+    this.camera.getWorldDirection(this.view);
     for (const r of this.remotes.values()) {
       if (!r.race || now - r.at > REMOTE_STALE || r.race.phase === "finished") { r.model.root.visible = false; continue; }
       const A = r.prev, B = r.cur, o = r.off;
@@ -514,8 +530,8 @@ export class Game {
       let dy = B.yaw - A.yaw;
       if (dy > Math.PI) dy -= Math.PI * 2;
       if (dy < -Math.PI) dy += Math.PI * 2;
-      r.model.root.visible = true;
       this.pose(r.model, r.n, B, jump, A.x + (B.x - A.x) * k + o.x, A.y + (B.y - A.y) * k + o.y, A.z + (B.z - A.z) * k + o.z, A.yaw + dy * k + o.yaw, dt);
+      r.model.root.visible = this.carLod(r.model);
       r.model.update(r.race.car.speed, ((r.held & 15) - 7) / 7, dt);
       r.model.setBoost(r.race.car.boosting > 0);
     }
@@ -729,6 +745,7 @@ export class Game {
         if (gy < -Math.PI) gy += Math.PI * 2;
         const gx = p.x + (q.x - p.x) * tt, gyy = p.y + (q.y - p.y) * tt, gz = p.z + (q.z - p.z) * tt, gyaw = p.yaw + gy * tt;
         this.pose(gh.model, gh.n, q, gj, gx, gyy, gz, gyaw, dt);
+        gh.model.root.visible = this.carLod(gh.model);
         const gi = gh.race.inputs;
         gh.model.update(gh.race.car.speed, gi.length ? ((gi[gi.length - 1] & 15) - 7) / 7 : 0, dt);
         gh.model.setBoost(gh.race.car.boosting > 0);
@@ -1156,6 +1173,7 @@ export class Game {
   get graphics(): Gfx { return this.post.gfx; }
 
   private applyGfx(level: Gfx) {
+    this.gfxLevel = level;
     this.post.setLevel(level);
     this.sun.setLevel(this.post.shadowSize);
     // Fewer small things and plainer versions further in on lighter levels.

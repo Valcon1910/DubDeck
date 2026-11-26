@@ -32,6 +32,8 @@ export interface CarModel {
   /** Tilt/position is set on root; wheels spin and steer; brake lights glow. */
   update(speed: number, steer: number, dt: number, braking?: boolean): void;
   setBoost(on: boolean): void;
+  /** 0: everything; 1: no small parts (add-ons, brakes, numbers); 2: also plain wheels and no shadow. */
+  setDetail(level: 0 | 1 | 2): void;
   dispose(): void;
 }
 
@@ -921,9 +923,13 @@ export function buildCar(opts: CarOptions = {}): CarModel {
       chrome: pbr("#eef1f6", 1, 0.07, D),
       white: pbr("#f2f4f8", 0.1, 0.3, D),
     };
+  /** Small parts hidden further away (setDetail). */
+  const small: THREE.Object3D[] = [];
   for (const [p, g] of k.build()) {
     geos.push(g);
-    root.add(new THREE.Mesh(g, M[p]));
+    const m = new THREE.Mesh(g, M[p]);
+    root.add(m);
+    small.push(m);
   }
   const bodyGroup = new THREE.Group();
   root.add(bodyGroup);
@@ -956,6 +962,7 @@ export function buildCar(opts: CarOptions = {}): CarModel {
       m.rotation.set(0, s * Math.PI / 2, 0, "YXZ");
       m.rotateX(-lean);
       root.add(m);
+      small.push(m);
     }
   }
 
@@ -968,7 +975,7 @@ export function buildCar(opts: CarOptions = {}): CarModel {
   // Electric truck: the boost glows from under the rear bumper instead.
   const jets: V[] = spec.exhausts.length ? spec.exhausts : [[-0.6, 0.5, -2.62], [0.6, 0.5, -2.62]];
   for (const [x, y, z] of jets) {
-    if (spec.exhausts.length) { const e = new THREE.Mesh(endG, glowM); e.position.set(x, y, z - 0.07); root.add(e); }
+    if (spec.exhausts.length) { const e = new THREE.Mesh(endG, glowM); e.position.set(x, y, z - 0.07); root.add(e); small.push(e); }
     const f = new THREE.Mesh(flameG, flameM); f.position.set(x, y, z - 0.68); f.visible = false; root.add(f);
     flames.push(f);
   }
@@ -984,6 +991,14 @@ export function buildCar(opts: CarOptions = {}): CarModel {
   const bandM = ghostM ?? keep(new THREE.MeshBasicMaterial({ color: "#ffd21a" }));
   const caliperM = ghostM ?? (def.id === "rig" ? M.trim : pbr(def.id === "coupe" && look.accent === "factory" ? "#c8102e" : accent, 0.3, 0.4));
   const wheelList: { pivot: THREE.Group; spin: THREE.Group; front: boolean; r: number }[] = [];
+  let detail: 0 | 1 | 2 = 0, casting: THREE.Object3D[] = [];
+  /** Brakes (gone from detail 1) and rims (gone from detail 2). */
+  let brakes: THREE.Object3D[] = [], rims: THREE.Object3D[] = [];
+  const showDetail = () => {
+    for (const o of small) o.visible = detail < 1;
+    for (const o of brakes) o.visible = detail < 1;
+    for (const o of rims) o.visible = detail < 2;
+  };
   // Ghosts keep the simple wheels (cheaper, and they're see-through anyway).
   const fitWheels = () => {
     for (let i = 0; i < spec.wheels.length; i++) {
@@ -995,18 +1010,20 @@ export function buildCar(opts: CarOptions = {}): CarModel {
         const o = new THREE.Mesh(g, m);
         if (mirror) o.scale.x = s;
         parent.add(o);
+        return o;
       };
+      if (i === 0) { brakes = []; rims = []; }
       pivot.clear(); spin.clear();
       mesh(spin, geo.tyre, tyreM, true);
-      if (real) mesh(spin, geo.rimR, rimM, true);
-      else mesh(spin, s > 0 ? geo.rimR : geo.rimL, rimM, false);
-      if (geo.band) mesh(spin, geo.band, bandM, true);
+      rims.push(real ? mesh(spin, geo.rimR, rimM, true) : mesh(spin, s > 0 ? geo.rimR : geo.rimL, rimM, false));
+      if (geo.band) rims.push(mesh(spin, geo.band, bandM, true));
       if (!ghost && spec.rim !== "covered") {
-        mesh(spin, geo.disc, M.metal, true);
-        mesh(pivot, geo.caliper, caliperM, true);
+        brakes.push(mesh(spin, geo.disc, M.metal, true));
+        brakes.push(mesh(pivot, geo.caliper, caliperM, true));
       }
       pivot.add(spin);
     }
+    showDetail();
   };
   for (const w of spec.wheels) {
     const pivot = new THREE.Group(); pivot.position.set(w.x, w.r, w.z);
@@ -1048,6 +1065,14 @@ export function buildCar(opts: CarOptions = {}): CarModel {
         if (w.front) w.pivot.rotation.y = steerAngle;
       }
       if (!ghost && brake !== braking) { braking = brake; tailM.color.set(brake ? "#ff2a3d" : TAIL_ON); }
+    },
+    setDetail(level) {
+      if (level === detail) return;
+      // Plain cars cast no shadow; the ones that did get it back.
+      if (level === 2) { casting = []; root.traverse((o) => { if (o.castShadow) { casting.push(o); o.castShadow = false; } }); }
+      else if (detail === 2) { for (const o of casting) o.castShadow = true; casting = []; }
+      detail = level;
+      showDetail();
     },
     setBoost(on) {
       for (const f of flames) { f.visible = on; f.scale.z = on ? 0.8 + Math.random() * 0.5 : 1; }
