@@ -317,6 +317,23 @@ const TRAFFIC = ["sedan_r", "sedan_b", "sedan_w", "taxi", "sedan_r", "van", "sed
 /** Near versions within this (plus the object's size); small things vanish past FAR_SMALL. */
 const NEAR = 70, MID = 240, FAR_SMALL = 320;
 
+/**
+ * How much of the kit each graphics level draws. `near`/`mid`/`small` scale the
+ * distances above; `keep` is the share of small things (bins, benches, signs...)
+ * kept; `cone` is how wide (as a cosine) the view is where close things get their
+ * detailed version (everything else, beside or behind you, gets the plain one);
+ * `traffic` is cars per street.
+ */
+export interface KitDetail { near: number; mid: number; small: number; keep: number; cone: number; traffic: number; shadows: boolean }
+export const KIT_DETAIL: Record<"low" | "medium" | "high", KitDetail> = {
+  high: { near: 1, mid: 1, small: 1, keep: 1, cone: 0.2, traffic: 3, shadows: true },
+  medium: { near: 0.65, mid: 0.7, small: 0.7, keep: 0.6, cone: 0.45, traffic: 2, shadows: false },
+  low: { near: 0.35, mid: 0.4, small: 0.4, keep: 0.3, cone: 0.6, traffic: 1, shadows: false },
+};
+let detail: KitDetail = KIT_DETAIL.high;
+/** The kit's detail for the graphics level (takes effect on the next view update). */
+export function setKitDetail(level: "low" | "medium" | "high") { detail = KIT_DETAIL[level]; }
+
 export interface KitView {
   /** Moves traffic and picks what to draw for this camera. */
   update(dt: number, cam: THREE.Camera): void;
@@ -447,19 +464,31 @@ export function buildKit(group: THREE.Group, road: Road, night: boolean, sky: TH
     const fill = (s: Set, px: number, pz: number, ux: number, uz: number) => {
         let nn = 0, nf = 0, nb = 0;
         const n = s.xz.length / 2;
-        const lim = s.big ? far2 : FAR_SMALL * FAR_SMALL;
+        const D = detail;
+        const fs = FAR_SMALL * D.small;
+        const lim = s.big ? far2 : fs * fs;
+        const nearD = NEAR * D.near, midD = MID * D.mid;
+        // Lighter levels thin the small things out (the same ones each time).
+        const every = s.big || s.r >= 2.5 || D.keep >= 1 ? 1 : Math.max(1, Math.round(1 / D.keep));
         for (let i = 0; i < n; i++) {
+          if (every > 1 && i % every) continue;
           const dx = s.xz[i * 2] - px, dz = s.xz[i * 2 + 1] - pz;
           const d2 = dx * dx + dz * dz;
           if (d2 > lim) continue;
           const d = Math.sqrt(d2);
+          const ahead = dx * ux + dz * uz;
           // Behind the camera (with room for its size and a turn of the view).
-          if (d > s.r + 20 && dx * ux + dz * uz < -d * 0.35 + s.r) continue;
+          if (d > s.r + 20 && ahead < -d * 0.35 + s.r) continue;
           const m = s.mats.subarray(i * 16, i * 16 + 16);
-          if (d < NEAR + s.r) s.near.instanceMatrix.array.set(m, (nn++) * 16);
-          else if (!s.block || d < MID + s.r) s.far.instanceMatrix.array.set(m, (nf++) * 16);
+          // The detailed version only close by and in view (beside or behind you: only its shadow shows).
+          if (d < nearD + s.r && (d < s.r + 8 || ahead > d * D.cone - s.r)) s.near.instanceMatrix.array.set(m, (nn++) * 16);
+          else if (!s.block || d < midD + s.r) s.far.instanceMatrix.array.set(m, (nf++) * 16);
           else s.block.instanceMatrix.array.set(m, (nb++) * 16);
         }
+        // Small things only cast a shadow on the top level (one more draw each).
+        const sh = s.big || s.r >= 2.5 || D.shadows;
+        s.near.castShadow = sh; s.far.castShadow = sh;
+        s.near.userData.ownShadow = s.far.userData.ownShadow = true;
         s.near.count = nn; s.far.count = nf;
         s.near.instanceMatrix.needsUpdate = true; s.far.instanceMatrix.needsUpdate = true;
         if (s.block) { s.block.count = nb; s.block.instanceMatrix.needsUpdate = true; }
@@ -482,7 +511,7 @@ export function buildKit(group: THREE.Group, road: Road, night: boolean, sky: TH
       for (const st of nearStreets) {
         if (cars.length >= tMesh.length * 12) break;
         if (cars.some((k) => k.st === st)) continue;
-        const k = Math.floor(rnd() * 3);
+        const k = Math.floor(rnd() * detail.traffic);
         for (let j = 0; j < k; j++) cars.push({ st, t: rnd(), dir: rnd() < 0.5 ? 1 : -1, speed: 8 + rnd() * 6, type: Math.floor(rnd() * tMesh.length) });
       }
     };
@@ -531,7 +560,7 @@ export function buildKit(group: THREE.Group, road: Road, night: boolean, sky: TH
         m4.compose(v.set(x, roadTerrain(road, x, z).h + 0.06, z), q, one);
         const dx = x - cam.position.x, dz = z - cam.position.z;
         const tm = tMesh[car.type], cnt = counts[car.type];
-        if (dx * dx + dz * dz < NEAR * NEAR) { if (cnt.n < 64) m4.toArray(tm.near.instanceMatrix.array, (cnt.n++) * 16); }
+        if (dx * dx + dz * dz < NEAR * NEAR * detail.near * detail.near) { if (cnt.n < 64) m4.toArray(tm.near.instanceMatrix.array, (cnt.n++) * 16); }
         else if (cnt.f < 64) m4.toArray(tm.far.instanceMatrix.array, (cnt.f++) * 16);
       }
       tMesh.forEach((tm, i) => {

@@ -41,7 +41,7 @@ export function gradeFor(id: string, look?: Look): Grade {
 
 /** What each level does. */
 const LEVELS: Record<Gfx, { samples: number; shadow: number; mips: number; first: number; rays: number; fxaa: boolean }> = {
-  low: { samples: 0, shadow: 0, mips: 3, first: 4, rays: 12, fxaa: true },
+  low: { samples: 0, shadow: 0, mips: 3, first: 4, rays: 0, fxaa: true },
   medium: { samples: 4, shadow: 1024, mips: 4, first: 2, rays: 20, fxaa: false },
   high: { samples: 4, shadow: 2048, mips: 5, first: 2, rays: 32, fxaa: false },
 };
@@ -174,10 +174,12 @@ void main() {
   c += uSunCol * (pow(sd, 6.0) * 0.35 + pow(sd, 32.0) * 0.5) * thick * uHaze;
   c += texture2D(tBloom, vUv).rgb * uBloom;
   // The rays were worked out at quarter size with a jitter: four soft taps smooth the jitter out.
+#ifndef NO_RAYS
   vec2 rt = uRayTexel;
   float ray = texture2D(tRays, vUv + rt * vec2(-0.75, -0.25)).r + texture2D(tRays, vUv + rt * vec2(0.75, 0.25)).r
             + texture2D(tRays, vUv + rt * vec2(0.25, -0.75)).r + texture2D(tRays, vUv + rt * vec2(-0.25, 0.75)).r;
   c += uSunCol * ray * 0.25 * uRays;
+#endif
   c = shoulder(c * uExposure);
   // Grade.
   float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
@@ -187,9 +189,11 @@ void main() {
   c = clamp((c - 0.5) * uContrast + 0.5, 0.0, 1.0);
   vec2 v = (vUv - 0.5) * vec2(uAspect, 1.0);
   c *= 1.0 - uVig * smoothstep(0.25, 1.1, dot(v, v) * 1.6);
+#ifndef LITE
   // Fine grain (also hides banding in the sky).
   float n = fract(sin(dot(gl_FragCoord.xy + fract(uTime) * 61.0, vec2(12.9898, 78.233))) * 43758.5453);
   c += (n - 0.5) * 0.018;
+#endif
   gl_FragColor = vec4(c, 1.0);
 }`;
 
@@ -309,7 +313,7 @@ export class Post {
       const k = L.first << i;
       this.mips.push(new THREE.WebGLRenderTarget(Math.max(1, Math.round(w / k)), Math.max(1, Math.round(h / k)), { type: this.type, depthBuffer: false }));
     }
-    this.raysMat = shader(RAYS, { tDepth: { value: null }, uSun: { value: new THREE.Vector2() }, uAspect: { value: 1 } }, { SAMPLES: L.rays });
+    this.raysMat = shader(RAYS, { tDepth: { value: null }, uSun: { value: new THREE.Vector2() }, uAspect: { value: 1 } }, { SAMPLES: Math.max(1, L.rays) });
     const G = this.grade;
     this.fin = shader(FINAL, {
       tColor: { value: null }, tDepth: { value: null }, tBloom: { value: null }, tRays: { value: null },
@@ -320,7 +324,7 @@ export class Post {
       uNear: { value: 0.5 }, uFar: { value: 2600 }, uBloom: { value: G.bloom }, uRays: { value: 0 }, uHaze: { value: G.haze },
       uExposure: { value: G.exposure }, uSat: { value: G.saturation }, uContrast: { value: G.contrast }, uVig: { value: G.vignette },
       uAspect: { value: w / h }, uTime: { value: 0 },
-    }, L.fxaa ? { FXAA: 1 } : {});
+    }, { ...(L.fxaa ? { FXAA: 1 } : {}), ...(L.rays ? {} : { NO_RAYS: 1, LITE: 1 }) });
   }
 
   private pass(mat: THREE.Material, target: THREE.WebGLRenderTarget | null, clear = true) {
@@ -344,7 +348,7 @@ export class Post {
     const facing = this.v.set(0, 0, -1).applyQuaternion(cam.quaternion).dot(this.sunDir);
     const p = this.v.copy(this.sunDir).multiplyScalar(1000).add(cam.position).project(cam);
     const rays = G.rays * Math.max(0, Math.min(1, (facing - 0.1) / 0.35));
-    if (rays > 0.001) {
+    if (rays > 0.001 && LEVELS[this.level].rays) {
       this.raysMat.uniforms.tDepth.value = depth;
       this.raysMat.uniforms.uSun.value.set(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5);
       this.raysMat.uniforms.uAspect.value = cam.aspect;

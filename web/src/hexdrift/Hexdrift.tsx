@@ -119,8 +119,10 @@ function setPref(key: string, v: string) { try { localStorage.setItem(key, v); }
 export function Hexdrift() {
   const [view, setView] = useState<View>(readView);
   useEffect(() => {
-    const on = () => setView(readView());
+    const on = () => { const v = readView(); setView((o) => (JSON.stringify(o) === JSON.stringify(v) ? o : v)); };
     window.addEventListener("hashchange", on);
+    // The address may have changed between the first draw and now.
+    on();
     return () => window.removeEventListener("hashchange", on);
   }, []);
   const chat = useChat();

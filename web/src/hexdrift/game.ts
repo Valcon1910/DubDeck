@@ -10,6 +10,8 @@ import { propsOf } from "./sim/props.ts";
 import { buildWorld, GROUND, type World } from "./render/world.ts";
 import { LOOKS, setupScene } from "./render/roadworld.ts";
 import { lookWith } from "./render/env.ts";
+import { setKitDetail } from "./render/kit.ts";
+import { GRAIN, setGrainLevel } from "./render/textures.ts";
 import { GFX, gradeFor, guessGfx, Post, SunShadow, type Gfx } from "./render/post.ts";
 import { Particles } from "./render/particles.ts";
 import { Skids } from "./render/skids.ts";
@@ -272,7 +274,7 @@ export class Game {
       const m = o as THREE.Mesh;
       if (!m.isMesh || o.name === "sky") return;
       m.receiveShadow = true;
-      m.castShadow = !["terrain", "water", "road"].includes(o.name);
+      if (!m.userData.ownShadow) m.castShadow = !["terrain", "water", "road"].includes(o.name);
     });
   }
   private building = true;
@@ -1156,6 +1158,14 @@ export class Game {
   private applyGfx(level: Gfx) {
     this.post.setLevel(level);
     this.sun.setLevel(this.post.shadowSize);
+    // Fewer small things and plainer versions further in on lighter levels.
+    setKitDetail(level);
+    this.world.update(0, this.cheer, this.camera);
+    // Lighter surface grain: recompile the materials that have it.
+    if (setGrainLevel(level)) this.scene.traverse((o) => {
+      const mm = (o as THREE.Mesh).material;
+      for (const m of Array.isArray(mm) ? mm : mm ? [mm] : []) if ((m as unknown as Record<symbol, boolean>)[GRAIN]) m.needsUpdate = true;
+    });
   }
 
   private lightning(dt: number) {
