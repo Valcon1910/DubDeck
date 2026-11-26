@@ -561,6 +561,7 @@ a.hx-pl-name:hover { text-decoration: underline; }
 .hx-cm-mod h2 { margin: 0; font-size: 16px; }
 .hx-ed-pub { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .hx-ed-pub .hx-btn:disabled { opacity: 0.45; cursor: default; }
+.hx-ed-pub > .hx-ed-row { flex: 1 1 100%; min-width: 0; }
 .hx-cm-report .hx-chip-btn { text-transform: none; }
 /* Community cards: the name is the card's link (stretched over it); author and record holder link to profiles. */
 .hx-cm-card { position: relative; }

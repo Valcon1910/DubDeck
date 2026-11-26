@@ -151,7 +151,7 @@ export function CommunityMap({ id, sb, me, who, offline }: CommunityProps & { id
       <section className="hx-cm-page" style={{ "--hx-sky": b.sky, "--hx-g": b.ground, "--hx-a": b.accent } as React.CSSProperties}>
         <MapArt m={m} sb={sb} className="hx-cm-art" />
         <h1 className="hx-h1">{m.name}</h1>
-        <p className="hx-dim">by <a className="hx-cm-author" href={profileHref(m.author)}>{mine ? "you" : who(m.author)}</a> · {THEMES[m.theme].name} · {(m.length_m / 1000).toFixed(2)} km · {m.checkpoints} checkpoint{m.checkpoints === 1 ? "" : "s"}</p>
+        <p className="hx-dim">by <a className="hx-cm-author" href={profileHref(m.author)}>{mine ? "you" : who(m.author)}</a> · {THEMES[m.theme].name} · {(m.length_m / 1000).toFixed(2)} km · {m.checkpoints} checkpoint{m.checkpoints === 1 ? "" : "s"}{(m.scene as { rating?: string } | undefined)?.rating ? ` · ${def.difficulty} (maker's rating)` : ""}</p>
         <div className="hx-row hx-cm-actions">
           <a className="hx-btn hx-btn-main" href={`#/hexdrift/c/${m.id}/race`} data-sound="confirm">Race</a>
           <a className="hx-btn" href={`#/hexdrift/c/${m.id}/records`}><IconTrophy size={16} /> Leaderboard</a>
