@@ -1,7 +1,8 @@
 // A member's Vortex profile: their picture and name, the Hexdrift maps they've
 // made, the world records they hold, their favourite car, and a button to
 // message them in Chat. Opened from Community Maps (makers and record holders).
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { emailFrom, pidOf, playerHref } from "./profileLink.ts";
 import { Avatar, Icon } from "./Settings";
 import { CHAT_ON, displayName, useChat } from "./chat/store";
 import { difficultyOf, listMaps, pictureUrl, recordsHeld, type CMap } from "../hexdrift/community.ts";
@@ -11,16 +12,24 @@ import { parseLook } from "../hexdrift/online.ts";
 import { formatTime } from "../hexdrift/sim/race.ts";
 import { Preview } from "../hexdrift/render/preview.ts";
 
-const emailOf = () => decodeURIComponent(location.hash.replace(/^#\/?profile\/?/, "").split(/[/?]/)[0] ?? "").toLowerCase();
+/** The member the link names: a profile ID, or an email on old links. */
+const paramOf = () => location.hash.replace(/^#\/?profile\/?/, "").split(/[/?]/)[0] ?? "";
 
 interface Held { map: string; name: string; href: string; ticks: number }
 
 export function ProfilePage() {
   const chat = useChat();
-  const [email, setEmail] = useState(emailOf);
-  useEffect(() => { const on = () => setEmail(emailOf()); window.addEventListener("hashchange", on); return () => window.removeEventListener("hashchange", on); }, []);
+  const [param, setParam] = useState(paramOf);
+  useEffect(() => { const on = () => setParam(paramOf()); window.addEventListener("hashchange", on); return () => window.removeEventListener("hashchange", on); }, []);
   const sb = chat?.status === "ready" ? chat.sb : null;
   const me = chat?.me ?? "";
+  // Known once the member list is in (IDs live there).
+  const email = useMemo(() => emailFrom(param), [param, chat?.profiles]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    // An old email link: show the short one instead.
+    const pid = email && decodeURIComponent(param).includes("@") ? pidOf(email) : undefined;
+    if (pid) history.replaceState(null, "", `#/profile/${pid}`);
+  }, [param, email]);
   const p = chat?.profiles.get(email);
   const name = displayName(p, email);
   const [maps, setMaps] = useState<CMap[] | null>(null);
@@ -78,7 +87,8 @@ export function ProfilePage() {
 
   if (!CHAT_ON) return <section className="vx-page"><p className="vx-muted">Profiles open once Chat is switched on.</p></section>;
   if (!sb) return <section className="vx-page"><div className="vx-card vx-skeleton" aria-hidden="true" /><p className="vx-muted">{chat?.status === "error" ? "Couldn't connect. Profiles need Chat to be online." : "Connecting…"}</p></section>;
-  if (!email || (!p && chat?.profiles.size)) return <section className="vx-page"><h1>Profile not found</h1><p className="vx-muted">There's no Vortex member with that address.</p></section>;
+  if (!email && !chat?.profiles.size) return <section className="vx-page"><div className="vx-card vx-skeleton" aria-hidden="true" /><p className="vx-muted">Loading…</p></section>;
+  if (!email || (!p && chat?.profiles.size)) return <section className="vx-page"><h1>Profile not found</h1><p className="vx-muted">There's no Vortex member with that link.</p></section>;
   const bodyName = car ? BODIES.find((b) => b.id === car.look.body)?.name ?? "" : "";
   return (
     <section className="vx-page vx-profile">
@@ -88,7 +98,7 @@ export function ProfilePage() {
           <h1>{name}{email === me && <span className="vx-muted"> (you)</span>}</h1>
           <div className="vx-profile-actions">
             {email !== me && <button type="button" className="vx-btn vx-btn-primary" disabled={busy} onClick={() => void message()}><Icon name="chat" />Message</button>}
-            <a className="vx-btn vx-btn-ghost" href={`#/hexdrift/player/${encodeURIComponent(email)}`}>Hexdrift times</a>
+            <a className="vx-btn vx-btn-ghost" href={playerHref(email)}>Hexdrift times</a>
           </div>
         </div>
       </header>

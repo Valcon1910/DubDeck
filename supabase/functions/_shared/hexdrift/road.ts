@@ -13,7 +13,7 @@
 // Like the rest of the simulation this only uses + - * / sqrt (and
 // Math.floor / Math.imul), so every device and the record checker agree.
 import type { PartDef } from "./parts.ts";
-import { dcos, dsin, hash, noise, smooth } from "./math.ts";
+import { datan2, dcos, dsin, hash, noise, smooth } from "./math.ts";
 
 /** Spacing of the road's samples (and the length of its segments). */
 export const SEG = 2.5;
@@ -50,6 +50,24 @@ export interface LandDef {
   verge?: number;
   /** Main ground material (plain/dunes). */
   mat?: number;
+  /** Made in the studio: the ground raised or lowered and painted, on a grid of SCULPT m. */
+  sculpt?: Sculpt;
+}
+
+/** Terrain edits: [i, j, metres up] at grid points (i·SCULPT, j·SCULPT), and [i, j, material] painted there. */
+export interface Sculpt { h?: [number, number, number][]; m?: [number, number, number][] }
+export const SCULPT = 8;
+const skey = (i: number, j: number) => (i + 32768) * 65536 + (j + 32768);
+const sculpts = new WeakMap<Sculpt, { h: Map<number, number>; m: Map<number, number> }>();
+function sculptOf(S: Sculpt) {
+  let c = sculpts.get(S);
+  if (!c) {
+    c = { h: new Map(), m: new Map() };
+    for (const [i, j, v] of S.h ?? []) c.h.set(skey(i, j), v);
+    for (const [i, j, v] of S.m ?? []) c.m.set(skey(i, j), v);
+    sculpts.set(S, c);
+  }
+  return c;
 }
 
 export interface AltDef {
@@ -81,6 +99,12 @@ export interface RoadDef {
   dress?: Dress;
   /** Free parts (studio editor). */
   parts?: PartDef[];
+  /**
+   * A closed circuit: after the route, the road curves smoothly back round to
+   * the start, and the start line is also the finish (crossed once a lap,
+   * after every checkpoint). Needs at least two checkpoints and no F.
+   */
+  circuit?: boolean;
 }
 
 /** Roadside strips: what lines a stretch of road (kit.ts knows what each holds). */
@@ -93,6 +117,12 @@ export interface Dress {
   zones: [number, number, Strip, Strip][];
   /** Hand-placed pieces: kit object, metres along the main road, side (-1 left, 1 right), gap from the road's edge, shift along. */
   set?: [string, number, number, number, number?][];
+  /** Placed in the studio: kit object, x, z, heading (degrees), lift off the ground (m). */
+  objs?: [string, number, number, number, number][];
+  /** Ground kept clear of scenery (under the studio's parts): x, z, radius. */
+  keep?: [number, number, number][];
+  /** false: no scenery but what's placed by hand. */
+  auto?: boolean;
 }
 
 /** Flags of the segment that starts at a sample. */
@@ -161,6 +191,8 @@ export interface Road {
   minY: number;
   dress?: Dress;
   loops: Loop[];
+  /** Circuits: the length of a lap (0 on roads from a start to a finish). */
+  lapLen: number;
 }
 
 // ── The land ────────────────────────────────────────────────────────────────
@@ -172,8 +204,24 @@ const ridge = (x: number, z: number, seed: number) => {
   return 1 - (n < 0 ? -n : n);
 };
 
-/** The land of the map without any road: height and material. */
+/** The land of the map without any road: height and material (with the studio's edits). */
 export function landAt(L: LandDef, x: number, z: number): { h: number; mat: number } {
+  const n = baseLand(L, x, z);
+  if (!L.sculpt || n.h <= NONE) return n;
+  const c = sculptOf(L.sculpt);
+  const u = x / SCULPT, v = z / SCULPT, i = Math.floor(u), j = Math.floor(v), fu = u - i, fv = v - j;
+  if (c.h.size) {
+    const a = c.h.get(skey(i, j)) ?? 0, b = c.h.get(skey(i + 1, j)) ?? 0, d = c.h.get(skey(i, j + 1)) ?? 0, e = c.h.get(skey(i + 1, j + 1)) ?? 0;
+    n.h += (a + (b - a) * fu) * (1 - fv) + (d + (e - d) * fu) * fv;
+  }
+  if (c.m.size) {
+    const m = c.m.get(skey(fu < 0.5 ? i : i + 1, fv < 0.5 ? j : j + 1));
+    if (m !== undefined) n.mat = m;
+  }
+  return n;
+}
+
+function baseLand(L: LandDef, x: number, z: number): { h: number; mat: number } {
   const sc = L.scale;
   switch (L.kind) {
     case "coast": {
@@ -336,6 +384,57 @@ export function buildRoad(def: RoadDef): Road {
       push();
     } else throw new Error(`Bad road token ${tok}`);
   }
+  // Circuits: a smooth curve from where the route ends back onto the start line.
+  if (def.circuit) {
+    if (finish || cp < 2) throw new Error("A circuit needs two checkpoints or more, and no F");
+    const [sx, sz, sy, sh] = def.start;
+    let syaw = sh * DEG;
+    const ex = x, ez = z, ey = y, h0 = hw, h1 = main[0].hw;
+    const dist = Math.sqrt((sx - ex) * (sx - ex) + (sz - ez) * (sz - ez));
+    if (dist < SEG) throw new Error("A circuit's route ends on its start");
+    const k = dist * 1.1;
+    const t0x = dsin(yaw) * k, t0z = dcos(yaw) * k, t1x = dsin(syaw) * k, t1z = dcos(syaw) * k;
+    // Cubic Hermite from the route's end to the start, matching both headings.
+    const at = (u: number) => {
+      const u2 = u * u, u3 = u2 * u;
+      const a = 2 * u3 - 3 * u2 + 1, b = u3 - 2 * u2 + u, c = -2 * u3 + 3 * u2, d = u3 - u2;
+      return [a * ex + b * t0x + c * sx + d * t1x, a * ez + b * t0z + c * sz + d * t1z];
+    };
+    const dir = (u: number) => {
+      const u2 = u * u;
+      const a = 6 * u2 - 6 * u, b = 3 * u2 - 4 * u + 1, c = -6 * u2 + 6 * u, d = 3 * u2 - 2 * u;
+      return [a * ex + b * t0x + c * sx + d * t1x, a * ez + b * t0z + c * sz + d * t1z];
+    };
+    // Even spacing along it (by a table of lengths).
+    const STEPS = 400, cum = [0];
+    let [px, pz] = at(0);
+    for (let j = 1; j <= STEPS; j++) {
+      const [qx, qz] = at(j / STEPS);
+      cum.push(cum[j - 1] + Math.sqrt((qx - px) * (qx - px) + (qz - pz) * (qz - pz)));
+      px = qx; pz = qz;
+    }
+    const total = cum[STEPS], n = Math.max(1, Math.floor(total / SEG + 0.5));
+    let jj = 0;
+    for (let j = 1; j <= n; j++) {
+      const want = (total * j) / n;
+      while (jj < STEPS - 1 && cum[jj + 1] < want) jj++;
+      const u = j === n ? 1 : (jj + (want - cum[jj]) / (cum[jj + 1] - cum[jj] || 1)) / STEPS;
+      [x, z] = j === n ? [sx, sz] : at(u);
+      const [dx, dz] = dir(u);
+      let a = datan2(dx, dz);
+      // Keep the heading continuous (no jump of a whole turn).
+      while (a - yaw > Math.PI) a -= 2 * Math.PI;
+      while (a - yaw < -Math.PI) a += 2 * Math.PI;
+      yaw = a;
+      y = ey + (sy - ey) * smooth(u);
+      hw = h0 + (h1 - h0) * smooth(u);
+      s += total / n;
+      push();
+    }
+    while (syaw - yaw > Math.PI) syaw -= 2 * Math.PI;
+    while (syaw - yaw < -Math.PI) syaw += 2 * Math.PI;
+    finish = { x: sx, y: sy, z: sz, yaw: syaw, fx: dsin(syaw), fz: dcos(syaw), hw: main[0].hw + 2, cp: -1 };
+  }
   if (!finish) throw new Error("A road needs a finish (F)");
 
   // Roads that follow the land: heights from the land, smoothed.
@@ -405,7 +504,9 @@ export function buildRoad(def: RoadDef): Road {
       const sg: Seg = {
         ax: a.x, ay: a.y, az: a.z, bx: b.x, by: b.y, bz: b.z, fx: ex / len, fz: ez / len, len,
         hw0: a.hw, hw1: b.hw, bk0: a.bank, bk1: b.bank, flags: a.flags, surf: a.surf, strand: si, i,
-        capA: i === 0 || (pts[i - 1].flags & GAP) !== 0, capB: i === pts.length - 2 || (b.flags & GAP) !== 0,
+        // A circuit's ends meet: no end faces there.
+        capA: (i === 0 && !(def.circuit && si === 0)) || (i > 0 && (pts[i - 1].flags & GAP) !== 0),
+        capB: (i === pts.length - 2 && !(def.circuit && si === 0)) || (b.flags & GAP) !== 0,
         b0: a.boost ? a.boost[0] : 0, b1: a.boost ? a.boost[1] : 0,
       };
       segs.push(sg);
@@ -423,7 +524,7 @@ export function buildRoad(def: RoadDef): Road {
   if (L.sea !== undefined && L.sea < minY) minY = L.sea;
   return {
     strands, segs, grid, tgrid, gates, finish, land: L, grav: def.grav ?? 1, dress: def.dress,
-    runout: main[main.length - 1].s - main[fi].s, x0, x1, z0, z1, minY, loops,
+    runout: main[main.length - 1].s - main[fi].s, x0, x1, z0, z1, minY, loops, lapLen: def.circuit ? main[main.length - 1].s : 0,
   };
 }
 

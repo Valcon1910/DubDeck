@@ -62,6 +62,25 @@ export interface Track {
   theme?: string;
   /** Free parts (studio editor), with their grid. */
   parts?: Parts;
+  /** Checkpoints counted as passed from the start (a practice run started part way). */
+  passed?: number[];
+}
+
+/**
+ * The track with the car starting somewhere else (the studio's "drive from
+ * here"): the checkpoints before that point count as passed.
+ */
+export function startFrom(t: Track, at: Spot): Track {
+  const pts = t.road?.strands[0].pts;
+  if (!pts) return { ...t, spawn: at };
+  const sAt = (x: number, z: number) => {
+    let bd = Infinity, s = 0;
+    for (const p of pts) { const d = (p.x - x) ** 2 + (p.z - z) ** 2; if (d < bd) { bd = d; s = p.s; } }
+    return s;
+  };
+  const s0 = sAt(at.x, at.z);
+  const passed = t.road!.gates.filter((g) => sAt(g.x, g.z) < s0).map((g) => g.cp);
+  return { ...t, spawn: at, passed };
 }
 
 export const key = (x: number, z: number) => (x + 2048) * 4096 + (z + 2048);

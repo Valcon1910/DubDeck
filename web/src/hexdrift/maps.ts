@@ -1,8 +1,9 @@
 // Built-in maps. Medal times are in steps (1/60 s); "vortex" is the author
 // time. They were set from the autopilot (sim/bot.ts) with
 // `node scripts/hexdrift-maps.ts`, which also checks each map can be finished.
-import { buildRoadTrack, buildTrack, type Track } from "./sim/track.ts";
+import { buildRoadTrack, buildTrack, startFrom, type Spot, type Track } from "./sim/track.ts";
 import type { RoadDef } from "./sim/road.ts";
+import type { Env } from "./sim/custom.ts";
 
 export type BiomeId = "city" | "canyon" | "glacier" | "sky" | "desert" | "miami" | "storm" | "alpine" | "space" | "baja";
 
@@ -38,6 +39,10 @@ export interface MapDef {
   /** Road maps: smooth roads over real terrain. */
   road?: RoadDef;
   medals: { vortex: number; gold: number; silver: number; bronze: number };
+  /** Made in the studio: time of day, fog and weather. */
+  env?: Env;
+  /** A practice run from somewhere along the map (the studio's "drive from here"). */
+  from?: Spot;
   /**
    * The oldest physics version whose times still count on this map (for its
    * best time and medal). Raise it to the current PHYSICS_V when the map
@@ -46,6 +51,8 @@ export interface MapDef {
   since: number;
   /** Still being built: left out of the game. */
   wip?: boolean;
+  /** A closed circuit raced over laps (party rooms only, for now: no medals or records). */
+  circuit?: boolean;
 }
 
 export const ALL_MAPS: MapDef[] = [
@@ -166,6 +173,40 @@ export const ALL_MAPS: MapDef[] = [
 /** The maps in the game. */
 export const MAPS: MapDef[] = ALL_MAPS.filter((m) => !m.wip);
 
+const NO_MEDALS = { vortex: 0, gold: 0, silver: 0, bronze: 0 };
+/** Closed circuits for party races (1 to 5 laps). */
+export const CIRCUITS: MapDef[] = [
+  {
+    id: "sunset-ring", name: "Sunset Ring", biome: "miami", difficulty: "Beginner", circuit: true,
+    blurb: "A wide, fast loop through downtown at golden hour. Two boosts, a chicane, a hump bridge and a long right-hander back onto the grid.",
+    road: {
+      land: { kind: "plain", seed: 31, base: 3, amp: 5, scale: 320, fall: 26, shoulder: 0.15, verge: 6 },
+      start: [0, 0, 5, 0], bank: 4, circuit: true,
+      route: "H11 S120 B S100 C R90/80 S160 L45/70 R45/70 S120 R90/60 U6 S80 D6 S120 C R60/90 S100 L60/90 S120 B S80 R90/70 S200 C R90/80 S80",
+      dress: {
+        kit: "miami",
+        zones: [[0, 400, "boulevard", "downtown"], [400, 1100, "downtown", "shops"], [1100, 1700, "park", "downtown"], [1700, 2300, "shops", "boulevard"]],
+        set: [["stand", 30, -1, 3], ["stand", 30, 1, 3], ["billboard", 600, 1, 2], ["billboard", 1500, -1, 2]],
+      },
+    },
+    medals: NO_MEDALS, since: 7,
+  },
+  {
+    id: "mesa-loop", name: "Mesa Loop", biome: "baja", difficulty: "Medium", circuit: true,
+    blurb: "Dirt and asphalt round the red rock. A hairpin, a crest, a short jump over the wash and a boost to set up the last long corner.",
+    road: {
+      land: { kind: "plain", seed: 79, base: 10, amp: 30, scale: 380, fall: 30, shoulder: 0.2, mat: 1 },
+      start: [0, 0, 22.5, 0], bank: 4, circuit: true,
+      route: "H8 S100 B S100 C Mdirt R120/60 S120 L60/80 S100 U8 S90 D8 R90/70 S80 C S60 BL S60 J3 S20 G30/-3 S60 R90/60 L45/70 S100 R45/70 Masphalt S120 C R120/80 S100",
+      dress: { kit: "baja", zones: [[0, 300, "camp", "camp"], [300, 1000, "desert", "desert"], [1000, 1600, "cliff", "desert"], [1600, 2300, "desert", "camp"]],
+        set: [["stand", 25, -1, 3], ["stand", 25, 1, 3], ["mesa", 900, 1, 30], ["windpump", 1400, -1, 12]] },
+    },
+    medals: NO_MEDALS, since: 7,
+  },
+];
+/** What a party room can race on: the circuits, then the maps. */
+export const PARTY_MAPS: MapDef[] = [...CIRCUITS, ...MAPS];
+
 const built = new Map<string, Track>();
 export function trackOf(m: MapDef): Track {
   let t = built.get(m.id);
@@ -173,7 +214,7 @@ export function trackOf(m: MapDef): Track {
     t = m.road ? buildRoadTrack(m.road, m.biome) : buildTrack(m.recipe!, { sky: m.biome === "sky", theme: m.biome });
     built.set(m.id, t);
   }
-  return t;
+  return m.from ? startFrom(t, m.from) : t;
 }
 
 export type Medal = "vortex" | "gold" | "silver" | "bronze" | null;

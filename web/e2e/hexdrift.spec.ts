@@ -8,6 +8,15 @@ const hook = (page: Page) => page.evaluate(() => {
 });
 const autopilot = (page: Page) => page.evaluate(() => { (window as unknown as { __hexdrift: Hook }).__hexdrift.autopilot = true; });
 
+// Skips the race-start cutscene (any key), then waits out the countdown. With
+// software rendering frames are slow and the game clock runs behind real time,
+// so sitting through the whole cutscene left no margin.
+async function toGreenLight(page: Page) {
+  await expect.poll(async () => (await hook(page)) !== null).toBe(true);
+  await page.keyboard.press("x");
+  await expect.poll(async () => (await hook(page))?.phase, { timeout: 30_000 }).toBe("running");
+}
+
 async function fresh(page: Page, map: string) {
   await page.goto(`/#/hexdrift/${map}`);
   await expect.poll(async () => (await hook(page)) !== null).toBe(true);
@@ -40,7 +49,7 @@ test("Games page opens Hexdrift: title, five maps, a map's page, then the race",
 test("driving: countdown, gas moves the car, R restarts, pause", async ({ page }) => {
   await page.goto("/#/hexdrift/neon-downtown");
   await expect(page.locator("canvas.hx-canvas")).toBeVisible();
-  await expect.poll(async () => (await hook(page))?.phase, { timeout: 20_000 }).toBe("running");
+  await toGreenLight(page);
   await page.keyboard.down("ArrowUp");
   await expect.poll(async () => (await hook(page))?.speed ?? 0).toBeGreaterThan(10);
   await page.keyboard.up("ArrowUp");
@@ -78,7 +87,7 @@ test("a finished run is saved, then raced as a ghost with live splits", async ({
 
 test("a reload in the middle of a run puts the car back where it was", async ({ page }) => {
   await page.goto("/#/hexdrift/desert-mirage");
-  await expect.poll(async () => (await hook(page))?.phase, { timeout: 20_000 }).toBe("running");
+  await toGreenLight(page);
   await page.keyboard.down("ArrowUp");
   await page.waitForTimeout(2600);
   await page.evaluate(() => (window as unknown as { __hexdrift: { setPaused(p: boolean): void } }).__hexdrift.setPaused(true));
@@ -167,13 +176,15 @@ test("keyboard hints show only where there's a keyboard", async ({ page, isMobil
   await expect(page.locator(".hx-help")).toHaveCount(isMobile ? 0 : 1);
 });
 
-test("Map editor: make a map, add pieces, undo, drive it and set the author time", async ({ page }) => {
+test("Map editor: make a map, add pieces, undo, drive it and set the author time", async ({ page, isMobile }) => {
   test.setTimeout(150_000);
   await page.goto("/#/hexdrift");
   await page.getByRole("link", { name: "Create" }).click();
   await expect(page.getByRole("heading", { name: "My maps" })).toBeVisible();
   await page.locator(".hx-ed-theme", { hasText: "Baja" }).click();
   await expect(page).toHaveURL(/#\/hexdrift\/editor\/u[0-9a-z]+$/);
+  // Computers open the studio: its road panel leads to the tiles.
+  if (!isMobile) await page.getByRole("link", { name: "Edit tiles" }).click();
   // A starter track on the grid: tiles go in where the arrow is, before the finish.
   const info = page.locator(".hx-ed-info");
   await expect(info).toContainText("7 tiles");
@@ -203,5 +214,48 @@ test("Map editor: maps made from pieces still open in the piece editor", async (
   await page.goto("/#/hexdrift/editor/upieces01");
   await expect(page.locator(".hx-ed-piece")).toHaveCount(6);
   await expect(page.locator(".hx-ed-piece").nth(4)).toContainText("Loop 14 m");
+  await page.evaluate(() => localStorage.removeItem("hexdrift.mymaps.v1"));
+});
+
+test("Studio: insert parts and objects, edit, undo, folders, drive from here", async ({ page, isMobile }) => {
+  test.skip(isMobile, "The studio is for computers");
+  await page.goto("/#/hexdrift");
+  await page.evaluate(() => localStorage.setItem("hexdrift.mymaps.v1", JSON.stringify([{ v: 1, id: "ustudio01", name: "Studio map", theme: "miami", updated: 1,
+    pieces: [{ k: "S", len: 80 }, { k: "R", a: 90, r: 60 }, { k: "S", len: 100 }, { k: "C" }, { k: "L", a: 90, r: 60 }, { k: "S", len: 120 }] }])));
+  await page.goto("/#/hexdrift/editor/ustudio01");
+  const saved = () => page.evaluate(() => JSON.parse(localStorage.getItem("hexdrift.mymaps.v1")!)[0]);
+  // The road panel is the piece editor's.
+  await expect(page.locator(".hx-ed-piece")).toHaveCount(6);
+  await page.getByRole("button", { name: "+ Insert" }).click();
+  await page.getByRole("button", { name: "Block", exact: true }).click();
+  await expect(page.locator(".hx-st-props h2")).toHaveText("Block");
+  // Typed values are kept.
+  const x = page.getByLabel("Position X", { exact: true });
+  await x.fill("25");
+  await x.press("Enter");
+  await expect.poll(async () => (await saved()).parts?.[0]?.p[0]).toBe(25);
+  await page.getByRole("button", { name: "Bouncy" }).click();
+  await expect.poll(async () => (await saved()).parts?.[0]?.m).toBe("bouncy");
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await saved()).parts?.[0]?.m).toBeUndefined();
+  // A ready-made crane comes in its own folder.
+  await page.getByRole("button", { name: "+ Insert" }).click();
+  await page.getByRole("button", { name: "Crane" }).click();
+  await expect(page.getByLabel("Folder name")).toHaveValue("Crane");
+  await expect.poll(async () => (await saved()).parts?.length).toBe(9);
+  // Objects from the theme's kit.
+  await page.getByRole("button", { name: "+ Insert" }).click();
+  await page.locator(".hx-st-objs .hx-chip-btn").first().click();
+  await expect.poll(async () => (await saved()).objs?.length).toBe(1);
+  await page.keyboard.press("Delete");
+  await expect.poll(async () => (await saved()).objs?.length ?? 0).toBe(0);
+  // The sky.
+  await page.getByRole("button", { name: "Sky and land" }).click();
+  await page.getByRole("button", { name: "Snow" }).click();
+  await expect.poll(async () => (await saved()).env?.weather).toBe("snow");
+  // A practice run from the middle of the view.
+  await page.getByRole("button", { name: "Drive from here" }).click();
+  await expect(page).toHaveURL(/#\/hexdrift\/test\/ustudio01\?from=/);
+  await expect.poll(async () => (await hook(page)) !== null).toBe(true);
   await page.evaluate(() => localStorage.removeItem("hexdrift.mymaps.v1"));
 });

@@ -47,10 +47,10 @@ async function trackFor(mapId: string): Promise<Track | null> {
   if (map) return trackOf(map);
   const c = mapId.match(/^(c[0-9a-z]{8})-([0-9a-z]{1,8})$/);
   if (!c) return null;
-  const got = await call(`/rest/v1/hexdrift_maps?id=eq.${c[1]}&hidden=is.false&select=id,local_id,name,theme,pieces,version`);
+  const got = await call(`/rest/v1/hexdrift_maps?id=eq.${c[1]}&hidden=is.false&select=id,local_id,name,theme,pieces,scene,version`);
   const row = got.data?.[0];
   if (!row || row.version !== c[2]) return null;
-  const m = cleanMap({ id: row.local_id, name: row.name, theme: row.theme, pieces: row.pieces }, row.local_id);
+  const m = cleanMap({ ...(row.scene ?? {}), id: row.local_id, name: row.name, theme: row.theme, pieces: row.pieces }, row.local_id);
   if (!m || versionOf(m) !== c[2]) return null;
   return buildRoadTrack(roadDefOf(m), THEMES[m.theme].biome);
 }

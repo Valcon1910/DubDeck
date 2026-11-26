@@ -25,12 +25,14 @@ export function botInput(r: Race, at: { i: number }, tune: BotTuning = DEFAULT_B
       return pack({ steer: clamp(-cross * 2.4, -1, 1), gas: true, brake: false, drift: false, respawn: false });
     }
   }
-  // Follow progress along the line (search a little behind and ahead).
+  // Follow progress along the line (search a little behind and ahead; circuits go round).
+  const round = !!track.road?.lapLen, N = line.length;
+  const pt = (i: number) => line[round ? ((i % N) + N) % N : i];
   let best = at.i, bd = Infinity;
-  for (let i = Math.max(0, at.i - 4); i < Math.min(line.length, at.i + 24); i++) {
-    const p = line[i];
+  for (let i = round ? at.i - 4 : Math.max(0, at.i - 4); i < (round ? at.i + 24 : Math.min(N, at.i + 24)); i++) {
+    const p = pt(i);
     const d = (p.x - car.x) ** 2 + (p.z - car.z) ** 2 + ((p.y - car.y) * 0.3) ** 2;
-    if (d < bd) { bd = d; best = i; }
+    if (d < bd) { bd = d; best = round ? ((i % N) + N) % N : i; }
   }
   // Lost (after a respawn): look along the whole line.
   if (bd > 400) {
@@ -42,8 +44,8 @@ export function botInput(r: Race, at: { i: number }, tune: BotTuning = DEFAULT_B
   }
   at.i = best;
   const sp = Math.abs(car.speed);
-  const look = Math.min(line.length - 1, best + Math.round(tune.look + sp / 12));
-  const t = line[look];
+  const look = best + Math.round(tune.look + sp / 12);
+  const t = round ? pt(look) : line[Math.min(N - 1, look)];
   const fx = dsin(car.yaw), fz = dcos(car.yaw);
   const dx = t.x - car.x, dz = t.z - car.z;
   const len = Math.sqrt(dx * dx + dz * dz) || 1;
@@ -51,7 +53,7 @@ export function botInput(r: Race, at: { i: number }, tune: BotTuning = DEFAULT_B
   const ahead = (fx * dx + fz * dz) / len;
   const steer = ahead < 0 ? (cross > 0 ? -1 : 1) : clamp(-cross * tune.gain, -1, 1);
   // Slow for sharp turns further ahead.
-  const far = line[Math.min(line.length - 1, best + 6 + Math.round(sp / 5))];
+  const far = round ? pt(best + 6 + Math.round(sp / 5)) : line[Math.min(N - 1, best + 6 + Math.round(sp / 5))];
   const ex = far.x - car.x, ez = far.z - car.z, el = Math.sqrt(ex * ex + ez * ez) || 1;
   const bend = 1 - Math.abs(fx * ex + fz * ez) / el;
   const limit = tune.corner + 34 * (1 - Math.min(1, bend * 3));

@@ -2,6 +2,7 @@
 // the unread badges). Signing in: the site's /chat-login route (a here.now
 // proxy route) adds the visitor's verified email, and Supabase answers with a
 // session for it. Supabase's library is only downloaded once Chat is used.
+import { setProfileIds } from "../profileLink.ts";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { dispatch } from "../github";
 import { isGaming } from "../../hexdrift/gaming";
@@ -12,7 +13,7 @@ export const CHAT_ON = __VORTEX_CHAT__;
 
 /** w/h: picture or video size, saved when sent so the space is kept while it loads. */
 export interface Attachment { path: string; name: string; size: number; type: string; w?: number; h?: number }
-export interface Profile { email: string; name: string; avatar: string; member: boolean; last_seen: string | null }
+export interface Profile { email: string; name: string; avatar: string; member: boolean; last_seen: string | null; pid?: string }
 export interface Conversation {
   id: string; kind: "dm" | "group"; name: string; icon: string; created_by: string;
   last_message_at: string; last_read_at: string; my_role: "member" | "admin"; unread: number; members: string[];
@@ -137,7 +138,7 @@ export function ChatProvider({ email, owner, name, avatar, children }: Props) {
   const loadProfiles = useCallback(async () => {
     if (!sb) return;
     const { data } = await sb.from("profiles").select("*").eq("member", true).order("name");
-    if (data) setProfiles(new Map((data as Profile[]).map((p) => [p.email, p])));
+    if (data) { setProfileIds(data as Profile[]); setProfiles(new Map((data as Profile[]).map((p) => [p.email, p]))); }
   }, [sb]);
 
   const loadConversations = useCallback(async () => {

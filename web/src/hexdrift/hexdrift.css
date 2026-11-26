@@ -496,6 +496,46 @@ a.hx-pl-name:hover { text-decoration: underline; }
 }
 .hx-ed-wide { grid-template-columns: minmax(0, 1fr) 440px; }
 
+/* ── Studio (computers) ── */
+.hx-st { position: absolute; inset: 0; display: grid; grid-template-columns: 240px minmax(0, 1fr) 380px; grid-template-rows: auto minmax(0, 1fr); background: #0d0b1f; gap: 8px; padding: 8px; }
+.hx-st-bar { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.hx-st-bar .hx-icon { display: grid; place-items: center; flex: none; }
+.hx-st-bar .hx-icon:disabled { opacity: 0.35; }
+.hx-st-bar .hx-ed-name { width: 220px; }
+.hx-st-tools { display: flex; gap: 4px; margin-right: auto; }
+.hx-st-tools .hx-chip-btn { min-height: 32px; padding: 4px 12px; }
+.hx-st-snap { display: flex; gap: 4px; align-items: center; font-size: 13px; opacity: 0.85; }
+.hx-st select, .hx-st-filter, .hx-st-num input, .hx-st-frow input { background: rgba(255, 255, 255, 0.07); color: inherit; border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 8px; padding: 4px 6px; font: inherit; font-size: 13px; }
+.hx-st select option { background: #1a1733; }
+.hx-st-left, .hx-st-right { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; background: rgba(255, 255, 255, 0.04); border-radius: 12px; padding: 10px; }
+.hx-st-head { display: flex; justify-content: space-between; align-items: center; }
+.hx-st-tree, .hx-st-tree ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+.hx-st-tree ul { padding-left: 16px; }
+.hx-st-item { width: 100%; display: flex; align-items: center; gap: 7px; text-align: left; border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; font-size: 13px; padding: 4px 6px; cursor: pointer; }
+.hx-st-item:hover { background: rgba(255, 255, 255, 0.07); }
+.hx-st-item.on { background: rgba(35, 184, 255, 0.28); }
+.hx-st-dot { width: 10px; height: 10px; border-radius: 3px; flex: none; background: #9aa3b5; }
+.hx-st-dot.obj { border-radius: 50%; background: #7bd88f; }
+.hx-st-dot.road { background: #ffd23d; }
+.hx-st-dot.sky { background: linear-gradient(#3a8be0, #ff9a62); }
+.hx-st-frow { display: flex; align-items: center; gap: 4px; }
+.hx-st-frow input { flex: 1; min-width: 0; padding: 2px 6px; }
+.hx-st-twist { border: 0; background: none; color: inherit; cursor: pointer; width: 18px; padding: 0; }
+.hx-st-insert { margin-top: auto; }
+.hx-st-view { position: relative; min-width: 0; min-height: 0; border-radius: 12px; overflow: hidden; }
+.hx-st-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.hx-st-hint { position: absolute; left: 10px; bottom: 8px; margin: 0; font-size: 12px; opacity: 0.7; pointer-events: none; text-shadow: 0 1px 2px #000; }
+.hx-st-warn { position: absolute; left: 10px; top: 10px; margin: 0; z-index: 1; background: rgba(255, 51, 70, 0.85); padding: 6px 10px; border-radius: 8px; font-size: 13px; }
+.hx-st-props { display: grid; gap: 8px; }
+.hx-st-props h2 { margin: 0; font-size: 16px; }
+.hx-st-vec { gap: 4px; }
+.hx-st-num { display: flex; align-items: center; gap: 3px; flex: 1; min-width: 0; font-size: 11px; opacity: 0.9; }
+.hx-st-num input { width: 100%; min-width: 0; font-variant-numeric: tabular-nums; }
+.hx-st-objs { display: flex; flex-wrap: wrap; gap: 5px; }
+.hx-st-objs .hx-chip-btn, .hx-st-props .hx-chip-btn { min-height: 30px; padding: 4px 10px; font-size: 13px; }
+.hx-st-road .hx-ed-strip { flex-wrap: wrap; }
+.hx-st .hx-toast { position: fixed; }
+
 /* ── Community Maps ── */
 .hx-cm-bar { max-width: 980px; margin: 0 auto 14px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .hx-cm-tabs { flex: 1 1 420px; overflow-x: auto; }
@@ -554,3 +594,37 @@ a.hx-pl-name:hover { text-decoration: underline; }
 .hx-gr-tile:active { transform: scale(0.96); }
 .hx-gr-icon { width: 38px; height: 38px; color: #c9cede; }
 .hx-gr-tip { background: rgba(255, 176, 46, 0.16); }
+
+/* ── Party rooms ── */
+.hx-hud-l { justify-self: start; display: flex; gap: 6px; align-items: center; }
+.hx-place { font-size: 18px; }
+.hx-party-wait { position: absolute; left: 50%; top: 26%; transform: translateX(-50%); padding: 10px 16px; border-radius: 12px;
+  background: rgba(8, 6, 24, 0.7); font-weight: 700; pointer-events: none; white-space: nowrap; }
+.hx-party-start { display: grid; gap: 18px; margin-top: 18px; justify-items: start; }
+.hx-party-join { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.hx-party-join label { width: 100%; }
+.hx-code { width: 10ch; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.3);
+  color: inherit; font: inherit; font-size: 20px; font-weight: 800; letter-spacing: 0.2em; text-transform: uppercase; }
+.hx-code-big { letter-spacing: 0.18em; color: #23e5ff; }
+.hx-party-invite { display: flex; gap: 8px; margin-bottom: 14px; }
+.hx-party-invite input { flex: 1; min-width: 0; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(0, 0, 0, 0.3); color: inherit; font: inherit; font-size: 14px; }
+.hx-party-grid { display: grid; gap: 18px; grid-template-columns: 1fr; }
+@media (min-width: 720px) { .hx-party-grid { grid-template-columns: 1fr 1fr; } }
+.hx-party-grid > div { padding: 14px; border-radius: 16px; background: rgba(255, 255, 255, 0.06); }
+.hx-party-list, .hx-party-order { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.hx-party-list li { display: flex; justify-content: space-between; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 10px; background: rgba(0, 0, 0, 0.2); }
+.hx-party-list li.me, .hx-party-order li.me { outline: 1px solid rgba(35, 229, 255, 0.5); }
+.hx-party-name { display: inline-flex; gap: 6px; align-items: center; font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.hx-party-order li { display: grid; grid-template-columns: 2ch 1fr auto; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 10px;
+  background: rgba(0, 0, 0, 0.2); text-align: left; }
+.hx-party-order li.out { opacity: 0.55; }
+.hx-party-field { display: grid; gap: 6px; margin: 10px 0; }
+.hx-party-field select { padding: 10px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.18); background: rgba(0, 0, 0, 0.3); color: inherit; font: inherit; }
+.hx-party-note { padding: 10px 12px; border-radius: 12px; background: rgba(255, 176, 46, 0.16); }
+.hx-party-pick { display: grid; gap: 8px; margin: 10px 0; padding: 10px; border-radius: 14px; background: rgba(0, 0, 0, 0.25); }
+.hx-party-pick input { padding: 10px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.18); background: rgba(0, 0, 0, 0.3); color: inherit; font: inherit; min-width: 0; }
+.hx-party-picklist { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-height: 260px; overflow-y: auto; }
+.hx-party-picklist button { width: 100%; display: flex; justify-content: space-between; gap: 10px; align-items: baseline; padding: 10px 12px; border-radius: 10px; border: 0; background: rgba(255, 255, 255, 0.06); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.hx-party-picklist button:hover, .hx-party-picklist button:focus-visible { background: rgba(255, 255, 255, 0.14); }
+.hx-party-picklist span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

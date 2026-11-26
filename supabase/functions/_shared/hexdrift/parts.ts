@@ -22,6 +22,8 @@ export interface PartDef {
   r?: [number, number, number];
   m?: Mat;
   c?: string;
+  /** Studio folder (index into the map's folders; not part of the physics). */
+  f?: number;
 }
 
 export interface Part {

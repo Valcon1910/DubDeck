@@ -20,6 +20,7 @@ export interface CMap {
   /** From the browse list: the world record on the current version, finishers, difficulty (0–1, null until 5 players). */
   wr_email?: string | null; wr_ticks?: number | null; finishers?: number; difficulty?: number | null;
   pieces?: unknown;
+  scene?: unknown;
 }
 const CARD = "id,author,name,theme,version,author_ticks,length_m,checkpoints,likes,plays,reports,featured_at,hidden,published_at,updated_at,local_id,picture";
 
@@ -61,14 +62,14 @@ export async function recordsHeld(sb: SupabaseClient, email: string): Promise<{ 
 
 /** A map with its pieces, or null when it's gone (or hidden from you). */
 export async function getMap(sb: SupabaseClient, id: string): Promise<CMap | null> {
-  const { data, error } = await sb.from(T).select(CARD + ",pieces").eq("id", id).maybeSingle();
+  const { data, error } = await sb.from(T).select(CARD + ",pieces,scene").eq("id", id).maybeSingle();
   if (error) throw error;
   return (data as CMap | null) ?? null;
 }
 
 /** The published map as an editor map (to drive, or to copy into your editor). */
 export function customOf(c: CMap): CustomMap | null {
-  return cleanMap({ id: c.local_id, name: c.name, theme: c.theme, pieces: c.pieces }, c.local_id);
+  return cleanMap({ ...(c.scene && typeof c.scene === "object" ? c.scene : {}), id: c.local_id, name: c.name, theme: c.theme, pieces: c.pieces }, c.local_id);
 }
 
 /** The published map as the game sees it: online records under "<id>-<version>". */
@@ -77,7 +78,7 @@ export function mapDefFrom(c: CMap, by: string): MapDef | null {
   if (!m) return null;
   return {
     id: `${c.id}-${c.version}`, name: c.name, biome: THEMES[c.theme].biome, difficulty: "Medium",
-    blurb: `${THEMES[c.theme].name} · by ${by}`, road: roadDefOf(m),
+    blurb: `${THEMES[c.theme].name} · by ${by}`, road: roadDefOf(m), env: m.env,
     medals: medalsOf(c.author_ticks), since: PHYSICS_V,
   };
 }

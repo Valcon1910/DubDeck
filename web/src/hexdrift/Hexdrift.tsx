@@ -5,9 +5,12 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { ALL_MAPS, MAPS, BIOMES, medalFor, type MapDef, type Medal } from "./maps.ts";
 import { Editor, MyMaps } from "./editor.tsx";
 import { GridEditor } from "./gridedit.tsx";
+import { Studio } from "./studio.tsx";
 import { Community, CommunityMap } from "./communityview.tsx";
+import { Party, PartyHome, type PartyRun } from "./party.tsx";
+import { isRoomCode } from "./room.ts";
 import { getMap, isCommunity, mapDefFrom, markPlayed } from "./community.ts";
-import { profileHref } from "../vortex/profileLink.ts";
+import { emailFrom, pidOf, playerHref, profileHref } from "../vortex/profileLink.ts";
 import { authorOf, bestInputs, finishOn, mapDefOf, myBest, myMap, savePicture } from "./mymaps.ts";
 import { medalsOf, type CustomMap } from "./sim/custom.ts";
 import { formatTime } from "./sim/race.ts";
@@ -41,32 +44,35 @@ type View =
   | { kind: "map"; map: MapDef }
   | { kind: "play"; map: MapDef }
   | { kind: "records"; map: MapDef }
-  | { kind: "player"; email: string }
+  | { kind: "player"; id: string }
   | { kind: "garage" }
   | { kind: "mymaps" }
-  | { kind: "edit"; id: string }
+  | { kind: "edit"; id: string; mode?: string }
   | { kind: "test"; id: string }
   | { kind: "community" }
   | { kind: "cmap"; id: string }
   | { kind: "crace"; id: string }
-  | { kind: "crecords"; id: string };
+  | { kind: "crecords"; id: string }
+  | { kind: "party"; code?: string };
 
 /**
  * #/hexdrift (title), #/hexdrift/maps, #/hexdrift/map/<map> (its page),
- * #/hexdrift/<map> (race), #/hexdrift/<map>/records, #/hexdrift/player/<email>,
+ * #/hexdrift/<map> (race), #/hexdrift/<map>/records, #/hexdrift/player/<profile id>,
  * #/hexdrift/editor (my maps), #/hexdrift/editor/<id> (editing), #/hexdrift/test/<id> (driving one),
- * #/hexdrift/community, #/hexdrift/c/<id> (a community map), #/hexdrift/c/<id>/race, #/hexdrift/c/<id>/records
+ * #/hexdrift/community, #/hexdrift/c/<id> (a community map), #/hexdrift/c/<id>/race, #/hexdrift/c/<id>/records,
+ * #/hexdrift/party (make or join a room), #/hexdrift/party/<code> (a room)
  */
 function readView(): View {
   const parts = location.hash.replace(/^#\/?/, "").split("?")[0].split("/");
   if (parts[1] === "garage") return { kind: "garage" };
   if (parts[1] === "maps") return { kind: "maps" };
-  if (parts[1] === "editor") return parts[2] ? { kind: "edit", id: parts[2] } : { kind: "mymaps" };
+  if (parts[1] === "editor") return parts[2] ? { kind: "edit", id: parts[2], mode: parts[3] } : { kind: "mymaps" };
   if (parts[1] === "test" && parts[2]) return { kind: "test", id: parts[2] };
   if (parts[1] === "community") return { kind: "community" };
+  if (parts[1] === "party") return isRoomCode(parts[2] ?? "") ? { kind: "party", code: parts[2] } : { kind: "party" };
   if (parts[1] === "c" && /^c[0-9a-z]{8}$/.test(parts[2] ?? "")) return parts[3] === "race" ? { kind: "crace", id: parts[2] } : parts[3] === "records" ? { kind: "crecords", id: parts[2] } : { kind: "cmap", id: parts[2] };
   if (parts[1] === "map") { const m = MAPS.find((x) => x.id === parts[2]); return m ? { kind: "map", map: m } : { kind: "maps" }; }
-  if (parts[1] === "player" && parts[2]) return { kind: "player", email: decodeURIComponent(parts[2]).toLowerCase() };
+  if (parts[1] === "player" && parts[2]) return { kind: "player", id: parts[2] };
   // Maps still being built open by address on the dev server only.
   const map = (import.meta.env.DEV ? ALL_MAPS : MAPS).find((m) => m.id === parts[1]);
   if (!map) return { kind: "menu" };
@@ -105,6 +111,9 @@ export function Hexdrift() {
   const sb = CHAT_ON && chat?.status === "ready" ? chat.sb : null;
   const me = chat?.me ?? "";
   const profiles = chat?.profiles ?? EMPTY;
+  // Tests run two pages against a stand-in for the live channel (development only).
+  const fake = import.meta.env.DEV ? (window as { __hxParty?: { sb: SupabaseClient; me: string } }).__hxParty : undefined;
+  const partySb = sb ?? fake?.sb ?? null, partyMe = sb ? me : fake?.me ?? me;
   const [toast, setToast] = useState("");
   const [rev, setRev] = useState(0);
   const sync = useCallback(async () => {
@@ -133,7 +142,7 @@ export function Hexdrift() {
   // Every press in the menus gets a sound; every screen change a whoosh.
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => wireUiSounds(root.current!), []);
-  const viewKey = view.kind + ("map" in view ? `:${view.map.id}` : "email" in view ? `:${view.email}` : "id" in view ? `:${view.id}` : "");
+  const viewKey = view.kind + ("map" in view ? `:${view.map.id}` : "code" in view ? `:${view.code}` : "id" in view ? `:${view.id}` : "");
   const firstView = useRef(true);
   useEffect(() => {
     if (firstView.current) { firstView.current = false; return; }
@@ -145,14 +154,19 @@ export function Hexdrift() {
         <div className="hx-view" key={viewKey}>
           {view.kind === "play" ? <Play map={view.map} />
             : view.kind === "records" ? <Records map={view.map} />
-            : view.kind === "player" ? <Player email={view.email} />
+            : view.kind === "player" ? <Player id={view.id} />
             : view.kind === "garage" ? <Garage />
             : view.kind === "mymaps" ? <MyMaps />
-            : view.kind === "edit" ? (myMap(view.id)?.grid ? <GridEditor id={view.id} sb={sb} me={me} /> : <Editor id={view.id} sb={sb} me={me} />)
+            : view.kind === "edit" ? <EditRoute id={view.id} mode={view.mode} sb={sb} me={me} />
             : view.kind === "community" ? <Community sb={sb} me={me} who={(e) => nameOf(profiles, e)} offline={<NeedOnlineText />} />
             : view.kind === "cmap" ? <CommunityMap id={view.id} sb={sb} me={me} who={(e) => nameOf(profiles, e)} offline={<NeedOnlineText />} />
             : view.kind === "crace" || view.kind === "crecords" ? <CommunityRun id={view.id} records={view.kind === "crecords"} />
             : view.kind === "test" ? <TestDrive id={view.id} />
+            : view.kind === "party" ? (view.code && partySb
+              ? <Party code={view.code} sb={partySb} me={partyMe} myName={nameOf(profiles, partyMe)} nameOf={(e) => nameOf(profiles, e)}
+                  race={(map, run, key) => <Play key={key} map={map} party={run} />}
+                  podium={(places) => <PodiumView places={places} empty="" />} />
+              : <PartyHome signedIn={!!partySb} offline={<NeedOnlineText />} />)
             : view.kind === "maps" ? <MapSelect />
             : view.kind === "map" ? <MapDetail map={view.map} />
             : <Title />}
@@ -284,7 +298,7 @@ function Title() {
   }, [sb, rev]);
   const pillars: Pillar[] = (leaders ?? []).map((l, i) => ({
     place: i + 1, look: l.look, name: l.email === me ? "You" : nameOf(profiles, l.email), me: l.email === me,
-    href: `#/hexdrift/player/${encodeURIComponent(l.email)}`,
+    href: playerHref(l.email),
     sub: <><IconMedal size={14} />{l.points} pts{l.wrs ? <> · <IconCrown size={13} />{l.wrs}</> : null}</>,
   }));
   return (
@@ -298,6 +312,7 @@ function Title() {
           <div className="hx-cta">
             <a className="hx-big" href="#/hexdrift/maps" data-sound="confirm"><IconPlay size={22} /><span>Play</span></a>
             <a className="hx-big hx-big-2" href="#/hexdrift/garage"><IconGarage size={22} /><span>Garage</span></a>
+            <a className="hx-big hx-big-2" href="#/hexdrift/party"><IconCrown size={22} /><span>Party</span></a>
             <a className="hx-big hx-big-2" href="#/hexdrift/community"><IconFlag size={22} /><span>Community</span></a>
             <a className="hx-big hx-big-2" href="#/hexdrift/editor"><IconRoute size={22} /><span>Create</span></a>
           </div>
@@ -436,7 +451,7 @@ function MapDetail({ map }: { map: MapDef }) {
   const pillars: Pillar[] = sb && top
     ? top.map((e, i) => ({
       place: i + 1, look: e.look ?? (e.email === me ? readLook() : null), name: e.email === me ? "You" : nameOf(profiles, e.email), me: e.email === me,
-      href: `#/hexdrift/player/${encodeURIComponent(e.email)}`, sub: <><MedalIcon m={medalFor(map, e.ticks)} size={12} />{formatTime(e.ticks)}</>,
+      href: playerHref(e.email), sub: <><MedalIcon m={medalFor(map, e.ticks)} size={12} />{formatTime(e.ticks)}</>,
     }))
     : best ? [{ place: 1, look: readLook(), name: "You", me: true, sub: <><MedalIcon m={medal} size={12} />{formatTime(best.t)}</> }] : [];
   return (
@@ -546,12 +561,30 @@ function IphoneTip() {
 interface Result { ticks: number; best: Best | null; isBest: boolean; online?: "sending" | "waiting" | Submitted; author?: boolean }
 type Over = null | "pause" | "restored" | Result;
 
+/**
+ * Which editor opens a map: the studio on computers (a mouse and a wide
+ * screen), the tile or piece editor on phones. /tiles and /simple ask for one.
+ */
+function EditRoute({ id, mode, sb, me }: { id: string; mode?: string; sb: SupabaseClient | null; me: string }) {
+  const [wide] = useState(() => matchMedia("(min-width: 1100px) and (pointer: fine)").matches);
+  const grid = !!myMap(id)?.grid;
+  if (mode === "tiles" && grid) return <GridEditor id={id} sb={sb} me={me} />;
+  if (mode === "simple" && !grid) return <Editor id={id} sb={sb} me={me} />;
+  if (wide && mode !== "tiles" && mode !== "simple") return <Studio id={id} sb={sb} me={me} />;
+  return grid ? <GridEditor id={id} sb={sb} me={me} /> : <Editor id={id} sb={sb} me={me} />;
+}
+
 /** Driving one of your maps: times stay on this device; your fastest sets the author time. */
 function TestDrive({ id }: { id: string }) {
   const [cm] = useState(() => myMap(id));
-  const map = useMemo(() => cm ? mapDefOf(cm) : null, [cm]);
+  // The studio's "drive from here": #/hexdrift/test/<id>?from=x,y,z,yaw (a practice run, not saved).
+  const [from] = useState(() => {
+    const f = new URLSearchParams(location.hash.split("?")[1] ?? "").get("from")?.split(",").map(Number);
+    return f && f.length === 4 && f.every(Number.isFinite) ? { x: f[0], y: f[1], z: f[2], yaw: f[3] } : undefined;
+  });
+  const map = useMemo(() => cm ? { ...mapDefOf(cm), ...(from ? { from } : {}) } : null, [cm, from]);
   if (!cm || !map) return <div className="hx-menu"><a className="hx-back" href="#/hexdrift/editor">My maps</a><p>That map isn't on this device.</p></div>;
-  return <Play map={map} custom={cm} />;
+  return <Play map={map} custom={cm} practice={!!from} />;
 }
 
 /** A community map: fetched, then raced (or its leaderboard) like any other. */
@@ -574,7 +607,10 @@ function CommunityRun({ id, records }: { id: string; records: boolean }) {
   return records ? <Records map={def} home={home} race={`${home}/race`} /> : <Play map={def} home={home} />;
 }
 
-function Play({ map, custom, home }: { map: MapDef; custom?: CustomMap; home?: string }) {
+function Play({ map, custom, home, practice, party }: { map: MapDef; custom?: CustomMap; home?: string; practice?: boolean; party?: PartyRun }) {
+  // A party race: the room decides the start, nothing is saved, no restarts.
+  const partyRef = useRef(party);
+  partyRef.current = party;
   // Where "back" goes: the editor for your own maps, the map's page for community maps.
   const back = custom ? `#/hexdrift/editor/${custom.id}` : home;
   const host = useRef<HTMLDivElement>(null);
@@ -608,6 +644,7 @@ function Play({ map, custom, home }: { map: MapDef; custom?: CustomMap; home?: s
   }, []);
 
   const restart = useCallback(() => {
+    if (partyRef.current) return;
     setOver(null);
     clearLive();
     bootLive = null;
@@ -616,7 +653,8 @@ function Play({ map, custom, home }: { map: MapDef; custom?: CustomMap; home?: s
   const pause = useCallback((p: boolean) => {
     const g = game.current;
     if (!g || g.race.phase === "finished") return;
-    g.setPaused(p);
+    // The others keep racing: the menu opens, the car doesn't stop.
+    if (!partyRef.current) g.setPaused(p);
     setOver(p ? "pause" : null);
   }, []);
 
@@ -635,8 +673,11 @@ function Play({ map, custom, home }: { map: MapDef; custom?: CustomMap; home?: s
     try {
       g = new Game(host.current!, map, { time: time.current, speed: speed.current, cps: cps.current, count: count.current, split: split.current }, {
         onFinish(ticks, inputs) {
+          if (partyRef.current) { partyRef.current.finished(ticks); return; }
           clearLive();
           bootLive = null;
+          // A practice run from part way along: nothing is kept.
+          if (practice) { setOver({ ticks, best: null, isBest: false }); return; }
           if (cmRef.current) {
             const prev = myTime();
             const res = finishOn(cmRef.current, ticks, inputs);
@@ -663,18 +704,28 @@ function Play({ map, custom, home }: { map: MapDef; custom?: CustomMap; home?: s
             setOver((o) => o && typeof o === "object" && o.ticks === ticks ? { ...o, online: res ?? "waiting" } : o);
           });
         },
-        onHidden() { pause(true); },
+        onHidden() { if (!partyRef.current) pause(true); },
         onIntro(s) { setIntro(s); },
         onPicture(jpeg) { if (cmRef.current) savePicture(cmRef.current, jpeg); },
-      }, c, (Number(pref("hexdrift.cam", "0")) || 0) % 3, readLook(), !(bootLive && bootLive.map === map.id && bootLive.inputs.length > 0));
+      }, c, (Number(pref("hexdrift.cam", "0")) || 0) % 3, readLook(), !practice && !party && !(bootLive && bootLive.map === map.id && bootLive.inputs.length > 0));
     } catch (e) {
       setError(e instanceof Error ? e.message : "This device can't show 3D graphics.");
       return () => c.dispose();
     }
     game.current = g;
     g.setGraphics(gfxPref());
+    const p = partyRef.current;
+    if (p) {
+      g.setGrid(p.slot, p.of, p.laps);
+      g.start();
+      if (import.meta.env.DEV) Object.assign(window, { __hexdrift: g });
+      const detach = p.attach(g);
+      const onTouch = () => setTouch(true);
+      window.addEventListener("touchstart", onTouch, { once: true, passive: true });
+      return () => { detach(); window.removeEventListener("touchstart", onTouch); g.dispose(); c.dispose(); game.current = null; };
+    }
     if (cmRef.current) {
-      g.wantPicture = cmRef.current.id.startsWith("u");
+      g.wantPicture = cmRef.current.id.startsWith("u") && !practice;
       const b = myBest(cmRef.current);
       if (b) g.setGhost(bestInputs(b), b.t);
     } else void allBests().then(() => {
@@ -714,7 +765,7 @@ function Play({ map, custom, home }: { map: MapDef; custom?: CustomMap; home?: s
 
   // The world record's gold ghost (unless it's yours).
   useEffect(() => {
-    if (!sb || custom) return;
+    if (!sb || custom || party) return;
     let alive = true;
     void recordRun(sb, map.id).then((r) => {
       const g = game.current;
@@ -743,20 +794,20 @@ function Play({ map, custom, home }: { map: MapDef; custom?: CustomMap; home?: s
       {intro !== "done" && <Intro map={map} stage={intro} best={best} />}
       <div className="hx-hud" aria-live="off">
         <div className="hx-hud-top">
-          <span className="hx-chip"><span className="hx-dim">CP</span> <span ref={cps}>0/0</span></span>
+          <span className="hx-hud-l"><span className="hx-chip"><span className="hx-dim">CP</span> <span ref={cps}>0/0</span></span>{party?.hud}</span>
           <span className="hx-time" ref={time}>0:00.000</span>
           <span className="hx-hud-btns">
-            <button type="button" className="hx-icon" aria-label="Restart (R)" title="Restart (R)" onClick={restart}><IconRestart /></button>
+            {!party && <button type="button" className="hx-icon" aria-label="Restart (R)" title="Restart (R)" onClick={restart}><IconRestart /></button>}
             <button type="button" className="hx-icon" aria-label="Camera (C)" title="Camera (C)" onClick={() => setPref("hexdrift.cam", String(game.current?.cycleCamera() ?? 0))}><IconCamera /></button>
             <GamingButton compact />
             <button type="button" className="hx-icon" aria-label="Pause (Esc)" title="Pause (Esc)" onClick={() => pause(true)}><IconPause /></button>
           </span>
         </div>
-        <div className="hx-targets">
+        {!party && <div className="hx-targets">
           {best && <span><MedalIcon m={medals.vortex ? medalFor({ ...map, medals }, best.t) : null} size={12} />Best {formatTime(best.t)}</span>}
           {medals.vortex ? <span><MedalIcon m="gold" size={12} />{formatTime(medals.gold)}</span> : <span>Finish to set the author time</span>}
           {wrName && <span className="hx-wr-chip"><IconCrown size={13} />{wrName}</span>}
-        </div>
+        </div>}
         <div className="hx-split" ref={split} />
         <div className="hx-count" ref={count} />
         <div className="hx-speed"><span ref={speed}>0</span><em>km/h</em></div>
@@ -764,7 +815,19 @@ function Play({ map, custom, home }: { map: MapDef; custom?: CustomMap; home?: s
 
       {touch && <TouchPad controls={controls} />}
 
-      {(over === "pause" || over === "restored") && (
+      {party?.overlay}
+      {party && over === "pause" && (
+        <div className="hx-over"><div className="hx-panel">
+          <h2>Menu</h2>
+          <p className="hx-dim">Party race: your car keeps going while this is open.</p>
+          <div className="hx-row">
+            <button type="button" className="hx-btn hx-btn-main" onClick={() => setOver(null)} autoFocus>Back to the race</button>
+            <a className="hx-btn" href={party.leave}>Leave the room</a>
+          </div>
+          <GraphicsPicker game={game.current} />
+        </div></div>
+      )}
+      {!party && (over === "pause" || over === "restored") && (
         <div className="hx-over"><div className="hx-panel">
           <h2>{over === "restored" ? "Run restored" : "Paused"}</h2>
           <p className="hx-dim">{over === "restored" ? "The page reloaded, so your run was rebuilt exactly where you left it." : map.name}</p>
@@ -777,7 +840,7 @@ function Play({ map, custom, home }: { map: MapDef; custom?: CustomMap; home?: s
           {gaming && <p className="hx-dim hx-small">Gaming Mode is on: hold its button for 3 seconds to turn it off.</p>}
         </div></div>
       )}
-      {over && typeof over === "object" && <Finish map={{ ...map, medals }} result={over} next={next} onRestart={restart} signedIn={!!sb} back={back} backLabel={custom ? "Back to editor" : "Map page"} />}
+      {!party && over && typeof over === "object" && <Finish map={{ ...map, medals }} result={over} next={next} onRestart={restart} signedIn={!!sb} back={back} backLabel={custom ? "Back to editor" : "Map page"} />}
     </div>
   );
 }
@@ -969,7 +1032,7 @@ function Records({ map, home, race }: { map: MapDef; home?: string; race?: strin
             <div className="hx-card hx-card-wr">
               <span className="hx-dim"><IconCrown size={14} /> World record</span>
               <strong>{wr ? formatTime(wr.ticks) : "—"}</strong>
-              <span>{wr ? <a href={`#/hexdrift/player/${encodeURIComponent(wr.email)}`}>{wr.email === me ? "You" : nameOf(profiles, wr.email)}</a> : "Nobody yet: be first"}</span>
+              <span>{wr ? <a href={playerHref(wr.email)}>{wr.email === me ? "You" : nameOf(profiles, wr.email)}</a> : "Nobody yet: be first"}</span>
             </div>
             <div className="hx-card">
               <span className="hx-dim">Your best</span>
@@ -987,7 +1050,7 @@ function Records({ map, home, race }: { map: MapDef; home?: string; race?: strin
               {data.top.map((e, i) => (
                 <li key={e.email} className={e.email === me ? "me" : ""}>
                   <span className="hx-board-rank">{i === 0 ? <IconCrown size={18} /> : i + 1}</span>
-                  <a className="hx-board-who" href={`#/hexdrift/player/${encodeURIComponent(e.email)}`}>
+                  <a className="hx-board-who" href={playerHref(e.email)}>
                     <Avatar p={profiles.get(e.email)} email={e.email} size={28} />{nameOf(profiles, e.email)}{e.email === me && <em> (you)</em>}
                   </a>
                   <MedalIcon m={medalFor(map, e.ticks)} size={14} />
@@ -1004,12 +1067,18 @@ function Records({ map, home, race }: { map: MapDef; home?: string; race?: strin
 }
 
 /** A player's page: their record and rank on every map. */
-function Player({ email }: { email: string }) {
+function Player({ id }: { id: string }) {
   const { sb, me, profiles } = useOnlineRecords();
+  // The link names the member by profile ID (old links: by email), known once the member list is in.
+  const email = useMemo(() => emailFrom(id), [id, profiles]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const pid = email && (id.includes("%40") || id.includes("@")) ? pidOf(email) : undefined;
+    if (pid) history.replaceState(null, "", `#/hexdrift/player/${pid}`);
+  }, [id, email]);
   const [rows, setRows] = useState<{ e: Entry; rank: number; wr: boolean }[] | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
-    if (!sb) return;
+    if (!sb || !email) return;
     let alive = true;
     void (async () => {
       const recs = await playerRecords(sb, email);
@@ -1021,6 +1090,14 @@ function Player({ email }: { email: string }) {
     })().catch((e: unknown) => { if (alive) setError(e instanceof Error ? e.message : "Couldn't load the records"); });
     return () => { alive = false; };
   }, [sb, email]);
+  if (!email) {
+    return (
+      <div className="hx-menu hx-page">
+        <header className="hx-menu-bar"><a className="hx-back" href="#/hexdrift"><IconBack size={18} />Home</a></header>
+        {!sb ? <NeedOnline /> : <p className="hx-dim">{profiles.size ? "There's no player with that link." : "Loading…"}</p>}
+      </div>
+    );
+  }
   const p = profiles.get(email);
   const wrs = rows?.filter((r) => r.wr).length ?? 0;
   return (

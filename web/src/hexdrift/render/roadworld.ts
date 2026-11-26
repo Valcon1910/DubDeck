@@ -90,8 +90,8 @@ export const LOOKS: Partial<Record<BiomeId, Look>> = {
 };
 
 /** Fog, background and lights for a map (road maps have their own look; tile maps keep theirs). */
-export function setupScene(scene: THREE.Scene, biome: Biome, id: BiomeId, road: boolean, near = 1, far = 1): { sun: THREE.DirectionalLight; hemi?: THREE.HemisphereLight } {
-  const L = road ? LOOKS[id] : undefined;
+export function setupScene(scene: THREE.Scene, biome: Biome, id: BiomeId, road: boolean, near = 1, far = 1, look?: Look): { sun: THREE.DirectionalLight; hemi?: THREE.HemisphereLight } {
+  const L = road ? look ?? LOOKS[id] : undefined;
   const fog = L ? L.skyHorizon : biome.fog;
   scene.fog = new THREE.Fog(fog, biome.fogNear * near, biome.fogFar * far);
   scene.background = new THREE.Color(fog);
@@ -142,9 +142,9 @@ class Builder {
 /** A point beside a sample: lat to the right, dh up (follows the road's lean). */
 const side = (p: Sample, lat: number, dh = 0): number[] => [p.x - p.dz * lat, p.y + p.bank * lat + dh, p.z + p.dx * lat];
 
-export function buildRoadWorld(track: Track, biome: Biome, id: BiomeId): World {
+export function buildRoadWorld(track: Track, biome: Biome, id: BiomeId, lookIn?: Look): World {
   const road = track.road!;
-  const look = LOOKS[id] ?? LOOKS.miami!;
+  const look = lookIn ?? LOOKS[id] ?? LOOKS.miami!;
   const group = new THREE.Group();
   const geos: THREE.BufferGeometry[] = [];
   const mats: THREE.Material[] = [];
@@ -851,5 +851,6 @@ function gantries(b: Builder, glow: Builder, road: Road, L: Look, biome: Biome) 
   };
   one(main[0], true);
   for (const g of road.gates) one(main[near(g.x, g.z)], false);
-  one(main[near(road.finish.x, road.finish.z)], true);
+  // Circuits: the start line is the finish too.
+  if (!road.lapLen) one(main[near(road.finish.x, road.finish.z)], true);
 }
