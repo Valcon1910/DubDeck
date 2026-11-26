@@ -8,6 +8,7 @@ import { GamesPage, HomePage, NotFound, SignedOut } from "./pages";
 import { AnnouncementsPage } from "./Announcements";
 import { CHAT_ON, ChatProvider, UnreadBadge, useChat } from "./chat/store";
 import { isGaming } from "../hexdrift/gaming";
+import { setPartyClient, useParty } from "../hexdrift/partyhub";
 import "@fontsource-variable/space-grotesk";
 import "./vortex.css";
 
@@ -15,6 +16,7 @@ const Manage = lazy(() => import("./Manage").then((m) => ({ default: m.Manage })
 const ChatPage = lazy(() => import("./chat/Chat").then((m) => ({ default: m.ChatPage })));
 const Admin = lazy(() => import("./Admin").then((m) => ({ default: m.Admin })));
 const ProfilePage = lazy(() => import("./Profile").then((m) => ({ default: m.ProfilePage })));
+const PartyDock = lazy(() => import("../hexdrift/partydock").then((m) => ({ default: m.PartyDock })));
 const Hexdrift = lazy(() => import("../hexdrift/Hexdrift").then((m) => ({ default: m.Hexdrift })));
 
 type Route = "home" | "games" | "downloader" | "announcements" | "chat" | "admin" | "manage" | "hexdrift" | "profile" | "notfound";
@@ -52,6 +54,10 @@ function Shell({ email, prefs, setPrefs, gravatar }: { email: string | null; pre
   const editor = isEditor(email);
   const chat = useChat();
   const unread = chat?.unread ?? 0;
+  // The Hexdrift party you're in stays open on every page (its card is top right).
+  const party = useParty();
+  const chatSb = chat?.status === "ready" ? chat.sb : null;
+  useEffect(() => { setPartyClient(chatSb); }, [chatSb]);
   useApplyAppearance(prefs);
   const [menu, setMenu] = useState(false);
   const [settings, setSettings] = useState(false);
@@ -213,6 +219,7 @@ function Shell({ email, prefs, setPrefs, gravatar }: { email: string | null; pre
         {route === "hexdrift" && (
           <Suspense fallback={<div className="vx-game-loading" role="status">Loading Hexdrift…</div>}><Hexdrift /></Suspense>
         )}
+        {party && <Suspense fallback={null}><PartyDock /></Suspense>}
         {settings && <Settings prefs={prefs} update={setPrefs} email={email} gravatar={gravatar} siteAccent={content.site.accent} onClose={() => setSettings(false)} />}
       </div>
     </ContentContext.Provider>

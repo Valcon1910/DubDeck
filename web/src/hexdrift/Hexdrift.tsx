@@ -4,6 +4,7 @@
 import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { ALL_MAPS, MAPS, BIOMES, medalFor, type MapDef, type Medal } from "./maps.ts";
 import type { PartyRun } from "./party.tsx";
+import { thumbOf } from "./thumbs.ts";
 import { isRoomCode } from "./room.ts";
 import { getMap, isCommunity, mapDefFrom, markPlayed } from "./community.ts";
 import { emailFrom, pidOf, playerHref, profileHref } from "../vortex/profileLink.ts";
@@ -384,10 +385,7 @@ function Title() {
   );
 }
 
-// Built-in maps' card pictures, made ahead (scripts/hexdrift-thumbs.mjs): no 3D needed to show the list.
-const THUMBS = Object.fromEntries(Object.entries(import.meta.glob<string>("./thumbs/*.webp", { eager: true, query: "?url", import: "default" }))
-  .map(([k, v]) => [k.slice(9, -5), v]));
-export const thumbOf = (id: string): string | undefined => THUMBS[id];
+export { thumbOf };
 
 /** A map's picture: made ahead (or a still from above), and the live drone view while hovered. */
 function MapArt({ map, live = false }: { map: MapDef; live?: boolean }) {
@@ -885,7 +883,7 @@ function Play({ map, custom, home, practice, party }: { map: MapDef; custom?: Cu
           <p className="hx-dim">Party race: your car keeps going while this is open.</p>
           <div className="hx-row">
             <button type="button" className="hx-btn hx-btn-main" onClick={() => setOver(null)} autoFocus>Back to the race</button>
-            <a className="hx-btn" href={party.leave}>Leave the room</a>
+            <button type="button" className="hx-btn" onClick={party.leave}>Leave the room</button>
           </div>
           <GraphicsPicker game={game.current} />
         </div></div>

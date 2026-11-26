@@ -68,16 +68,28 @@ test("Party: two players join a room, race and see the results", async ({ browse
   await A.getByRole("button", { name: "Back to the lobby" }).click();
   await expect(B.locator(".hx-party-list li")).toHaveCount(2);
 
+  // The room stays open on other pages: a card in the corner shows it.
+  await B.evaluate(() => { location.hash = "#/games"; });
+  const card = B.getByRole("region", { name: "Hexdrift party" });
+  await expect(card).toContainText(code);
+  await expect(card).toContainText("Neon Downtown");
+  await expect(card.locator(".hx-dock-who li")).toHaveCount(2);
+
   // A community map: the host searches and picks one, everyone loads that exact version.
   await A.getByRole("button", { name: "Community map…" }).click();
   await A.getByRole("button", { name: /Party Test Map/ }).click();
   await expect(A.getByRole("combobox")).toHaveValue("cpartyt01-abc123");
-  await expect(B.getByText("Party Test Map")).toBeVisible();
+  await expect(card).toContainText("Party Test Map");
+  // The host starts: the other player is taken into the race from wherever they are.
   await A.getByRole("button", { name: /^Start/ }).click();
   for (const p of [A, B]) await expect(p.locator(".hx-place")).toBeVisible({ timeout: 60_000 });
+  await expect(B).toHaveURL(new RegExp(`#/hexdrift/party/${code}$`));
 
-  // Leaving: the other page sees one player.
-  await B.goto("/?as=b@x.test#/hexdrift");
+  // Leaving from the card: the other page sees one player.
+  await B.evaluate(() => { location.hash = "#/games"; });
+  await expect(card).toContainText("Race on");
+  await card.getByRole("button", { name: "Leave" }).click();
+  await expect(card).toHaveCount(0);
   await A.reload();
   await expect(A.locator(".hx-party-list li")).toHaveCount(1);
   await ctx.close();
