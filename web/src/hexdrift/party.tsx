@@ -11,6 +11,7 @@ import { parseLook } from "./online.ts";
 import type { Game } from "./game.ts";
 import { isRoomCode, MONTH_CAP, newRoomCode, Room, ROOM_MAX, type RoomMsg } from "./room.ts";
 import { IconBack, IconCrown, IconFlag } from "./ui/icons.tsx";
+import { getMap, isCommunity, listMaps, mapDefFrom, type CMap } from "./community.ts";
 
 /** What a party race gives the race screen. */
 export interface PartyRun {
@@ -39,6 +40,22 @@ export const LAPS = [1, 2, 3, 4, 5];
 const roomLink = (code: string) => `${location.origin}${location.pathname}#/hexdrift/party/${code}`;
 const raceId = () => Math.random().toString(36).slice(2, 10);
 const mapById = (id: string) => PARTY_MAPS.find((m) => m.id === id);
+/** A map the room can race: built in, or a community map's exact version ("<id>-<version>"). */
+const known = (id: string) => !!mapById(id) || isCommunity(id);
+
+/** Community maps fetched this visit (null: gone, hidden, or since changed). */
+const fetched = new Map<string, Promise<MapDef | null>>();
+function communityDef(sb: SupabaseClient, id: string, nameOf: (e: string) => string): Promise<MapDef | null> {
+  let p = fetched.get(id);
+  if (!p) {
+    const cut = id.lastIndexOf("-"), cid = id.slice(0, cut), version = id.slice(cut + 1);
+    // Everyone races the version the host picked: an update since then doesn't load.
+    p = getMap(sb, cid).then((c) => c && c.version === version ? mapDefFrom(c, nameOf(c.author)) : null).catch(() => null);
+    p.then((d) => { if (!d) fetched.delete(id); }, () => fetched.delete(id));
+    fetched.set(id, p);
+  }
+  return p;
+}
 
 function Bar({ back = "#/hexdrift", label = "Home" }: { back?: string; label?: string }) {
   return <header className="hx-menu-bar"><a className="hx-back" href={back}><IconBack size={18} />{label}</a></header>;
@@ -91,6 +108,9 @@ export function Party({ code, sb, me, myName, nameOf, race, podium }: {
   const [note, setNote] = useState("");
   const [settings, setSettings] = useState<Settings>({ map: PARTY_MAPS[0].id, laps: 3 });
   const [stage, setStage] = useState<Stage>({ k: "lobby" });
+  /** Community maps on this screen: undefined while loading, null when it won't load. */
+  const [defs, setDefs] = useState(() => new Map<string, MapDef | null>());
+  const defOf = (id: string): MapDef | null | undefined => mapById(id) ?? defs.get(id);
   const stageRef = useRef(stage);
   stageRef.current = stage;
   const settingsRef = useRef(settings);
@@ -112,10 +132,10 @@ export function Party({ code, sb, me, myName, nameOf, race, podium }: {
     // Only the host sets the room up and starts or closes races.
     const fromHost = from === r.host;
     if (m.k === "settings") {
-      if (!fromHost || !mapById(m.map)) return;
+      if (!fromHost || !known(m.map)) return;
       setSettings({ map: m.map, laps: m.laps });
     } else if (m.k === "start") {
-      if (!fromHost || !mapById(m.map)) return;
+      if (!fromHost || !known(m.map)) return;
       loaded.current = new Set();
       prog.current = new Map();
       setSettings({ map: m.map, laps: m.laps });
@@ -147,6 +167,15 @@ export function Party({ code, sb, me, myName, nameOf, race, podium }: {
     const present = st.who.filter((e) => r.members.some((m) => m.email === e));
     if (present.every((e) => loaded.current.has(e)) || Date.now() - st.startedAt > LOAD_WAIT) r.send({ k: "go", id: st.id });
   }
+
+  // Fetch the community map that's picked or being raced.
+  const want = stage.k === "lobby" ? settings.map : stage.map;
+  useEffect(() => {
+    if (mapById(want) || !isCommunity(want) || defs.has(want)) return;
+    let alive = true;
+    void communityDef(sb, want, nameOf).then((d) => { if (alive) setDefs((m) => new Map(m).set(want, d)); });
+    return () => { alive = false; };
+  }, [sb, want]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Join the room (and leave it when this screen goes).
   useEffect(() => {
@@ -235,8 +264,17 @@ export function Party({ code, sb, me, myName, nameOf, race, podium }: {
   }
 
   // ── The race ──
+  if (stage.k === "race" && stage.who.includes(me) && inRoom && !defOf(stage.map)) {
+    const gone = defOf(stage.map) === null;
+    return (
+      <div className="hx-menu hx-page hx-party">{back}
+        <h1 className="hx-page-title">Room {code}</h1>
+        <p className={gone ? "" : "hx-dim"} role="status">{gone ? "This map won't load on your device (it may have been changed or taken down). You'll be in the next race." : "Loading the map…"}</p>
+      </div>
+    );
+  }
   if (stage.k === "race" && stage.who.includes(me) && inRoom) {
-    const map = mapById(stage.map)!;
+    const map = defOf(stage.map)!;
     const mine = stage.times.get(me);
     const left = stage.who.filter((e) => !stage.times.has(e) && members.some((m) => m.email === e)).length;
     const closes = stage.firstAt ? Math.max(0, Math.ceil((CLOSE_AFTER - (now - stage.firstAt)) / 1000)) : 0;
@@ -288,14 +326,14 @@ export function Party({ code, sb, me, myName, nameOf, race, podium }: {
 
   // ── Results ──
   if (stage.k === "result") {
-    const map = mapById(stage.map)!;
+    const mapName = defOf(stage.map)?.name ?? "Community map";
     const places: PartyPlace[] = stage.order.slice(0, 3).map((e, i) => ({
       place: i + 1, name: name(e), me: e === me, look: parseLook(members.find((m) => m.email === e)?.look),
       sub: stage.times.has(e) ? formatTime(stage.times.get(e)!) : "Didn't finish",
     }));
     return (
       <div className="hx-menu hx-page hx-party">{back}
-        <h1 className="hx-page-title">{stage.order[0] ? <><IconCrown size={22} /> {name(stage.order[0])} {stage.order[0] === me ? "win" : "wins"}!</> : "Results"} <span className="hx-dim">{map.name}{stage.laps > 1 ? ` · ${stage.laps} laps` : ""}</span></h1>
+        <h1 className="hx-page-title">{stage.order[0] ? <><IconCrown size={22} /> {name(stage.order[0])} {stage.order[0] === me ? "win" : "wins"}!</> : "Results"} <span className="hx-dim">{mapName}{stage.laps > 1 ? ` · ${stage.laps} laps` : ""}</span></h1>
         {podium(places)}
         <ol className="hx-party-order">
           {stage.order.map((e, i) => (
@@ -317,7 +355,10 @@ export function Party({ code, sb, me, myName, nameOf, race, podium }: {
   }
 
   // ── The lobby (and waiting out a race you're not in) ──
-  const map = mapById(settings.map) ?? PARTY_MAPS[0];
+  const picked = defOf(settings.map);
+  const map = picked ?? PARTY_MAPS[0];
+  const community = isCommunity(settings.map);
+  const mapLabel = picked ? `${picked.name} · ${community ? picked.blurb : BIOMES[picked.biome].name}` : picked === null ? "A community map that won't load" : "Loading the map…";
   const others = members.filter((m) => m.email !== me);
   const ready = others.every((m) => m.ready);
   const watching = stage.k === "race";
@@ -362,6 +403,7 @@ export function Party({ code, sb, me, myName, nameOf, race, podium }: {
                 <>
                   <label className="hx-party-field"><span className="hx-dim">Map</span>
                     <select value={settings.map} onChange={(e) => change({ map: e.target.value })} disabled={watching}>
+                      {community && <optgroup label="Community"><option value={settings.map}>{mapLabel}</option></optgroup>}
                       <optgroup label="Circuits (laps)">
                         {PARTY_MAPS.filter((m) => m.circuit).map((m) => <option key={m.id} value={m.id}>{m.name} · {BIOMES[m.biome].name}</option>)}
                       </optgroup>
@@ -370,7 +412,9 @@ export function Party({ code, sb, me, myName, nameOf, race, podium }: {
                       </optgroup>
                     </select>
                   </label>
-                  {map.circuit && (
+                  <CommunityPick sb={sb} nameOf={nameOf} disabled={watching} onPick={(id) => change({ map: id })} />
+                  {picked === null && <p className="hx-party-note" role="status">This map won't load (it may have been changed or taken down). Pick another one.</p>}
+                  {!community && map.circuit && (
                     <div className="hx-party-field"><span className="hx-dim">Laps</span>
                       <div className="hx-seg" role="radiogroup" aria-label="Laps">
                         {LAPS.map((n) => (
@@ -380,13 +424,13 @@ export function Party({ code, sb, me, myName, nameOf, race, podium }: {
                     </div>
                   )}
                   <div className="hx-row">
-                    <button type="button" className="hx-btn hx-btn-main" data-sound="confirm" disabled={watching} onClick={() => void start()}>{ready ? "Start" : "Start anyway"}</button>
+                    <button type="button" className="hx-btn hx-btn-main" data-sound="confirm" disabled={watching || !picked} onClick={() => void start()}>{ready ? "Start" : "Start anyway"}</button>
                   </div>
                   {!ready && !watching && <p className="hx-dim hx-small">Not everyone's ready yet.</p>}
                 </>
               ) : (
                 <>
-                  <p><b>{map.name}</b> <span className="hx-dim">· {BIOMES[map.biome].name}{map.circuit ? ` · ${settings.laps} ${settings.laps === 1 ? "lap" : "laps"}` : ""}</span></p>
+                  <p>{picked ? <><b>{picked.name}</b> <span className="hx-dim">· {community ? picked.blurb : BIOMES[picked.biome].name}{picked.circuit ? ` · ${settings.laps} ${settings.laps === 1 ? "lap" : "laps"}` : ""}</span></> : <span className="hx-dim">{mapLabel}</span>}</p>
                   <p className="hx-dim">{name(r.host)} picks the map and starts the race.</p>
                 </>
               )}
@@ -395,6 +439,49 @@ export function Party({ code, sb, me, myName, nameOf, race, podium }: {
           <p className="hx-dim hx-small">Cars bump into each other. Party races don't count for records.</p>
         </>
       )}
+    </div>
+  );
+}
+
+/** The host's search for a community map (published maps that work with this version of the game). */
+function CommunityPick({ sb, nameOf, disabled, onPick }: { sb: SupabaseClient; nameOf: (e: string) => string; disabled: boolean; onPick: (id: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [tab, setTab] = useState<"trending" | "mine">("trending");
+  const [list, setList] = useState<CMap[] | null>(null);
+  const [err, setErr] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    setErr(false);
+    const t = setTimeout(() => {
+      void listMaps(sb, tab, q, undefined, 12)
+        .then((l) => { if (alive) setList(l.filter((c) => !c.hidden)); })
+        .catch(() => { if (alive) { setList([]); setErr(true); } });
+    }, q ? 300 : 0);
+    return () => { alive = false; clearTimeout(t); };
+  }, [sb, open, q, tab]);
+  if (!open) return <div className="hx-row"><button type="button" className="hx-btn" disabled={disabled} onClick={() => setOpen(true)}>Community map…</button></div>;
+  return (
+    <div className="hx-party-pick">
+      <div className="hx-seg" role="radiogroup" aria-label="Which maps">
+        {([["trending", "Popular"], ["mine", "Mine"]] as const).map(([k, label]) => (
+          <button key={k} type="button" role="radio" aria-checked={tab === k} className={tab === k ? "on" : ""} onClick={() => { setTab(k); setList(null); }}>{label}</button>
+        ))}
+      </div>
+      <input type="search" placeholder="Search community maps" aria-label="Search community maps" value={q} onChange={(e) => setQ(e.target.value)} />
+      {list === null ? <p className="hx-dim hx-small">Loading…</p> : err ? <p className="hx-dim hx-small">Community maps can't be reached right now.</p> : !list.length ? <p className="hx-dim hx-small">No maps found.</p> : (
+        <ul className="hx-party-picklist">
+          {list.map((c) => (
+            <li key={c.id}>
+              <button type="button" disabled={disabled} onClick={() => { onPick(`${c.id}-${c.version}`); setOpen(false); }}>
+                <span>{c.name}</span><span className="hx-dim hx-small">by {nameOf(c.author)}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="hx-row"><button type="button" className="hx-btn" onClick={() => setOpen(false)}>Close</button></div>
     </div>
   );
 }

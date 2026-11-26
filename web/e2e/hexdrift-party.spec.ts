@@ -68,8 +68,17 @@ test("Party: two players join a room, race and see the results", async ({ browse
   await A.getByRole("button", { name: "Back to the lobby" }).click();
   await expect(B.locator(".hx-party-list li")).toHaveCount(2);
 
+  // A community map: the host searches and picks one, everyone loads that exact version.
+  await A.getByRole("button", { name: "Community map…" }).click();
+  await A.getByRole("button", { name: /Party Test Map/ }).click();
+  await expect(A.getByRole("combobox")).toHaveValue("cpartyt01-abc123");
+  await expect(B.getByText("Party Test Map")).toBeVisible();
+  await A.getByRole("button", { name: /^Start/ }).click();
+  for (const p of [A, B]) await expect(p.locator(".hx-place")).toBeVisible({ timeout: 60_000 });
+
   // Leaving: the other page sees one player.
   await B.goto("/?as=b@x.test#/hexdrift");
+  await A.reload();
   await expect(A.locator(".hx-party-list li")).toHaveCount(1);
   await ctx.close();
 });

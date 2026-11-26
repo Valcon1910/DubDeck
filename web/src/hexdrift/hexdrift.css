@@ -622,3 +622,9 @@ a.hx-pl-name:hover { text-decoration: underline; }
 .hx-party-field { display: grid; gap: 6px; margin: 10px 0; }
 .hx-party-field select { padding: 10px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.18); background: rgba(0, 0, 0, 0.3); color: inherit; font: inherit; }
 .hx-party-note { padding: 10px 12px; border-radius: 12px; background: rgba(255, 176, 46, 0.16); }
+.hx-party-pick { display: grid; gap: 8px; margin: 10px 0; padding: 10px; border-radius: 14px; background: rgba(0, 0, 0, 0.25); }
+.hx-party-pick input { padding: 10px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.18); background: rgba(0, 0, 0, 0.3); color: inherit; font: inherit; min-width: 0; }
+.hx-party-picklist { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-height: 260px; overflow-y: auto; }
+.hx-party-picklist button { width: 100%; display: flex; justify-content: space-between; gap: 10px; align-items: baseline; padding: 10px 12px; border-radius: 10px; border: 0; background: rgba(255, 255, 255, 0.06); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.hx-party-picklist button:hover, .hx-party-picklist button:focus-visible { background: rgba(255, 255, 255, 0.14); }
+.hx-party-picklist span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
