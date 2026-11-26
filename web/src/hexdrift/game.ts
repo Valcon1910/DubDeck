@@ -18,6 +18,8 @@ import type { Smash } from "./render/props.ts";
 import { NO_GROUND, terrainAt } from "./sim/terrain.ts";
 import { blobShadow, buildCar, type CarModel } from "./render/car.ts";
 import type { Controls } from "./input.ts";
+import type { CarState } from "./room.ts";
+import { roadNear } from "./sim/road.ts";
 import { DEFAULT_LOOK, itemOf, type Item, type Look } from "./garage.ts";
 import { FinishFx, Trail, trailDef, type FinishKind } from "./render/fx.ts";
 import { play, preloadSounds } from "./ui/sound.ts";
@@ -66,6 +68,11 @@ interface Ghost {
   cur: Snap;
   n: THREE.Vector3;
 }
+
+/** Another player's car (multiplayer): their last few states, drawn a little behind to smooth them out. */
+interface Remote { model: CarModel; n: THREE.Vector3; buf: { at: number; s: CarState }[] }
+/** How far behind other players' cars are drawn (ms): room for one late packet. */
+const REMOTE_DELAY = 110;
 
 const snap = (r: Race): Snap => ({ x: r.car.x, y: r.car.y, z: r.car.z, yaw: r.car.yaw, nx: r.car.nx, ny: r.car.ny, nz: r.car.nz, loop: r.car.loop >= 0, tx: r.car.tx, ty: r.car.ty, tz: r.car.tz });
 
@@ -138,6 +145,11 @@ export class Game {
   private ghost: Ghost | null = null;
   /** The world record, in gold (only when someone else holds it). */
   private wr: Ghost | null = null;
+  /** Other players in a party room. */
+  private remotes = new Map<string, Remote>();
+  /** Multiplayer: your car's state, about 20 times a second. */
+  onCarState: ((s: CarState) => void) | null = null;
+  private sentAt = 0;
   private splitText = "";
   private splitClass = "";
   private splitUntil = 0;
@@ -337,6 +349,82 @@ export class Game {
     return g;
   }
 
+  /** Another player's car: shown with their look and a name tag. */
+  addRemote(email: string, name: string, look: Look | null) {
+    if (this.remotes.has(email)) return;
+    const model = buildCar({ look: look ?? undefined, label: name });
+    model.root.visible = false;
+    this.scene.add(model.root);
+    this.remotes.set(email, { model, n: new THREE.Vector3(0, 1, 0), buf: [] });
+  }
+
+  removeRemote(email: string) {
+    const r = this.remotes.get(email);
+    if (!r) return;
+    this.scene.remove(r.model.root);
+    r.model.dispose();
+    this.remotes.delete(email);
+  }
+
+  /** A state from another player's game. */
+  remoteState(email: string, s: CarState) {
+    const r = this.remotes.get(email);
+    if (!r) return;
+    r.buf.push({ at: performance.now(), s });
+    if (r.buf.length > 8) r.buf.shift();
+  }
+
+  /** Other players' cars, as last drawn (for bumping and places). */
+  remoteCars(): Map<string, CarState> {
+    const out = new Map<string, CarState>();
+    for (const [e, r] of this.remotes) { const b = r.buf[r.buf.length - 1]; if (b) out.set(e, b.s); }
+    return out;
+  }
+
+  /** Your car as sent to the others. dist is how far along the road you are. */
+  carState(): CarState {
+    const c = this.race.car, road = this.race.track.road;
+    let dist = 0;
+    if (road) {
+      const q = roadNear(road, c.x, c.z, 40);
+      if (q && q.seg.strand === 0) dist = road.strands[0].pts[q.seg.i].s + q.t * q.seg.len;
+    }
+    const inputs = this.race.inputs;
+    const loop = c.loop >= 0;
+    return {
+      x: c.x, y: c.y, z: c.z, yaw: c.yaw, speed: c.speed,
+      steer: inputs.length ? ((inputs[inputs.length - 1] & 15) - 7) / 7 : 0, boost: c.boosting > 0,
+      dist, lap: 0, done: this.race.phase === "finished", t: raceTicks(this.race),
+      nx: c.nx, ny: c.ny, nz: c.nz, tx: loop ? c.tx : 0, ty: loop ? c.ty : 0, tz: loop ? c.tz : 0,
+    };
+  }
+
+  private drawRemotes(dt: number) {
+    const now = performance.now(), at = now - REMOTE_DELAY;
+    for (const r of this.remotes.values()) {
+      const b = r.buf;
+      if (!b.length || now - b[b.length - 1].at > 3000) { r.model.root.visible = false; continue; }
+      // The two states either side of the moment drawn (or the newest, held).
+      let i = b.length - 1;
+      while (i > 0 && b[i - 1].at > at) i--;
+      const p = b[Math.max(0, i - 1)], q = b[i];
+      const span = q.at - p.at;
+      const t = span > 0 ? Math.min(1, Math.max(0, (at - p.at) / span)) : 1;
+      const A = p.s, B = q.s;
+      const jump = (A.x - B.x) ** 2 + (A.z - B.z) ** 2 > 400;
+      const k = jump ? 1 : t;
+      let dy = B.yaw - A.yaw;
+      if (dy > Math.PI) dy -= Math.PI * 2;
+      if (dy < -Math.PI) dy += Math.PI * 2;
+      const loop = B.tx !== 0 || B.ty !== 0 || B.tz !== 0;
+      const sn: Snap = { x: B.x, y: B.y, z: B.z, yaw: B.yaw, nx: B.nx, ny: B.ny, nz: B.nz, loop, tx: B.tx, ty: B.ty, tz: B.tz };
+      r.model.root.visible = true;
+      this.pose(r.model, r.n, sn, jump, A.x + (B.x - A.x) * k, A.y + (B.y - A.y) * k, A.z + (B.z - A.z) * k, A.yaw + dy * k, dt);
+      r.model.update(B.speed, B.steer, dt);
+      r.model.setBoost(B.boost);
+    }
+  }
+
   get hasGhost() { return this.ghost !== null || this.wr !== null; }
 
 
@@ -459,6 +547,7 @@ export class Game {
       }
       if (n === 6) this.acc = 0; // way behind (tab was busy): don't spiral
     }
+    if (this.onCarState && now - this.sentAt >= 50) { this.sentAt = now; this.onCarState(this.carState()); }
     // Resize before drawing: resizing clears the picture, and doing it after
     // the draw showed a black frame (the dark flicker).
     this.adaptResolution(now);
@@ -515,6 +604,7 @@ export class Game {
     this.trail.update(x - sy * 2.3, y + 0.32, z - cy * 2.3, cy, -sy, this.trailOn, sdt);
     this.fx.update(sdt);
 
+    this.drawRemotes(dt);
     // The ghosts.
     for (const gh of [this.ghost, this.wr]) {
       if (!gh) continue;
@@ -977,6 +1067,7 @@ export class Game {
   }
 
   dispose() {
+    for (const e of [...this.remotes.keys()]) this.removeRemote(e);
     this.audio.dispose();
     this.endIntro();
     this.post.dispose();

@@ -27,11 +27,14 @@ export interface CarState {
   dist: number; lap: number; done: boolean;
   /** Race time (steps since GO) when sent. */
   t: number;
+  /** Ground normal (for tilting the car), and the way it points when round a loop (all 0 when not). */
+  nx: number; ny: number; nz: number;
+  tx: number; ty: number; tz: number;
 }
-const CAR_FLOATS = 10;
+const CAR_FLOATS = 16;
 function packCar(c: CarState): ArrayBuffer {
   const a = new Float32Array(CAR_FLOATS);
-  a.set([c.x, c.y, c.z, c.yaw, c.speed, c.steer, c.boost ? 1 : 0, c.dist, c.lap + (c.done ? 1000 : 0), c.t]);
+  a.set([c.x, c.y, c.z, c.yaw, c.speed, c.steer, c.boost ? 1 : 0, c.dist, c.lap + (c.done ? 1000 : 0), c.t, c.nx, c.ny, c.nz, c.tx, c.ty, c.tz]);
   return a.buffer;
 }
 function unpackCar(b: ArrayBuffer): CarState | null {
@@ -39,7 +42,7 @@ function unpackCar(b: ArrayBuffer): CarState | null {
   const a = new Float32Array(b);
   if (!a.every(Number.isFinite)) return null;
   const done = a[8] >= 1000;
-  return { x: a[0], y: a[1], z: a[2], yaw: a[3], speed: a[4], steer: a[5], boost: a[6] > 0.5, dist: a[7], lap: done ? a[8] - 1000 : a[8], done, t: a[9] };
+  return { x: a[0], y: a[1], z: a[2], yaw: a[3], speed: a[4], steer: a[5], boost: a[6] > 0.5, dist: a[7], lap: done ? a[8] - 1000 : a[8], done, t: a[9], nx: a[10], ny: a[11], nz: a[12], tx: a[13], ty: a[14], tz: a[15] };
 }
 
 /** Messages to the whole room (reliable, through the live channel). */
