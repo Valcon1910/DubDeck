@@ -73,7 +73,7 @@ export const ALL_MAPS: MapDef[] = [
         set: [["stand", 30, -1, 3], ["stand", 30, 1, 3], ["billboard", 200, -1, 2], ["pier", 150, 1, 30], ["beachbar", 420, 1, 6], ["guard_a", 240, 1, 20], ["stand", 3250, -1, 3], ["stand", 3250, 1, 3]],
       },
     },
-    medals: { vortex: 3899, gold: 4261, silver: 4904, bronze: 6030 }, since: 6, wip: true,
+    medals: { vortex: 3899, gold: 4261, silver: 4904, bronze: 6030 }, since: 6,
   },
   {
     id: "alpine-pass", name: "Alpine Pass", biome: "alpine", difficulty: "Medium",
@@ -86,7 +86,7 @@ export const ALL_MAPS: MapDef[] = [
       dress: { kit: "alpine", zones: [[0, 260, "village", "village"], [260, 700, "forest", "forest"], [700, 1200, "cliff", "forest"], [1200, 1700, "forest", "cliff"], [1700, 2100, "forest", "forest"], [2100, 2800, "village", "village"]],
         set: [["stand", 25, -1, 3], ["stand", 25, 1, 3], ["icesign", 560, 1, 1.5], ["icesign", 560, -1, 1.5], ["plough", 640, 1, 3]] },
     },
-    medals: { vortex: 3181, gold: 3476, silver: 4000, bronze: 4919 }, since: 6, wip: true,
+    medals: { vortex: 3181, gold: 3476, silver: 4000, bronze: 4919 }, since: 6,
   },
   {
     id: "baja-rally", name: "Baja Rally", biome: "baja", difficulty: "Medium",
@@ -99,7 +99,7 @@ export const ALL_MAPS: MapDef[] = [
       dress: { kit: "baja", zones: [[0, 220, "camp", "camp"], [220, 760, "desert", "desert"], [760, 1300, "cliff", "desert"], [1300, 1900, "desert", "cliff"], [1900, 2350, "desert", "desert"], [2350, 2900, "village", "village"]],
         set: [["stand", 25, -1, 3], ["stand", 25, 1, 3], ["mesa", 1100, 1, 30], ["windpump", 600, -1, 12], ["wreck", 900, 1, 5]] },
     },
-    medals: { vortex: 3202, gold: 3499, silver: 4027, bronze: 4952 }, since: 6, wip: true,
+    medals: { vortex: 3202, gold: 3499, silver: 4027, bronze: 4952 }, since: 6,
   },
   {
     id: "sky-kingdom", name: "Sky Kingdom", biome: "sky", difficulty: "Hard",
@@ -112,7 +112,7 @@ export const ALL_MAPS: MapDef[] = [
       dress: { kit: "sky", zones: [[0, 280, "village", "village"], [280, 900, "park", "cliff"], [900, 1700, "cliff", "park"], [1700, 2400, "park", "cliff"], [2400, 3200, "village", "village"]],
         set: [["stand", 25, -1, 3], ["stand", 25, 1, 3], ["gatehouse", 8, 1, 4], ["keep", 140, -1, 26], ["windmill", 700, 1, 14], ["temple", 1300, -1, 16], ["wizard", 2000, 1, 14], ["keep", 2700, 1, 26], ["wizard", 2950, -1, 14]] },
     },
-    medals: { vortex: 3714, gold: 4059, silver: 4671, bronze: 5744 }, since: 6, wip: true,
+    medals: { vortex: 3714, gold: 4059, silver: 4671, bronze: 5744 }, since: 6,
   },
   {
     id: "interstellar", name: "Interstellar", biome: "space", difficulty: "Expert",
@@ -125,7 +125,7 @@ export const ALL_MAPS: MapDef[] = [
       dress: { kit: "space", zones: [[0, 320, "village", "village"], [320, 1100, "park", "cliff"], [1100, 1900, "cliff", "park"], [1900, 2900, "park", "cliff"], [2900, 3800, "village", "village"]],
         set: [["stand", 25, -1, 3], ["stand", 25, 1, 3], ["spire", 150, -1, 10], ["ring", 900, 1, 160], ["ring", 2300, -1, 200], ["spire", 3150, 1, 10]] },
     },
-    medals: { vortex: 4366, gold: 4771, silver: 5491, bronze: 6752 }, since: 6, wip: true,
+    medals: { vortex: 4366, gold: 4771, silver: 5491, bronze: 6752 }, since: 6,
   },
   {
     id: "miami-storm", name: "Miami Storm", biome: "storm", difficulty: "Beginner",
@@ -141,7 +141,7 @@ export const ALL_MAPS: MapDef[] = [
         set: [["stand", 30, -1, 3], ["stand", 30, 1, 3], ["billboard", 180, 1, 2], ["billboard", 700, -1, 2], ["billboard", 1500, 1, 2]],
       },
     },
-    medals: { vortex: 2809, gold: 3070, silver: 3533, bronze: 4344 }, since: 6, wip: true,
+    medals: { vortex: 2809, gold: 3070, silver: 3533, bronze: 4344 }, since: 6,
   },
   {
     id: "neon-downtown", blurb: "Midnight in the glass canyons. Long neon straights, a boost through the plaza and three tight turns that reward a clean line.", name: "Neon Downtown", biome: "city", difficulty: "Beginner",
