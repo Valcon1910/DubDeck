@@ -851,5 +851,6 @@ function gantries(b: Builder, glow: Builder, road: Road, L: Look, biome: Biome) 
   };
   one(main[0], true);
   for (const g of road.gates) one(main[near(g.x, g.z)], false);
-  one(main[near(road.finish.x, road.finish.z)], true);
+  // Circuits: the start line is the finish too.
+  if (!road.lapLen) one(main[near(road.finish.x, road.finish.z)], true);
 }

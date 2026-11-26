@@ -87,12 +87,15 @@ export interface Race {
   /** Checkpoint split times, in steps since GO. */
   splits: number[];
   finishTicks: number;
+  /** Laps done, and how many make the race (circuits; 1 everywhere else). */
+  lap: number;
+  laps: number;
 }
 
 export function newRace(track: Track): Race {
   const car = {} as Car;
   place(car, track.spawn);
-  return { track, car, phase: "countdown", tick: 0, cps: new Set(track.passed ?? []), respawnAt: track.spawn, inputs: [], splits: [], finishTicks: 0 };
+  return { track, car, phase: "countdown", tick: 0, cps: new Set(track.passed ?? []), respawnAt: track.spawn, inputs: [], splits: [], finishTicks: 0, lap: 0, laps: 1 };
 }
 
 /** Steps since GO (the race time). */
@@ -423,6 +426,9 @@ function gates(r: Race, px: number, pz: number) {
     r.splits.push(raceTicks(r));
   }
   if (r.cps.size === r.track.checkpoints && cross(road.finish)) {
+    // A lap done (sprints have one): the checkpoints count again on the next.
+    r.lap++;
+    if (r.lap < r.laps) { r.cps = new Set(); return; }
     r.phase = "finished";
     r.finishTicks = r.tick - COUNTDOWN;
   }

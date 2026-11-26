@@ -164,7 +164,8 @@ export function Hexdrift() {
             : view.kind === "test" ? <TestDrive id={view.id} />
             : view.kind === "party" ? (view.code && partySb
               ? <Party code={view.code} sb={partySb} me={partyMe} myName={nameOf(profiles, partyMe)} nameOf={(e) => nameOf(profiles, e)}
-                  race={(map, run, key) => <Play key={key} map={map} party={run} />} />
+                  race={(map, run, key) => <Play key={key} map={map} party={run} />}
+                  podium={(places) => <PodiumView places={places} empty="" />} />
               : <PartyHome signedIn={!!partySb} offline={<NeedOnlineText />} />)
             : view.kind === "maps" ? <MapSelect />
             : view.kind === "map" ? <MapDetail map={view.map} />
@@ -715,6 +716,7 @@ function Play({ map, custom, home, practice, party }: { map: MapDef; custom?: Cu
     g.setGraphics(gfxPref());
     const p = partyRef.current;
     if (p) {
+      g.setGrid(p.slot, p.of, p.laps);
       g.start();
       if (import.meta.env.DEV) Object.assign(window, { __hexdrift: g });
       const detach = p.attach(g);

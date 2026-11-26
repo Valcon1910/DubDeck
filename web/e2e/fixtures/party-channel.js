@@ -4,9 +4,11 @@
   if (!me) return;
   window.__hxParty = { me, sb: {
     functions: { invoke: async () => ({ data: { iceServers: [{ urls: "turn:127.0.0.1:9", username: "x", credential: "y" }] }, error: null }) },
+    // The month's message count (a test can set window.__hxUsage to see the guard).
+    rpc: async (_fn, args) => { window.__hxSent = (window.__hxSent ?? 0) + (args?.n ?? 0); return { data: window.__hxUsage ?? window.__hxSent, error: null }; },
     channel(name, opts) {
       const bc = new BroadcastChannel(name), key = opts.config.presence.key;
-      const hs = [], state = {}; let mine = null;
+      const hs = [], state = {}; let mine = null, closed = false;
       const sync = () => hs.filter((h) => h.type === "presence").forEach((h) => h.cb());
       bc.onmessage = ({ data: d }) => {
         if (d.t === "track") { state[d.key] = [d.meta]; sync(); if (d.ask && mine) bc.postMessage({ t: "track", key, meta: mine }); }
@@ -15,14 +17,14 @@
       };
       const ch = {
         on(type, f, cb) { hs.push({ type, event: f.event, cb }); return ch; },
-        subscribe(cb) { setTimeout(() => cb("SUBSCRIBED"), 0); return ch; },
-        async track(meta) { mine = meta; state[key] = [meta]; bc.postMessage({ t: "track", key, meta, ask: true }); sync(); },
-        async untrack() { bc.postMessage({ t: "untrack", key }); },
-        async send(m) { bc.postMessage({ t: "bc", event: m.event, payload: m.payload }); },
-        presenceState() { return state; }, _bc: bc,
+        subscribe(cb) { setTimeout(() => { if (!closed) cb("SUBSCRIBED"); }, 0); return ch; },
+        async track(meta) { if (closed) return; mine = meta; state[key] = [meta]; bc.postMessage({ t: "track", key, meta, ask: true }); sync(); },
+        async untrack() { if (!closed) bc.postMessage({ t: "untrack", key }); },
+        async send(m) { if (closed) return; window.__hxBroadcasts = (window.__hxBroadcasts ?? 0) + 1; bc.postMessage({ t: "bc", event: m.event, payload: m.payload }); },
+        presenceState() { return state; }, _close() { closed = true; bc.close(); },
       };
       return ch;
     },
-    removeChannel(ch) { ch._bc.close(); },
+    removeChannel(ch) { ch._close(); },
   } };
 })();

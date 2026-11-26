@@ -84,19 +84,6 @@ jobs:
           cp -r supabase/functions/hexdrift-maps "supabase/functions/hexdrift-maps-v$V"
           npx -y supabase@2.122.1 functions deploy "hexdrift-maps-v$V" --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt --use-api
 
-      - name: Deploy Hexdrift multiplayer (relay credentials)
-        env:
-          CF_TURN_KEY_ID: ${{ secrets.CF_TURN_KEY_ID }}
-          CF_TURN_API_TOKEN: ${{ secrets.CF_TURN_API_TOKEN }}
-        run: |
-          # The Cloudflare TURN key stays in Supabase: browsers only get short-lived credentials.
-          if [ -n "$CF_TURN_KEY_ID" ] && [ -n "$CF_TURN_API_TOKEN" ]; then
-            npx -y supabase@2.122.1 secrets set --project-ref "$SUPABASE_PROJECT_REF" CF_TURN_KEY_ID="$CF_TURN_KEY_ID" CF_TURN_API_TOKEN="$CF_TURN_API_TOKEN"
-          else
-            echo "::warning::CF_TURN_KEY_ID / CF_TURN_API_TOKEN aren't set: multiplayer stays off until they are."
-          fi
-          npx -y supabase@2.122.1 functions deploy hexdrift-turn --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt --use-api
-
       - name: Check the sign-in bridge
         run: |
           F="https://$SUPABASE_PROJECT_REF.supabase.co/functions/v1/vortex-login"

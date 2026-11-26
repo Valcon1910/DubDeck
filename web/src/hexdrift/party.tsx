@@ -1,22 +1,25 @@
-// Hexdrift party rooms: the lobby (who's in, the host's map and mode), the
+// Hexdrift party rooms: the lobby (who's in, the host's map and laps), the
 // race itself (inside the normal race screen, with the others' cars) and the
-// results. The room's messages and links are in room.ts.
+// results on the podium. The room's messages and budget are in room.ts, the
+// cars in netcar.ts.
 import { useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { MAPS, BIOMES, type MapDef } from "./maps.ts";
+import { PARTY_MAPS, BIOMES, type MapDef } from "./maps.ts";
 import { formatTime } from "./sim/race.ts";
-import { readLook } from "./garage.ts";
+import { readLook, type Look } from "./garage.ts";
 import { parseLook } from "./online.ts";
 import type { Game } from "./game.ts";
-import { isRoomCode, newRoomCode, Room, ROOM_MAX, type CarState, type Mode, type RoomMsg } from "./room.ts";
+import { isRoomCode, MONTH_CAP, newRoomCode, Room, ROOM_MAX, type RoomMsg } from "./room.ts";
 import { IconBack, IconCrown, IconFlag } from "./ui/icons.tsx";
 
 /** What a party race gives the race screen. */
 export interface PartyRun {
+  /** Your place on the grid (0 is pole), out of how many, and the laps. */
+  slot: number; of: number; laps: number;
   /** Wires the game into the room (other cars, your car out, the start); returns the undo. */
   attach(g: Game): () => void;
   finished(ticks: number): void;
-  /** Your place, shown in the race's top bar. */
+  /** Your place and lap, shown in the race's top bar. */
   hud: ReactNode;
   /** Over the race (waiting for the start, or for the others to finish). */
   overlay: ReactNode;
@@ -24,16 +27,18 @@ export interface PartyRun {
   leave: string;
 }
 
+/** A pillar on the results podium. */
+export interface PartyPlace { place: number; look: Look | null; name: string; sub: ReactNode; me: boolean }
+
 /** After the first finish, the others get this long before the race closes. */
 const CLOSE_AFTER = 30_000;
 /** How long the host waits for slow devices to load before saying go anyway. */
 const LOAD_WAIT = 12_000;
-/** Elimination: the next round starts on its own after this. */
-const NEXT_ROUND = 8_000;
-const MODE_NAME: Record<Mode, string> = { race: "Race", elim: "Elimination" };
+export const LAPS = [1, 2, 3, 4, 5];
 
 const roomLink = (code: string) => `${location.origin}${location.pathname}#/hexdrift/party/${code}`;
 const raceId = () => Math.random().toString(36).slice(2, 10);
+const mapById = (id: string) => PARTY_MAPS.find((m) => m.id === id);
 
 function Bar({ back = "#/hexdrift", label = "Home" }: { back?: string; label?: string }) {
   return <header className="hx-menu-bar"><a className="hx-back" href={back}><IconBack size={18} />{label}</a></header>;
@@ -55,7 +60,7 @@ export function PartyHome({ signedIn, offline }: { signedIn: boolean; offline: R
           </button>
           <form className="hx-party-join" onSubmit={(e) => { e.preventDefault(); if (isRoomCode(clean)) location.hash = `#/hexdrift/party/${clean}`; }}>
             <label htmlFor="hx-code" className="hx-dim">Room code</label>
-            <input id="hx-code" className="hx-code" value={clean} onChange={(e) => setCode(e.target.value)} placeholder="ABCDEF" autoComplete="off" autoCapitalize="characters" spellCheck={false} inputMode="text" />
+            <input id="hx-code" className="hx-code" value={clean} onChange={(e) => setCode(e.target.value)} placeholder="ABCDEF" autoComplete="off" autoCapitalize="characters" spellCheck={false} />
             <button type="submit" className="hx-btn hx-btn-main" disabled={!isRoomCode(clean)}>Join</button>
           </form>
         </div>
@@ -65,37 +70,37 @@ export function PartyHome({ signedIn, offline }: { signedIn: boolean; offline: R
 }
 
 interface RaceStage {
-  k: "race"; id: string; map: string; mode: Mode; laps: number; who: string[]; round: number;
+  k: "race"; id: string; map: string; laps: number; who: string[];
   go: boolean; startedAt: number; goAt: number; firstAt: number;
   times: Map<string, number>;
 }
-interface ResultStage { k: "result"; id: string; map: string; mode: Mode; round: number; order: string[]; out: string[]; times: Map<string, number>; at: number }
+interface ResultStage { k: "result"; id: string; map: string; laps: number; order: string[]; times: Map<string, number> }
 type Stage = { k: "lobby" } | RaceStage | ResultStage;
-interface Settings { map: string; mode: Mode; laps: number }
+interface Settings { map: string; laps: number }
 
 /** #/hexdrift/party/<code>: the room, from the lobby through each race. */
-export function Party({ code, sb, me, myName, nameOf, race }: {
+export function Party({ code, sb, me, myName, nameOf, race, podium }: {
   code: string; sb: SupabaseClient; me: string; myName: string;
   nameOf: (email: string) => string;
   race: (map: MapDef, run: PartyRun, key: string) => ReactNode;
+  podium: (places: PartyPlace[]) => ReactNode;
 }) {
   const [, bump] = useReducer((n: number) => n + 1, 0);
   const room = useRef<Room | null>(null);
   const [fail, setFail] = useState("");
-  const [settings, setSettings] = useState<Settings>({ map: MAPS[0].id, mode: "race", laps: 1 });
+  const [note, setNote] = useState("");
+  const [settings, setSettings] = useState<Settings>({ map: PARTY_MAPS[0].id, laps: 3 });
   const [stage, setStage] = useState<Stage>({ k: "lobby" });
   const stageRef = useRef(stage);
   stageRef.current = stage;
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
-  /** Elimination: who's still in (null outside a run of rounds). */
-  const alive = useRef<string[] | null>(null);
   /** Who on the race has loaded (the host's count). */
   const loaded = useRef(new Set<string>());
-  /** The latest car of everyone, for places. */
-  const cars = useRef(new Map<string, CarState>());
+  /** The latest progress of everyone (from the race screen), for places. */
+  const prog = useRef(new Map<string, { dist: number; done: boolean }>());
   const game = useRef<Game | null>(null);
-  const [place, setPlace] = useState<[number, number] | null>(null);
+  const [hud, setHud] = useState<{ place: number; of: number; lap: number; busy: boolean } | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const seen = useRef(0);
 
@@ -107,18 +112,16 @@ export function Party({ code, sb, me, myName, nameOf, race }: {
     // Only the host sets the room up and starts or closes races.
     const fromHost = from === r.host;
     if (m.k === "settings") {
-      if (!fromHost) return;
-      if (!MAPS.some((x) => x.id === m.map)) return;
-      setSettings({ map: m.map, mode: m.mode, laps: m.laps });
+      if (!fromHost || !mapById(m.map)) return;
+      setSettings({ map: m.map, laps: m.laps });
     } else if (m.k === "start") {
-      if (!fromHost || !MAPS.some((x) => x.id === m.map)) return;
+      if (!fromHost || !mapById(m.map)) return;
       loaded.current = new Set();
-      cars.current = new Map();
-      if (m.mode === "elim") alive.current = m.who.slice();
-      else alive.current = null;
-      setSettings({ map: m.map, mode: m.mode, laps: m.laps });
-      setPlace(null);
-      setStage({ k: "race", id: m.id, map: m.map, mode: m.mode, laps: m.laps, who: m.who, round: m.round, go: false, startedAt: Date.now(), goAt: 0, firstAt: 0, times: new Map() });
+      prog.current = new Map();
+      setSettings({ map: m.map, laps: m.laps });
+      setHud(null);
+      setNote("");
+      setStage({ k: "race", id: m.id, map: m.map, laps: m.laps, who: m.who, go: false, startedAt: Date.now(), goAt: 0, firstAt: 0, times: new Map() });
     } else if (m.k === "loaded") {
       if (st.k !== "race" || st.id !== m.id) return;
       loaded.current.add(from);
@@ -129,16 +132,12 @@ export function Party({ code, sb, me, myName, nameOf, race }: {
       game.current?.setPaused(false);
     } else if (m.k === "finish") {
       if (st.k !== "race" || st.id !== m.id || !st.who.includes(from) || st.times.has(from)) return;
-      const times = new Map(st.times).set(from, m.ticks);
-      setStage({ ...st, times, firstAt: st.firstAt || Date.now() });
+      setStage({ ...st, times: new Map(st.times).set(from, m.ticks), firstAt: st.firstAt || Date.now() });
     } else if (m.k === "result") {
       if (!fromHost || st.k !== "race" || st.id !== m.id) return;
-      if (alive.current) alive.current = alive.current.filter((e) => !m.out.includes(e));
-      setStage({ k: "result", id: m.id, map: st.map, mode: st.mode, round: st.round, order: m.order, out: m.out, times: st.times, at: Date.now() });
+      setStage({ k: "result", id: m.id, map: st.map, laps: st.laps, order: m.order.filter((e) => st.who.includes(e)), times: st.times });
     } else if (m.k === "lobby") {
-      if (!fromHost) return;
-      alive.current = null;
-      setStage({ k: "lobby" });
+      if (fromHost) setStage({ k: "lobby" });
     }
   };
 
@@ -153,7 +152,7 @@ export function Party({ code, sb, me, myName, nameOf, race }: {
   useEffect(() => {
     const r = new Room(sb, code, { email: me, name: myName, look: JSON.stringify(readLook()) }, {
       change: () => bump(),
-      car: (email, s) => { cars.current.set(email, s); game.current?.remoteState(email, s); },
+      car: (email, d) => game.current?.remotePacket(email, d),
       msg: (from, m) => onMsg.current(from, m),
       fail: (why) => setFail(why),
     });
@@ -172,7 +171,7 @@ export function Party({ code, sb, me, myName, nameOf, race }: {
     if (!r || !isHost) return;
     if (members.length > seen.current) {
       const st = stageRef.current;
-      r.send({ k: "settings", ...settingsRef.current, race: st.k === "race" ? st.id : undefined });
+      r.send({ k: "settings", mode: "race", ...settingsRef.current, race: st.k === "race" ? st.id : undefined });
     }
     seen.current = members.length;
   });
@@ -181,55 +180,45 @@ export function Party({ code, sb, me, myName, nameOf, race }: {
   useEffect(() => {
     const g = game.current;
     if (!g) return;
-    for (const e of g.remoteCars().keys()) if (!members.some((m) => m.email === e)) g.removeRemote(e);
+    for (const e of g.progress().keys()) if (e && !members.some((m) => m.email === e)) g.removeRemote(e);
   });
 
-  // The host's clock: say go, close the race, start the next round.
+  // The host's clock: say go, then close the race.
   useEffect(() => {
-    if (!isHost || stage.k === "lobby") return;
+    if (!isHost || stage.k !== "race") return;
     const t = setInterval(() => {
-      const st = stageRef.current;
-      const rr = room.current;
-      if (!rr) return;
-      if (st.k === "race") {
-        if (!st.go) { maybeGo(st); return; }
-        const present = st.who.filter((e) => rr.members.some((m) => m.email === e));
-        const allIn = present.every((e) => st.times.has(e));
-        const late = st.firstAt && Date.now() - st.firstAt > CLOSE_AFTER;
-        const tooLong = Date.now() - st.goAt > 15 * 60_000;
-        if (allIn || late || tooLong) {
-          const order = standings(st, cars.current, game.current, me);
-          let out: string[] = [];
-          if (st.mode === "elim") {
-            // Anyone who left is out, and the last one home (or furthest back).
-            out = st.who.filter((e) => !present.includes(e));
-            const still = order.filter((e) => present.includes(e));
-            if (still.length > 1) out.push(still[still.length - 1]);
-          }
-          rr.send({ k: "result", id: st.id, order, out });
-        }
-      } else if (st.k === "result" && st.mode === "elim") {
-        const left = (alive.current ?? []).filter((e) => rr.members.some((m) => m.email === e));
-        if (left.length > 1 && Date.now() - st.at > NEXT_ROUND) start(left, st.round + 1);
-      }
+      const st = stageRef.current, rr = room.current;
+      if (!rr || st.k !== "race") return;
+      if (!st.go) { maybeGo(st); return; }
+      const present = st.who.filter((e) => rr.members.some((m) => m.email === e));
+      const allIn = present.every((e) => st.times.has(e));
+      const late = st.firstAt && Date.now() - st.firstAt > CLOSE_AFTER;
+      const tooLong = Date.now() - st.goAt > 20 * 60_000;
+      if (allIn || late || tooLong) rr.send({ k: "result", id: st.id, order: standings(st, prog.current, me) });
     }, 400);
     return () => clearInterval(t);
   }, [isHost, stage.k]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // A second's tick for the countdowns on screen.
+  // A tick for the countdowns on screen.
   useEffect(() => {
-    if (stage.k === "lobby") return;
+    if (stage.k !== "race") return;
     const t = setInterval(() => setNow(Date.now()), 500);
     return () => clearInterval(t);
   }, [stage.k]);
 
-  function start(who: string[], round: number) {
+  async function start() {
+    const rr = room.current;
+    if (!rr) return;
+    setNote("");
+    // The month's allowance of live messages: no new races near the end of it.
+    const used = await rr.monthUsage().catch(() => 0);
+    if (used >= MONTH_CAP) { setNote("Party races are resting until next month: this month's online allowance is nearly used up. Solo races and records still work."); return; }
     const s = settingsRef.current;
-    room.current?.send({ k: "start", map: s.map, mode: s.mode, laps: s.laps, id: raceId(), who: who.slice(0, ROOM_MAX), round });
+    const map = mapById(s.map);
+    rr.send({ k: "start", mode: "race", map: s.map, laps: map?.circuit ? s.laps : 1, id: raceId(), who: rr.members.map((m) => m.email).slice(0, ROOM_MAX) });
   }
   function change(s: Partial<Settings>) {
-    const next = { ...settingsRef.current, ...s };
-    room.current?.send({ k: "settings", ...next });
+    room.current?.send({ k: "settings", mode: "race", ...settingsRef.current, ...s });
   }
 
   const name = (e: string) => e === me ? "You" : members.find((m) => m.email === e)?.name || nameOf(e);
@@ -247,11 +236,12 @@ export function Party({ code, sb, me, myName, nameOf, race }: {
 
   // ── The race ──
   if (stage.k === "race" && stage.who.includes(me) && inRoom) {
-    const map = MAPS.find((m) => m.id === stage.map)!;
+    const map = mapById(stage.map)!;
     const mine = stage.times.get(me);
     const left = stage.who.filter((e) => !stage.times.has(e) && members.some((m) => m.email === e)).length;
     const closes = stage.firstAt ? Math.max(0, Math.ceil((CLOSE_AFTER - (now - stage.firstAt)) / 1000)) : 0;
     const run: PartyRun = {
+      slot: stage.who.indexOf(me), of: stage.who.length, laps: stage.laps,
       attach(g) {
         game.current = g;
         for (const e of stage.who) {
@@ -261,23 +251,29 @@ export function Party({ code, sb, me, myName, nameOf, race }: {
         }
         const cur = stageRef.current;
         g.setPaused(!(cur.k === "race" && cur.go));
-        g.onCarState = (s) => room.current?.sendCar(s);
+        g.onNet = (packet) => room.current?.sendCar(packet);
         room.current?.send({ k: "loaded", id: stage.id });
         const t = setInterval(() => {
           const st = stageRef.current;
           if (st.k !== "race") return;
-          const order = standings(st, cars.current, g, me);
-          setPlace([order.indexOf(me) + 1, order.length]);
+          const p = g.progress();
+          prog.current = new Map([...p].map(([e, v]) => [e || me, v]));
+          const order = standings(st, prog.current, me);
+          setHud({ place: order.indexOf(me) + 1, of: order.length, lap: Math.min(st.laps, g.race.lap + 1), busy: !!room.current?.busy });
         }, 300);
-        return () => { clearInterval(t); g.onCarState = null; if (game.current === g) game.current = null; };
+        return () => { clearInterval(t); g.onNet = null; if (game.current === g) game.current = null; };
       },
       finished(ticks) { room.current?.send({ k: "finish", id: stage.id, ticks }); },
-      hud: place && <span className="hx-chip hx-place" aria-label={`Place ${place[0]} of ${place[1]}`}>P{place[0]}<span className="hx-dim">/{place[1]}</span></span>,
+      hud: hud && <>
+        <span className="hx-chip hx-place" aria-label={`Place ${hud.place} of ${hud.of}`}>P{hud.place}<span className="hx-dim">/{hud.of}</span></span>
+        {stage.laps > 1 && <span className="hx-chip"><span className="hx-dim">LAP</span> {hud.lap}/{stage.laps}</span>}
+        {hud.busy && <span className="hx-chip hx-busy" role="status">Network busy</span>}
+      </>,
       overlay: !stage.go ? (
         <div className="hx-party-wait" role="status">Waiting for everyone to load…</div>
       ) : mine !== undefined ? (
         <div className="hx-over hx-over-late"><div className="hx-panel">
-          <p className="hx-dim">{stage.mode === "elim" ? `Round ${stage.round}` : map.name}</p>
+          <p className="hx-dim">{map.name}</p>
           <h2 className="hx-final">{formatTime(mine)}</h2>
           <p>{left ? `Waiting for ${left} more…` : "Everyone's in."}{closes && left ? ` The race closes in ${closes}s.` : ""}</p>
           <Times st={stage} name={name} />
@@ -292,38 +288,40 @@ export function Party({ code, sb, me, myName, nameOf, race }: {
 
   // ── Results ──
   if (stage.k === "result") {
-    const map = MAPS.find((m) => m.id === stage.map)!;
-    const still = (alive.current ?? []).filter((e) => members.some((m) => m.email === e));
-    const champ = stage.mode === "elim" && still.length === 1 ? still[0] : null;
-    const next = stage.mode === "elim" && still.length > 1 ? Math.max(0, Math.ceil((NEXT_ROUND - (now - stage.at)) / 1000)) : 0;
+    const map = mapById(stage.map)!;
+    const places: PartyPlace[] = stage.order.slice(0, 3).map((e, i) => ({
+      place: i + 1, name: name(e), me: e === me, look: parseLook(members.find((m) => m.email === e)?.look),
+      sub: stage.times.has(e) ? formatTime(stage.times.get(e)!) : "Didn't finish",
+    }));
     return (
       <div className="hx-menu hx-page hx-party">{back}
-        <h1 className="hx-page-title">{champ ? <><IconCrown size={22} /> {name(champ)} {champ === me ? "win" : "wins"}!</> : stage.mode === "elim" ? `Round ${stage.round}` : "Results"} <span className="hx-dim">{map.name}</span></h1>
+        <h1 className="hx-page-title">{stage.order[0] ? <><IconCrown size={22} /> {name(stage.order[0])} {stage.order[0] === me ? "win" : "wins"}!</> : "Results"} <span className="hx-dim">{map.name}{stage.laps > 1 ? ` · ${stage.laps} laps` : ""}</span></h1>
+        {podium(places)}
         <ol className="hx-party-order">
           {stage.order.map((e, i) => (
-            <li key={e} className={`${e === me ? "me" : ""} ${stage.out.includes(e) ? "out" : ""}`}>
+            <li key={e} className={e === me ? "me" : ""}>
               <b>{i + 1}</b><span>{name(e)}</span>
-              <span className="hx-dim">{stage.times.has(e) ? formatTime(stage.times.get(e)!) : "Didn't finish"}{stage.out.includes(e) ? " · out" : ""}</span>
+              <span className="hx-dim">{stage.times.has(e) ? formatTime(stage.times.get(e)!) : "Didn't finish"}</span>
             </li>
           ))}
         </ol>
-        {next > 0 && <p className="hx-dim">{still.includes(me) ? "You're still in." : "You're out: watch the rest from here."} Round {stage.round + 1} starts in {next}s.</p>}
+        {note && <p className="hx-party-note" role="status">{note}</p>}
         {isHost ? (
           <div className="hx-row">
-            {stage.mode === "race" && <button type="button" className="hx-btn hx-btn-main" onClick={() => start(members.map((m) => m.email), 1)}>Race again</button>}
-            {next > 0 && <button type="button" className="hx-btn hx-btn-main" onClick={() => start(still, stage.round + 1)}>Start now</button>}
+            <button type="button" className="hx-btn hx-btn-main" onClick={() => void start()}>Race again</button>
             <button type="button" className="hx-btn" onClick={() => room.current?.send({ k: "lobby" })}>Back to the lobby</button>
           </div>
-        ) : !next && <p className="hx-dim">Waiting for {name(r?.host ?? "")} to pick what's next.</p>}
+        ) : <p className="hx-dim">Waiting for {name(r?.host ?? "")} to pick what's next.</p>}
       </div>
     );
   }
 
-  // ── The lobby (and watching a race you're not in) ──
-  const map = MAPS.find((m) => m.id === settings.map) ?? MAPS[0];
+  // ── The lobby (and waiting out a race you're not in) ──
+  const map = mapById(settings.map) ?? PARTY_MAPS[0];
   const others = members.filter((m) => m.email !== me);
   const ready = others.every((m) => m.ready);
   const watching = stage.k === "race";
+  const myReady = !!members.find((m) => m.email === me)?.ready;
   return (
     <div className="hx-menu hx-page hx-party">{back}
       <h1 className="hx-page-title">Room <span className="hx-code-big">{code}</span></h1>
@@ -332,31 +330,29 @@ export function Party({ code, sb, me, myName, nameOf, race }: {
         <>
           {watching && (
             <p className="hx-party-note" role="status">
-              {stage.mode === "elim" ? `Round ${stage.round} is on` : "A race is on"}: {stage.who.length - stage.times.size} still driving.
-              {stage.times.size > 0 && <> Fastest so far: {name([...stage.times].sort((a, b) => a[1] - b[1])[0][0])}.</>}
+              A race is on: {stage.who.length - stage.times.size} still driving. You'll be in the next one.
             </p>
           )}
+          {note && <p className="hx-party-note" role="status">{note}</p>}
           <section className="hx-party-grid">
             <div>
               <h2 className="hx-h2">Players <span className="hx-dim">{members.length}/{ROOM_MAX}</span></h2>
               <ul className="hx-party-list">
                 {members.map((m) => {
-                  const link = m.email === me ? null : r.links.get(m.email);
+                  const link = m.email === me ? undefined : r.links.get(m.email);
                   return (
                     <li key={m.email} className={m.email === me ? "me" : ""}>
                       <span className="hx-party-name">{m.email === r.host && <IconCrown size={14} />}{m.email === me ? `${m.name || "You"} (you)` : m.name || nameOf(m.email)}</span>
                       <span className="hx-dim hx-small">
-                        {link === "failed" ? "Can't connect" : link === "connecting" ? "Connecting…" : ""}
-                        {link && link !== "open" ? " · " : ""}{m.ready ? "Ready" : "Not ready"}
+                        {link === "failed" ? "Can't connect · " : link === "connecting" ? "Connecting… · " : ""}{m.ready ? "Ready" : "Not ready"}
                       </span>
                     </li>
                   );
                 })}
               </ul>
               <div className="hx-row">
-                <button type="button" className={`hx-btn ${members.find((m) => m.email === me)?.ready ? "" : "hx-btn-main"}`} aria-pressed={!!members.find((m) => m.email === me)?.ready}
-                  onClick={() => r.update({ ready: !members.find((m) => m.email === me)?.ready })}>
-                  {members.find((m) => m.email === me)?.ready ? "Not ready" : "I'm ready"}
+                <button type="button" className={`hx-btn ${myReady ? "" : "hx-btn-main"}`} aria-pressed={myReady} onClick={() => r.update({ ready: !myReady })}>
+                  {myReady ? "Not ready" : "I'm ready"}
                 </button>
               </div>
             </div>
@@ -366,33 +362,37 @@ export function Party({ code, sb, me, myName, nameOf, race }: {
                 <>
                   <label className="hx-party-field"><span className="hx-dim">Map</span>
                     <select value={settings.map} onChange={(e) => change({ map: e.target.value })} disabled={watching}>
-                      {MAPS.map((m) => <option key={m.id} value={m.id}>{m.name} · {BIOMES[m.biome].name}</option>)}
+                      <optgroup label="Circuits (laps)">
+                        {PARTY_MAPS.filter((m) => m.circuit).map((m) => <option key={m.id} value={m.id}>{m.name} · {BIOMES[m.biome].name}</option>)}
+                      </optgroup>
+                      <optgroup label="Sprints (start to finish)">
+                        {PARTY_MAPS.filter((m) => !m.circuit).map((m) => <option key={m.id} value={m.id}>{m.name} · {BIOMES[m.biome].name}</option>)}
+                      </optgroup>
                     </select>
                   </label>
-                  <div className="hx-party-field"><span className="hx-dim">Mode</span>
-                    <div className="hx-seg" role="radiogroup" aria-label="Mode">
-                      {(["race", "elim"] as Mode[]).map((k) => (
-                        <button key={k} type="button" role="radio" aria-checked={settings.mode === k} className={settings.mode === k ? "on" : ""} disabled={watching} onClick={() => change({ mode: k })}>{MODE_NAME[k]}</button>
-                      ))}
+                  {map.circuit && (
+                    <div className="hx-party-field"><span className="hx-dim">Laps</span>
+                      <div className="hx-seg" role="radiogroup" aria-label="Laps">
+                        {LAPS.map((n) => (
+                          <button key={n} type="button" role="radio" aria-checked={settings.laps === n} className={settings.laps === n ? "on" : ""} disabled={watching} onClick={() => change({ laps: n })}>{n}</button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                  <p className="hx-dim hx-small">{settings.mode === "elim" ? "Rounds on the same map: whoever's last each round is out, until one is left." : "One race: first to the finish wins."}</p>
+                  )}
                   <div className="hx-row">
-                    <button type="button" className="hx-btn hx-btn-main" data-sound="confirm" disabled={watching || (settings.mode === "elim" && members.length < 2)}
-                      onClick={() => start(members.map((m) => m.email), 1)}>{ready ? "Start" : "Start anyway"}</button>
+                    <button type="button" className="hx-btn hx-btn-main" data-sound="confirm" disabled={watching} onClick={() => void start()}>{ready ? "Start" : "Start anyway"}</button>
                   </div>
-                  {settings.mode === "elim" && members.length < 2 && <p className="hx-dim hx-small">Elimination needs at least 2 players.</p>}
                   {!ready && !watching && <p className="hx-dim hx-small">Not everyone's ready yet.</p>}
                 </>
               ) : (
                 <>
-                  <p><b>{map.name}</b> <span className="hx-dim">· {BIOMES[map.biome].name} · {MODE_NAME[settings.mode]}</span></p>
+                  <p><b>{map.name}</b> <span className="hx-dim">· {BIOMES[map.biome].name}{map.circuit ? ` · ${settings.laps} ${settings.laps === 1 ? "lap" : "laps"}` : ""}</span></p>
                   <p className="hx-dim">{name(r.host)} picks the map and starts the race.</p>
                 </>
               )}
             </div>
           </section>
-          <p className="hx-dim hx-small">Cars go through a relay, so nobody in the room can see your address. Party races don't count for records.</p>
+          <p className="hx-dim hx-small">Cars bump into each other. Party races don't count for records.</p>
         </>
       )}
     </div>
@@ -422,9 +422,8 @@ function Times({ st, name }: { st: RaceStage; name: (e: string) => string }) {
 }
 
 /** Everyone on the race in order: finishers by time, then the rest by how far along they are. */
-function standings(st: RaceStage, cars: Map<string, CarState>, g: Game | null, me: string): string[] {
-  const mine = g && st.who.includes(me) ? g.carState() : null;
-  const dist = (e: string) => (e === me ? mine : cars.get(e))?.dist ?? -1;
+function standings(st: RaceStage, prog: Map<string, { dist: number }>, me: string): string[] {
+  const dist = (e: string) => prog.get(e)?.dist ?? (e === me ? 0 : -1);
   return st.who.slice().sort((a, b) => {
     const ta = st.times.get(a), tb = st.times.get(b);
     if (ta !== undefined || tb !== undefined) return (ta ?? Infinity) - (tb ?? Infinity) || (a < b ? -1 : 1);

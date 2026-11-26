@@ -3,8 +3,9 @@ import { fileURLToPath } from "node:url";
 
 // Hexdrift party rooms: two pages in one browser share a stand-in for the
 // live channel (fixtures/party-channel.js, used in development builds only).
-// The car links need a TURN relay, so they stay "connecting" here; the room's
-// flow (lobby, start, go, finish, results, back) is what's checked.
+// flow (lobby, laps, the month's guard, start, go, finish, podium, back) is
+// what's checked; a circuit's laps are checked in the sim (a lap here would
+// take minutes with software graphics).
 const FAKE = fileURLToPath(new URL("./fixtures/party-channel.js", import.meta.url));
 
 test("Party: two players join a room, race and see the results", async ({ browser }, info) => {
@@ -25,15 +26,27 @@ test("Party: two players join a room, race and see the results", async ({ browse
   await B.getByRole("button", { name: "Join" }).click();
   await expect(B.locator(".hx-party-list li")).toHaveCount(2);
   await expect(A.locator(".hx-party-list li")).toHaveCount(2);
-  // Only the host (first in) picks; the other sees the choice.
+  // Only the host (first in) picks; the other sees the choice. Circuits have laps.
   await expect(B.getByRole("combobox")).toHaveCount(0);
-  await A.getByRole("combobox").selectOption({ index: 1 });
-  const mapName = (await A.getByRole("combobox").locator("option:checked").innerText()).split(" · ")[0];
-  await expect(B.getByText(mapName, { exact: false })).toBeVisible();
+  await expect(A.getByRole("combobox")).toHaveValue("sunset-ring");
+  await A.getByRole("radio", { name: "2", exact: true }).click();
+  await expect(B.getByText("Sunset Ring")).toBeVisible();
+  await expect(B.getByText("2 laps")).toBeVisible();
+  // A sprint (start to finish): no laps to pick.
+  await A.getByRole("combobox").selectOption("neon-downtown");
+  await expect(A.getByRole("radiogroup", { name: "Laps" })).toHaveCount(0);
+  await expect(B.getByText("Neon Downtown")).toBeVisible();
+
+  // Near the month's allowance of live messages, no new races.
+  await A.evaluate(() => { (window as unknown as { __hxUsage: number }).__hxUsage = 1_900_000; });
+  await A.getByRole("button", { name: "Start anyway" }).click();
+  await expect(A.getByText(/resting until next month/)).toBeVisible();
+  await A.evaluate(() => { delete (window as unknown as { __hxUsage?: number }).__hxUsage; });
 
   await B.getByRole("button", { name: "I'm ready" }).click();
   await expect(A.locator(".hx-party-list li", { hasText: "b" })).toContainText("Ready");
   await A.getByRole("button", { name: "Start", exact: true }).click();
+  await expect(A.getByText(/resting until next month/)).toHaveCount(0);
 
   // Both race, with a place in the top bar, once everyone has loaded.
   for (const p of [A, B]) {
@@ -43,10 +56,14 @@ test("Party: two players join a room, race and see the results", async ({ browse
   for (const p of [A, B]) await expect(p.locator(".hx-party-wait")).toHaveCount(0, { timeout: 30_000 });
   for (const p of [A, B]) await p.evaluate(() => { (window as unknown as { __hexdrift: { autopilot: boolean } }).__hexdrift.autopilot = true; });
 
+  // Lined up side by side on the grid, then the race (the cars bump, so both just need to get there).
   for (const p of [A, B]) {
-    await expect(p.getByRole("heading", { name: /Results/ })).toBeVisible({ timeout: 150_000 });
+    await expect(p.getByRole("heading", { name: /wins?!/ })).toBeVisible({ timeout: 150_000 });
     await expect(p.locator(".hx-party-order li")).toHaveCount(2);
   }
+  // Car updates go only when something changes: well under the 8 a second allowed.
+  const sent = await A.evaluate(() => (window as unknown as { __hxBroadcasts: number }).__hxBroadcasts);
+  expect(sent).toBeGreaterThan(5);
   await expect(B.getByRole("button", { name: "Race again" })).toHaveCount(0);
   await A.getByRole("button", { name: "Back to the lobby" }).click();
   await expect(B.locator(".hx-party-list li")).toHaveCount(2);
