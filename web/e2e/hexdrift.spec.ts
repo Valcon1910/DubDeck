@@ -25,13 +25,13 @@ async function fresh(page: Page, map: string) {
   await expect.poll(async () => (await hook(page)) !== null).toBe(true);
 }
 
-test("Games page opens Hexdrift: title, five maps, a map's page, then the race", async ({ page }) => {
+test("Games page opens Hexdrift: title, eleven maps, a map's page, then the race", async ({ page }) => {
   await page.goto("/#/games");
   await page.getByRole("link", { name: /Hexdrift/ }).click();
   await expect(page).toHaveURL(/#\/hexdrift$/);
   await expect(page.getByRole("heading", { name: "HEXDRIFT" })).toBeVisible();
   await page.getByRole("link", { name: "Play" }).click();
-  await expect(page.locator(".hx-map")).toHaveCount(5);
+  await expect(page.locator(".hx-map")).toHaveCount(11);
   await page.locator(".hx-map", { hasText: "Canyon Rush" }).click();
   await expect(page.getByRole("heading", { name: "Canyon Rush" })).toBeVisible();
   await expect(page.locator(".hx-detail-blurb")).not.toBeEmpty();
@@ -104,7 +104,7 @@ test("a reload in the middle of a run puts the car back where it was", async ({ 
   await expect(page.getByRole("heading", { name: "Run restored" })).toBeHidden();
   // Going back to the maps ends it: no restore next time.
   await page.goto("/#/hexdrift/maps");
-  await expect(page.locator(".hx-map")).toHaveCount(5);
+  await expect(page.locator(".hx-map")).toHaveCount(11);
   await page.goto("/#/hexdrift/desert-mirage");
   await expect.poll(async () => (await hook(page))?.phase).toBe("countdown");
 });
@@ -137,7 +137,7 @@ test("garage: free parts equip and stay, locked parts preview only, and the car 
   await page.goto("/#/hexdrift");
   await page.getByRole("link", { name: /Garage/ }).first().click();
   await expect(page.locator(".hx-page-title")).toHaveText("Garage");
-  await expect(page.locator(".hx-points")).toContainText("/ 20 medal points");
+  await expect(page.locator(".hx-points")).toContainText("/ 44 medal points");
   // A free paint equips and is remembered.
   await page.getByRole("tab", { name: "Paint" }).click();
   await page.getByRole("button", { name: /^Ocean/ }).click();
