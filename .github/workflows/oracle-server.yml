@@ -1,0 +1,150 @@
+name: Oracle server (auto-retry)
+
+# Keeps trying to create the free Oracle Cloud Ampere server until Oracle has
+# room ("Out of host capacity" is common in Bogotá). Each run retries every
+# few minutes for ~5h40m, then starts the next run by itself. It stops as soon
+# as a server named "vortex" exists, and never creates a second one.
+#
+# Only Always Free sizes are tried (4/24, then 2/12, then 1/6 OCPU/GB).
+#
+# Repository secrets (Settings → Secrets and variables → Actions):
+#   OCI_TENANCY      tenancy OCID          (ocid1.tenancy.oc1..)
+#   OCI_USER         user OCID             (ocid1.user.oc1..)
+#   OCI_FINGERPRINT  API key fingerprint   (aa:bb:cc:…)
+#   OCI_API_KEY      API private key, the whole .pem file
+#   OCI_SSH_PUBKEY   the server's SSH public key, the whole .pub file
+on:
+  workflow_dispatch:
+    inputs:
+      chain:
+        description: "Start another run if this one ends without a server"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: oracle-server
+  cancel-in-progress: false
+
+env:
+  OCI_CLI_REGION: sa-bogota-1
+  NAME: vortex
+
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    outputs:
+      done: ${{ steps.loop.outputs.done }}
+    env:
+      OCI_TENANCY: ${{ secrets.OCI_TENANCY }}
+      OCI_USER: ${{ secrets.OCI_USER }}
+      OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+      OCI_API_KEY: ${{ secrets.OCI_API_KEY }}
+      OCI_SSH_PUBKEY: ${{ secrets.OCI_SSH_PUBKEY }}
+    steps:
+      - name: Check the secrets
+        run: |
+          for s in OCI_TENANCY OCI_USER OCI_FINGERPRINT OCI_API_KEY OCI_SSH_PUBKEY; do
+            test -n "${!s}" || { echo "::error::Add the $s repository secret (see the setup checklist)."; exit 1; }
+          done
+
+      - name: Install the Oracle CLI
+        run: |
+          pip install --quiet oci-cli
+          mkdir -p ~/.oci
+          printf '%s\n' "$OCI_API_KEY" > ~/.oci/key.pem
+          chmod 600 ~/.oci/key.pem
+          printf '%s\n' "$OCI_SSH_PUBKEY" > ~/.oci/ssh.pub
+          cat > ~/.oci/config <<EOF
+          [DEFAULT]
+          user=$OCI_USER
+          fingerprint=$OCI_FINGERPRINT
+          tenancy=$OCI_TENANCY
+          region=$OCI_CLI_REGION
+          key_file=$HOME/.oci/key.pem
+          EOF
+          sed -i 's/^ *//' ~/.oci/config
+          chmod 600 ~/.oci/config
+          oci iam region list --query 'length(data)' >/dev/null || { echo "::error::Oracle rejected the API key. Check OCI_USER, OCI_FINGERPRINT and OCI_API_KEY."; exit 1; }
+
+      - name: Network (created once)
+        id: net
+        run: |
+          C="$OCI_TENANCY"
+          q() { oci "$@" --all --query "data[?\"display-name\"=='$NAME' && \"lifecycle-state\"=='AVAILABLE'].id | [0]" --raw-output 2>/dev/null; }
+          VCN=$(q network vcn list -c "$C")
+          if [ -z "$VCN" ] || [ "$VCN" = "null" ]; then
+            VCN=$(oci network vcn create -c "$C" --display-name "$NAME" --cidr-blocks '["10.0.0.0/16"]' --dns-label vortex --wait-for-state AVAILABLE --query data.id --raw-output)
+            IGW=$(oci network internet-gateway create -c "$C" --vcn-id "$VCN" --is-enabled true --display-name "$NAME" --wait-for-state AVAILABLE --query data.id --raw-output)
+            RT=$(oci network vcn get --vcn-id "$VCN" --query 'data."default-route-table-id"' --raw-output)
+            oci network route-table update --rt-id "$RT" --force --route-rules "[{\"destination\":\"0.0.0.0/0\",\"destinationType\":\"CIDR_BLOCK\",\"networkEntityId\":\"$IGW\"}]" >/dev/null
+            SL=$(oci network vcn get --vcn-id "$VCN" --query 'data."default-security-list-id"' --raw-output)
+            oci network security-list update --security-list-id "$SL" --force \
+              --egress-security-rules '[{"destination":"0.0.0.0/0","protocol":"all"}]' \
+              --ingress-security-rules '[{"source":"0.0.0.0/0","protocol":"6","tcpOptions":{"destinationPortRange":{"min":22,"max":22}}},{"source":"0.0.0.0/0","protocol":"6","tcpOptions":{"destinationPortRange":{"min":80,"max":80}}},{"source":"0.0.0.0/0","protocol":"6","tcpOptions":{"destinationPortRange":{"min":443,"max":443}}}]' >/dev/null
+          fi
+          SUB=$(oci network subnet list -c "$C" --vcn-id "$VCN" --all --query "data[?\"display-name\"=='$NAME'].id | [0]" --raw-output 2>/dev/null)
+          if [ -z "$SUB" ] || [ "$SUB" = "null" ]; then
+            SUB=$(oci network subnet create -c "$C" --vcn-id "$VCN" --display-name "$NAME" --cidr-block 10.0.0.0/24 --dns-label pub --wait-for-state AVAILABLE --query data.id --raw-output)
+          fi
+          echo "sub=$SUB" >> "$GITHUB_OUTPUT"
+          echo "Network ready."
+
+      - name: Try until Oracle has room
+        id: loop
+        env:
+          SUB: ${{ steps.net.outputs.sub }}
+        run: |
+          C="$OCI_TENANCY"
+          AD=$(oci iam availability-domain list -c "$C" --query 'data[0].name' --raw-output)
+          IMG=$(oci compute image list -c "$C" --operating-system "Canonical Ubuntu" --operating-system-version "24.04" --shape VM.Standard.A1.Flex --sort-by TIMECREATED --sort-order DESC --query 'data[0].id' --raw-output)
+          [ -n "$IMG" ] && [ "$IMG" != "null" ] || { echo "::error::No Ubuntu 24.04 image for Ampere found."; exit 1; }
+          existing() { oci compute instance list -c "$C" --all --query "data[?\"display-name\"=='$NAME' && \"lifecycle-state\"!='TERMINATED' && \"lifecycle-state\"!='TERMINATING'].id | [0]" --raw-output 2>/dev/null; }
+          END=$(( $(date +%s) + 340*60 ))
+          n=0
+          while [ "$(date +%s)" -lt "$END" ]; do
+            ID=$(existing)
+            if [ -n "$ID" ] && [ "$ID" != "null" ]; then
+              echo "Server exists."
+              oci compute instance get --instance-id "$ID" --query 'data."lifecycle-state"' --raw-output
+              echo "done=true" >> "$GITHUB_OUTPUT"
+              echo "## ✅ Oracle server created" >> "$GITHUB_STEP_SUMMARY"
+              echo "Find its public IP in Oracle: Compute → Instances → **$NAME**." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            for size in "4 24" "2 12" "1 6"; do
+              set -- $size; n=$((n+1))
+              out=$(oci compute instance launch -c "$C" --availability-domain "$AD" --display-name "$NAME" \
+                --shape VM.Standard.A1.Flex --shape-config "{\"ocpus\":$1,\"memoryInGBs\":$2}" \
+                --image-id "$IMG" --subnet-id "$SUB" --assign-public-ip true \
+                --ssh-authorized-keys-file ~/.oci/ssh.pub --boot-volume-size-in-gbs 50 2>&1) && { echo "Launched $1 OCPU / $2 GB on try $n."; break; }
+              if echo "$out" | grep -qiE 'capacity'; then
+                echo "$(date -u +%H:%M) try $n ($1/$2): no room yet"
+              elif echo "$out" | grep -qiE 'LimitExceeded|QuotaExceeded'; then
+                echo "$(date -u +%H:%M) try $n ($1/$2): over the free limit, trying smaller"
+              elif echo "$out" | grep -qiE 'TooManyRequests'; then
+                echo "$(date -u +%H:%M) try $n: Oracle asked to slow down"; sleep 120
+              else
+                echo "::error::Unexpected Oracle error:"; echo "$out" | grep -iE '"(code|message)"' | head -4; exit 1
+              fi
+            done
+            sleep 30
+            ID=$(existing); [ -n "$ID" ] && [ "$ID" != "null" ] && continue
+            sleep 150
+          done
+          echo "done=false" >> "$GITHUB_OUTPUT"
+          echo "No room yet after $n tries; the next run carries on."
+
+  again:
+    needs: create
+    if: needs.create.outputs.done == 'false' && inputs.chain
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start the next run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run oracle-server.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" -f chain=true
