@@ -227,15 +227,10 @@ export class Game {
     this.sun = new SunShadow(lit.sun, this.scene);
     if ((E ? E.storm : map.biome === "storm") && lit.hemi) this.storm = { hemi: lit.hemi, base: lit.hemi.intensity, next: 4 + Math.random() * 6, t: -1 };
 
-    this.world = buildWorld(track, E?.biome ?? biome, map.biome, L);
+    // The roads now; the land and scenery fill in over the first frames.
+    this.world = buildWorld(track, E?.biome ?? biome, map.biome, L, true);
     this.scene.add(this.world.group);
-    // Everything takes the sun's shadow; the scenery casts it (not the land, sky or sea).
-    this.world.group.traverse((o) => {
-      const m = o as THREE.Mesh;
-      if (!m.isMesh || o.name === "sky") return;
-      m.receiveShadow = true;
-      m.castShadow = !["terrain", "water", "road"].includes(o.name);
-    });
+    this.shadeWorld();
     this.car = buildCar({ look, mapAccent: biome.accent, env: biome });
     
     this.scene.add(this.car.root);
@@ -270,6 +265,17 @@ export class Game {
     }
     this.updateHud();
   }
+
+  /** Everything takes the sun's shadow; the scenery casts it (not the land, sky or sea). */
+  private shadeWorld() {
+    this.world.group.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || o.name === "sky") return;
+      m.receiveShadow = true;
+      m.castShadow = !["terrain", "water", "road"].includes(o.name);
+    });
+  }
+  private building = true;
 
   /** True while the race-start cutscene is playing. */
   get inIntro() { return this.introT >= 0; }
@@ -628,6 +634,12 @@ export class Game {
     this.last = now;
     this.frameMs += ((dt * 1000) - this.frameMs) * 0.05;
     this.controls.pollPad();
+    // One more piece of the world per frame until it's all in.
+    if (this.building && this.world.more) {
+      const n = this.world.group.children.length;
+      this.building = this.world.more();
+      if (this.world.group.children.length !== n) this.shadeWorld();
+    } else this.building = false;
 
     if (!this.paused && this.introT >= 0) {
       if (this.introT === 0) this.setIntroStage("fly");

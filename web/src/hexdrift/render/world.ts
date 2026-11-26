@@ -79,11 +79,14 @@ export interface World {
   breakables: Breakables;
   /** Animates the world (the crowd; cheer 0..1). The camera picks what is drawn on kit maps. */
   update(dt: number, cheer?: number, cam?: THREE.Camera): void;
+  /** Builds the next part still to come (road maps fill in after the start); true while there's more. */
+  more?(): boolean;
   dispose(): void;
 }
 
-export function buildWorld(track: Track, biome: Biome, biomeId: BiomeId, look?: Look): World {
-  if (track.road) return buildRoadWorld(track, biome, biomeId, look);
+/** `stream`: road maps build the roads now and the rest over the next frames (call `more`). */
+export function buildWorld(track: Track, biome: Biome, biomeId: BiomeId, look?: Look, stream = false): World {
+  if (track.road) return buildRoadWorld(track, biome, biomeId, look, stream);
   const b = new Builder();
   const mats: THREE.Material[] = [];
   const geos: THREE.BufferGeometry[] = [];

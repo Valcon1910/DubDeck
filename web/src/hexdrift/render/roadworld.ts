@@ -142,7 +142,7 @@ class Builder {
 /** A point beside a sample: lat to the right, dh up (follows the road's lean). */
 const side = (p: Sample, lat: number, dh = 0): number[] => [p.x - p.dz * lat, p.y + p.bank * lat + dh, p.z + p.dx * lat];
 
-export function buildRoadWorld(track: Track, biome: Biome, id: BiomeId, lookIn?: Look): World {
+export function buildRoadWorld(track: Track, biome: Biome, id: BiomeId, lookIn?: Look, stream = false): World {
   const road = track.road!;
   const look = lookIn ?? LOOKS[id] ?? LOOKS.miami!;
   const group = new THREE.Group();
@@ -151,9 +151,19 @@ export function buildRoadWorld(track: Track, biome: Biome, id: BiomeId, lookIn?:
   const time = { value: 0 };
   const updates: ((dt: number) => void)[] = [(dt) => { time.value += dt; }];
 
+  // First the sky and the roads (enough to start); the land, scenery and kit
+  // follow over the next frames (see `more`), the land worked out in a worker.
   sky(group, look, geos, mats, time);
-  const ground = road.land.kind !== "void" ? terrain(group, track, look, geos, mats) : null;
-  if (road.land.sea !== undefined && look.sea) water(group, road, look, geos, mats, time);
+  let ground: TerrainLod | null = null;
+  let dead = false;
+  const jobs: (() => void)[] = [];
+  let land: TerrainData | null = null, landWait = road.land.kind !== "void";
+  if (landWait && !stream) { land = terrainData(track, look); landWait = false; }
+  if (land || landWait) {
+    if (landWait) void terrainAsync(track, look).then((d) => { land = d; landWait = false; });
+    jobs.push(() => { if (land && !dead) ground = terrainMesh(group, track, look, geos, mats, land); });
+  }
+  if (road.land.sea !== undefined && look.sea) jobs.push(() => water(group, road, look, geos, mats, time));
   roadSurface(group, road, look, geos, mats, time);
   buildLoops(group, road, geos, mats, look.asphalt, look.line);
   buildParts(group, track.parts, geos, mats);
@@ -174,24 +184,53 @@ export function buildRoadWorld(track: Track, biome: Biome, id: BiomeId, lookIn?:
     mats.push(gm);
     group.add(new THREE.Mesh(gg, gm));
   }
-  pillars(group, track, geos, mats);
+  jobs.push(() => pillars(group, track, geos, mats));
 
-  const props = buildProps(group, track, biome, id, geos, mats);
-  const kit = buildKit(group, road, look.night, new THREE.Color(look.skyHorizon), biome.fogFar, time);
-  return {
+  let props: ReturnType<typeof buildProps> | null = null;
+  let kit: ReturnType<typeof buildKit> | null = null;
+  // Until the scenery is in, nothing to knock over.
+  const none = { hit() {}, update() {}, reset() {} } as unknown as World["breakables"];
+  jobs.push(() => { props = buildProps(group, track, biome, id, geos, mats); });
+  jobs.push(() => { kit = buildKit(group, road, look.night, new THREE.Color(look.skyHorizon), biome.fogFar, time); });
+  const world: World = {
     group,
-    breakables: props.breakables,
+    get breakables() { return props?.breakables ?? none; },
     update(dt, cheer = 0, cam) {
       for (const u of updates) u(dt);
-      props.update(dt, cheer);
-      if (cam) { kit.update(dt, cam); ground?.(cam); }
+      props?.update(dt, cheer);
+      if (cam) { kit?.update(dt, cam); ground?.(cam); }
+    },
+    more() {
+      // The land comes first (the rest stands on it): wait for the worker.
+      if (landWait) return true;
+      const job = jobs.shift();
+      if (job) job();
+      return jobs.length > 0;
     },
     dispose() {
-      kit.dispose();
+      dead = true;
+      kit?.dispose();
       for (const g of geos) g.dispose();
       for (const m of mats) m.dispose();
     },
   };
+  // Everything at once (previews and pictures).
+  if (!stream) while (world.more!()) { /* next */ }
+  return world;
+}
+
+/** The land's data from a worker (or here, when workers can't). */
+function terrainAsync(track: Track, look: Look): Promise<TerrainData> {
+  return new Promise((resolve) => {
+    let w: Worker;
+    try {
+      w = new Worker(new URL("./terrainworker.ts", import.meta.url), { type: "module" });
+    } catch { resolve(terrainData(track, look)); return; }
+    const here = () => { w.terminate(); resolve(terrainData(track, look)); };
+    w.onmessage = (e: MessageEvent<TerrainData | null>) => { w.terminate(); if (e.data) resolve(e.data); else resolve(terrainData(track, look)); };
+    w.onerror = here;
+    try { w.postMessage({ track, look }); } catch { here(); }
+  });
 }
 
 // ── Sky ─────────────────────────────────────────────────────────────────────
@@ -264,7 +303,10 @@ function sky(group: THREE.Group, L: Look, geos: THREE.BufferGeometry[], mats: TH
 /** Terrain tiles: finer near the camera, coarser further off. */
 type TerrainLod = (cam: THREE.Camera) => void;
 
-function terrain(group: THREE.Group, track: Track, L: Look, geos: THREE.BufferGeometry[], mats: THREE.Material[]): TerrainLod {
+/** The land's points, colours and normals (the slow part: run in a worker, see terrainworker.ts). */
+export interface TerrainData { xs: number[]; zs: number[]; pos: Float32Array; col: Float32Array; nor: Float32Array; hs: Float32Array; valid: Uint8Array }
+
+export function terrainData(track: Track, L: Look): TerrainData {
   const road = track.road!;
   const isles = road.land.kind === "isles";
   const axis = (a0: number, a1: number) => {
@@ -323,24 +365,38 @@ function terrain(group: THREE.Group, track: Track, L: Look, geos: THREE.BufferGe
       col[k * 3] = c.r * v; col[k * 3 + 1] = c.g * v; col[k * 3 + 2] = c.b * v;
     }
   }
+  // Normals from the grid (the same as three.js would work out from the triangles, near enough for lighting).
+  const nor = new Float32Array(nx * nz * 3);
+  for (let j = 0; j < nz; j++) {
+    for (let i = 0; i < nx; i++) {
+      const i0 = Math.max(0, i - 1), i1 = Math.min(nx - 1, i + 1), j0 = Math.max(0, j - 1), j1 = Math.min(nz - 1, j + 1);
+      const dx = (hs[j * nx + i1] - hs[j * nx + i0]) / ((xs[i1] - xs[i0]) || 1);
+      const dz = (hs[j1 * nx + i] - hs[j0 * nx + i]) / ((zs[j1] - zs[j0]) || 1);
+      const l = Math.sqrt(dx * dx + 1 + dz * dz), k = (j * nx + i) * 3;
+      nor[k] = -dx / l; nor[k + 1] = 1 / l; nor[k + 2] = -dz / l;
+    }
+  }
+  return { xs, zs, pos, col, nor, hs, valid };
+}
+
+function terrainMesh(group: THREE.Group, track: Track, L: Look, geos: THREE.BufferGeometry[], mats: THREE.Material[], d: TerrainData): TerrainLod {
+  const isles = track.road!.land.kind === "isles";
+  const { xs, zs, pos, col, nor, hs, valid } = d;
+  const nx = xs.length, nz = zs.length;
   const cell = (i: number, j: number, out: number[], k = 1, i1 = nx - 1, j1 = nz - 1) => {
     const ii = Math.min(i + k, i1), jj = Math.min(j + k, j1);
     const a = j * nx + i, b = j * nx + ii, d = jj * nx + i, e = jj * nx + ii;
     if (isles && !(valid[a] && valid[b] && valid[d] && valid[e])) return;
     out.push(a, d, b, b, d, e);
   };
-  const idx: number[] = [];
-  for (let j = 0; j < nz - 1; j++) for (let i = 0; i < nx - 1; i++) cell(i, j, idx);
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
   g.setAttribute("color", new THREE.BufferAttribute(col, 3));
-  g.setIndex(idx);
-  g.computeVertexNormals();
+  g.setAttribute("normal", new THREE.BufferAttribute(nor, 3));
   geos.push(g);
   const m = new THREE.MeshLambertMaterial({ vertexColors: true });
   addGrain(m, 0.21, 0.018, 1.1);
   mats.push(m);
-  g.setIndex(null);
   // In tiles (sharing the one set of points), so what is off screen is
   // skipped, each with three levels of detail (every point, every 2nd, every 4th).
   const T = 48;

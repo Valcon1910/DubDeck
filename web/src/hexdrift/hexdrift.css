@@ -628,3 +628,7 @@ a.hx-pl-name:hover { text-decoration: underline; }
 .hx-party-picklist button { width: 100%; display: flex; justify-content: space-between; gap: 10px; align-items: baseline; padding: 10px 12px; border-radius: 10px; border: 0; background: rgba(255, 255, 255, 0.06); color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .hx-party-picklist button:hover, .hx-party-picklist button:focus-visible { background: rgba(255, 255, 255, 0.14); }
 .hx-party-picklist span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Before a race's first frame: the map's picture and name (fades as the 3D view takes over). */
+.hx-splash { position: absolute; inset: 0; z-index: 5; background: #0b0c12 center / cover no-repeat; pointer-events: none; }
+.hx-splash::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0, 0, 0, 0.15), rgba(0, 0, 0, 0.55)); }
+.hx-splash .hx-intro-title { z-index: 1; }
