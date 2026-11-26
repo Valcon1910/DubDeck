@@ -72,14 +72,14 @@ class Stage {
     this.camera.updateProjectionMatrix();
   }
 
-  private get(map: MapDef): Built {
+  private get(map: MapDef, stream = false): Built {
     let b = this.built.get(map.id);
     if (!b) {
       const biome = BIOMES[map.biome];
       const track = trackOf(map);
       const scene = new THREE.Scene();
       setupScene(scene, biome, map.biome, !!track.road, 1.4, 1.5);
-      const world = buildWorld(track, biome, map.biome);
+      const world = buildWorld(track, biome, map.biome, undefined, stream);
       scene.add(world.group);
       b = { world, scene, track, used: 0, ...routeOf(track) };
       this.built.set(map.id, b);
@@ -115,7 +115,8 @@ class Stage {
 
   /** Shows a map's live spectator view inside host (replacing any other). */
   show(host: HTMLElement, map: MapDef) {
-    const b = this.get(map);
+    // Built a piece per frame (the page stays responsive).
+    const b = this.get(map, true);
     if (this.canvas.parentElement !== host) host.prepend(this.canvas);
     const start = this.cur?.map.id === map.id ? this.cur.s : Math.min(b.path.length * 0.08, 10);
     this.cur = { map, b, s: start, host };
@@ -156,6 +157,7 @@ class Stage {
     this.camera.lookAt(this.look);
     const sky = c.b.world.group.getObjectByName("sky");
     if (sky) sky.position.copy(this.pos);
+    c.b.world.more?.();
     c.b.world.update(dt, 0, this.camera);
     this.renderer.render(c.b.scene, this.camera);
   }
@@ -164,8 +166,10 @@ class Stage {
    * A still of the whole map from high above one corner (for map icons).
    * Returns a small JPEG data URL; the live view (if any) keeps running.
    */
-  still(map: MapDef, w = 480, h = 300): string {
+  still(map: MapDef, w = 480, h = 300, type = "image/jpeg", q = 0.82): string {
     const b = this.get(map);
+    // Finish anything still to come (all of it, unless the land is still on its way).
+    for (let n = 0; n < 50 && b.world.more?.(); n++) { /* next */ }
     const box = new THREE.Box3();
     for (const p of b.path) box.expandByPoint(p);
     const mid = box.getCenter(new THREE.Vector3());
@@ -180,11 +184,13 @@ class Stage {
     this.renderer.setSize(w, h, false);
     const sky = b.world.group.getObjectByName("sky");
     if (sky) sky.position.copy(cam.position);
+    // Lets the kit (buildings, streets...) and the land pick what this view shows.
+    b.world.update(0, 0, cam);
     const fog = b.scene.fog as THREE.Fog;
     const far = fog.far;
     fog.far = far * 2.5;
     this.renderer.render(b.scene, cam);
-    const url = this.canvas.toDataURL("image/jpeg", 0.82);
+    const url = this.canvas.toDataURL(type, q);
     fog.far = far;
     this.renderer.setPixelRatio(was);
     if (parent) this.resize();

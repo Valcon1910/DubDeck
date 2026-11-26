@@ -12,13 +12,8 @@ const COLOURS: Record<number, string> = { 1: "#ffcf3d", 2: "#cfd8e6", 3: "#d98a4
 const HEIGHT: Record<number, number> = { 1: 3.1, 2: 2.35, 3: 1.75, 4: 1.3, 5: 1.0 };
 export const SPACING = 4.6;
 
-/** Pillars in podium order: 1 in the middle, 2 to its left, 3 to its right, then 4 and 5. */
-export function podiumOrder<T extends { place: number }>(places: T[]): T[] {
-  const by = [...places].sort((a, b) => a.place - b.place);
-  const out: T[] = [];
-  by.forEach((p, i) => { if (i % 2) out.unshift(p); else out.push(p); });
-  return out;
-}
+import { podiumOrder } from "./podiumOrder.ts";
+export { podiumOrder };
 
 function numberTexture(n: number, colour: string) {
   const c = document.createElement("canvas");

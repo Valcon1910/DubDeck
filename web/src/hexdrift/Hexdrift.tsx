@@ -1,13 +1,9 @@
 // Hexdrift: a fast time-trial racer built into Vortex. This file is the menu,
 // the HUD, the finish screen and Gaming Mode; the game itself is in game.ts.
 // Loaded only when someone opens it, so it adds nothing to the rest of the site.
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { ALL_MAPS, MAPS, BIOMES, medalFor, type MapDef, type Medal } from "./maps.ts";
-import { Editor, MyMaps } from "./editor.tsx";
-import { GridEditor } from "./gridedit.tsx";
-import { Studio } from "./studio.tsx";
-import { Community, CommunityMap } from "./communityview.tsx";
-import { Party, PartyHome, type PartyRun } from "./party.tsx";
+import type { PartyRun } from "./party.tsx";
 import { isRoomCode } from "./room.ts";
 import { getMap, isCommunity, mapDefFrom, markPlayed } from "./community.ts";
 import { emailFrom, pidOf, playerHref, profileHref } from "../vortex/profileLink.ts";
@@ -15,21 +11,41 @@ import { authorOf, bestInputs, finishOn, mapDefOf, myBest, myMap, savePicture } 
 import { medalsOf, type CustomMap } from "./sim/custom.ts";
 import { formatTime } from "./sim/race.ts";
 import { Controls, type Action } from "./input.ts";
-import { Game } from "./game.ts";
+import type { Game } from "./game.ts";
 import { allBests, allTimes, bestNow, bestTimeNow, clearBest, clearLive, offerBest, readLive, saveLive, type Best, type Run } from "./records.ts";
 import { canFullscreen, disableGaming, enableGaming, enterFullscreen, isFullscreen, isGaming, isStandalone, onGaming } from "./gaming.ts";
 import { board, medalLeaders, playerRecords, rankFor, recordRun, syncAccount, worldRecords, type Entry, type Leader, type Submitted } from "./online.ts";
 import { CHAT_ON, displayName, useChat, type Profile } from "../vortex/chat/store";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { itemOf, MAX_POINTS, medalPoints, readLook, saveLook, SLOTS, type BodyDef, type Item, type Look, type Slot } from "./garage.ts";
-import { Preview } from "./render/preview.ts";
-import { Podium, podiumOrder } from "./render/podium.ts";
-import { mapStill, spectator } from "./render/spectator.ts";
+import type { Preview } from "./render/preview.ts";
+import type { Podium } from "./render/podium.ts";
+import { podiumOrder } from "./render/podiumOrder.ts";
 import { isMuted, play, setMuted, wireUiSounds } from "./ui/sound.ts";
 import { IconBack, IconCamera, IconCrown, IconFlag, IconFullscreen, IconGamepad, IconGarage, IconLock, IconMedal, IconMute, IconPause, IconPlay, IconRestart, IconRoute, IconSound, IconTrophy } from "./ui/icons.tsx";
 import type { IntroStage } from "./game.ts";
 import { cropStyle, readCrop, stripCrop } from "../vortex/crop";
 import "./hexdrift.css";
+
+/** Runs `f` once the page has painted and the browser is idle (3D parts come after the menu is usable). */
+function whenIdle(f: () => void): () => void {
+  const w = window as unknown as { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
+  let id = 0, raf = 0;
+  raf = requestAnimationFrame(() => {
+    id = w.requestIdleCallback ? w.requestIdleCallback(f, { timeout: 1200 }) : window.setTimeout(f, 200);
+  });
+  return () => { cancelAnimationFrame(raf); if (w.cancelIdleCallback) w.cancelIdleCallback(id); else clearTimeout(id); };
+}
+
+// Screens most visits never open load when they're first opened.
+const Editor = lazy(() => import("./editor.tsx").then((m) => ({ default: m.Editor })));
+const MyMaps = lazy(() => import("./editor.tsx").then((m) => ({ default: m.MyMaps })));
+const GridEditor = lazy(() => import("./gridedit.tsx").then((m) => ({ default: m.GridEditor })));
+const Studio = lazy(() => import("./studio.tsx").then((m) => ({ default: m.Studio })));
+const Community = lazy(() => import("./communityview.tsx").then((m) => ({ default: m.Community })));
+const CommunityMap = lazy(() => import("./communityview.tsx").then((m) => ({ default: m.CommunityMap })));
+const Party = lazy(() => import("./party.tsx").then((m) => ({ default: m.Party })));
+const PartyHome = lazy(() => import("./party.tsx").then((m) => ({ default: m.PartyHome })));
 
 const MEDAL_NAME: Record<Exclude<Medal, null>, string> = { vortex: "Vortex", gold: "Gold", silver: "Silver", bronze: "Bronze" };
 
@@ -103,8 +119,10 @@ function setPref(key: string, v: string) { try { localStorage.setItem(key, v); }
 export function Hexdrift() {
   const [view, setView] = useState<View>(readView);
   useEffect(() => {
-    const on = () => setView(readView());
+    const on = () => { const v = readView(); setView((o) => (JSON.stringify(o) === JSON.stringify(v) ? o : v)); };
     window.addEventListener("hashchange", on);
+    // The address may have changed between the first draw and now.
+    on();
     return () => window.removeEventListener("hashchange", on);
   }, []);
   const chat = useChat();
@@ -139,6 +157,13 @@ export function Hexdrift() {
     const t = setTimeout(() => setToast(""), 5000);
     return () => clearTimeout(t);
   }, [toast]);
+  // Once the menus are up, fetch the 3D engine while nothing else is happening (the first race then starts sooner).
+  useEffect(() => {
+    const w = window as unknown as { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number };
+    const go = () => { void import("./game.ts").catch(() => {}); };
+    const t = w.requestIdleCallback ? w.requestIdleCallback(go, { timeout: 3000 }) : window.setTimeout(go, 1500);
+    return () => { if (!w.requestIdleCallback) clearTimeout(t); };
+  }, []);
   // Every press in the menus gets a sound; every screen change a whoosh.
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => wireUiSounds(root.current!), []);
@@ -152,6 +177,7 @@ export function Hexdrift() {
     <Online.Provider value={{ sb, me, profiles, sync, rev }}>
       <div className="hx" role="application" aria-label="Hexdrift" ref={root}>
         <div className="hx-view" key={viewKey}>
+          <Suspense fallback={<div className="hx-menu"><p className="hx-dim hx-center">Loading…</p></div>}>
           {view.kind === "play" ? <Play map={view.map} />
             : view.kind === "records" ? <Records map={view.map} />
             : view.kind === "player" ? <Player id={view.id} />
@@ -170,6 +196,7 @@ export function Hexdrift() {
             : view.kind === "maps" ? <MapSelect />
             : view.kind === "map" ? <MapDetail map={view.map} />
             : <Title />}
+          </Suspense>
         </div>
         {toast && <div className="hx-toast" role="status"><IconCrown size={18} />{toast}</div>}
       </div>
@@ -238,9 +265,15 @@ function PodiumView({ places, empty }: { places: Pillar[]; empty: React.ReactNod
   const host = useRef<HTMLDivElement>(null);
   const pod = useRef<Podium | null>(null);
   const [fail, setFail] = useState(false);
+  const placesRef = useRef(places);
+  placesRef.current = places;
   useEffect(() => {
-    try { pod.current = new Podium(host.current!); } catch { setFail(true); }
-    return () => { pod.current?.dispose(); pod.current = null; };
+    let dead = false;
+    const stop = whenIdle(() => void import("./render/podium.ts").then(({ Podium: P }) => {
+      if (dead) return;
+      try { pod.current = new P(host.current!); pod.current.set(placesRef.current.map((p) => ({ place: p.place, look: p.look }))); } catch { setFail(true); }
+    }, () => setFail(true)));
+    return () => { dead = true; stop(); pod.current?.dispose(); pod.current = null; };
   }, []);
   const sig = places.map((p) => `${p.place}:${p.name}:${JSON.stringify(p.look)}`).join("|");
   useEffect(() => { pod.current?.set(places.map((p) => ({ place: p.place, look: p.look }))); }, [sig]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -287,8 +320,12 @@ function Title() {
     return () => { alive = false; };
   }, [rev]);
   useEffect(() => {
-    try { preview.current = new Preview(host.current!, "hero"); preview.current.setLook(readLook()); } catch { setNo3d(true); }
-    return () => { preview.current?.dispose(); preview.current = null; };
+    let dead = false;
+    const stop = whenIdle(() => void import("./render/preview.ts").then(({ Preview: P }) => {
+      if (dead) return;
+      try { preview.current = new P(host.current!, "hero"); preview.current.setLook(readLook()); } catch { setNo3d(true); }
+    }, () => setNo3d(true)));
+    return () => { dead = true; stop(); preview.current?.dispose(); preview.current = null; };
   }, []);
   useEffect(() => {
     if (!sb) return;
@@ -347,16 +384,22 @@ function Title() {
   );
 }
 
-/** A map's picture: a still from above, and the live drone view while hovered. */
+// Built-in maps' card pictures, made ahead (scripts/hexdrift-thumbs.mjs): no 3D needed to show the list.
+const THUMBS = Object.fromEntries(Object.entries(import.meta.glob<string>("./thumbs/*.webp", { eager: true, query: "?url", import: "default" }))
+  .map(([k, v]) => [k.slice(9, -5), v]));
+export const thumbOf = (id: string): string | undefined => THUMBS[id];
+
+/** A map's picture: made ahead (or a still from above), and the live drone view while hovered. */
 function MapArt({ map, live = false }: { map: MapDef; live?: boolean }) {
   const el = useRef<HTMLSpanElement>(null);
-  const [src, setSrc] = useState("");
+  const [src, setSrc] = useState(() => thumbOf(map.id) ?? "");
   useEffect(() => {
+    if (thumbOf(map.id)) { setSrc(thumbOf(map.id)!); return; }
     let alive = true;
     const io = new IntersectionObserver((es) => {
       if (!es.some((e) => e.isIntersecting)) return;
       io.disconnect();
-      void mapStill(map).then((u) => { if (alive) setSrc(u); });
+      void import("./render/spectator.ts").then(({ mapStill }) => mapStill(map)).then((u) => { if (alive) setSrc(u); }, () => {});
     }, { rootMargin: "200px" });
     io.observe(el.current!);
     return () => { alive = false; io.disconnect(); };
@@ -364,8 +407,14 @@ function MapArt({ map, live = false }: { map: MapDef; live?: boolean }) {
   useEffect(() => {
     if (!live) return;
     const h = el.current!;
-    spectator()?.show(h, map);
-    return () => spectator()?.hide(h);
+    // The live drone view only after a moment (the picture shows straight away).
+    let dead = false, shown: (() => void) | null = null;
+    const t = setTimeout(() => void import("./render/spectator.ts").then(({ spectator }) => {
+      if (dead) return;
+      spectator()?.show(h, map);
+      shown = () => spectator()?.hide(h);
+    }), 700);
+    return () => { dead = true; clearTimeout(t); shown?.(); };
   }, [live, map]);
   const b = BIOMES[map.biome];
   return (
@@ -638,6 +687,8 @@ function Play({ map, custom, home, practice, party }: { map: MapDef; custom?: Cu
   const [wrName, setWrName] = useState("");
   // The race-start cutscene (only when arriving at the map, not on restarts).
   const [intro, setIntro] = useState<IntroStage>("done");
+  // The map's picture and name until the 3D view's first frame is up.
+  const [drawn, setDrawn] = useState(false);
 
   const loadGhost = useCallback((run: Run | null) => {
     game.current?.setGhost(run ? run.inputs : null, run?.t ?? 0);
@@ -669,9 +720,14 @@ function Play({ map, custom, home, practice, party }: { map: MapDef; custom?: Cu
       }
     });
     controls.current = c;
+    // The 3D engine loads with the first race (not with the menus).
+    let dead = false, undo: (() => void) | undefined;
+    void import("./game.ts").then(({ Game: Ctor }) => { if (!dead) undo = setup(Ctor); }, () => setError("The game couldn't load. Check your connection and try again."));
+    return () => { dead = true; if (undo) undo(); else c.dispose(); };
+    function setup(Ctor: typeof import("./game.ts").Game): () => void {
     let g: Game;
     try {
-      g = new Game(host.current!, map, { time: time.current, speed: speed.current, cps: cps.current, count: count.current, split: split.current }, {
+      g = new Ctor(host.current!, map, { time: time.current, speed: speed.current, cps: cps.current, count: count.current, split: split.current }, {
         onFinish(ticks, inputs) {
           if (partyRef.current) { partyRef.current.finished(ticks); return; }
           clearLive();
@@ -714,6 +770,7 @@ function Play({ map, custom, home, practice, party }: { map: MapDef; custom?: Cu
     }
     game.current = g;
     g.setGraphics(gfxPref());
+    requestAnimationFrame(() => requestAnimationFrame(() => { if (!dead) setDrawn(true); }));
     const p = partyRef.current;
     if (p) {
       g.setGrid(p.slot, p.of, p.laps);
@@ -761,6 +818,7 @@ function Play({ map, custom, home, practice, party }: { map: MapDef; custom?: Cu
       c.dispose();
       game.current = null;
     };
+    }
   }, [map, pause, restart, loadGhost]);
 
   // The world record's gold ghost (unless it's yours).
@@ -791,6 +849,11 @@ function Play({ map, custom, home, practice, party }: { map: MapDef; custom?: Cu
 
   return (
     <div className={`hx-play ${intro !== "done" ? "in-intro" : ""}`} ref={host}>
+      {!drawn && (
+        <div className="hx-splash" style={thumbOf(map.id) ? { backgroundImage: `url(${thumbOf(map.id)})` } : undefined} aria-hidden="true">
+          <div className="hx-intro-title"><p className="hx-kicker">{BIOMES[map.biome].name}</p><h2>{map.name}</h2></div>
+        </div>
+      )}
       {intro !== "done" && <Intro map={map} stage={intro} best={best} />}
       <div className="hx-hud" aria-live="off">
         <div className="hx-hud-top">
@@ -1156,11 +1219,17 @@ function Garage() {
   }, [rev]);
 
   useEffect(() => {
-    try { preview.current = new Preview(host.current!); } catch { setError("This device can't show 3D graphics."); }
-    return () => { preview.current?.dispose(); preview.current = null; };
+    let dead = false;
+    void import("./render/preview.ts").then(({ Preview: P }) => {
+      if (dead) return;
+      try { preview.current = new P(host.current!); preview.current.setLook(shownRef.current); } catch { setError("This device can't show 3D graphics."); }
+    }, () => setError("The garage couldn't load. Check your connection and try again."));
+    return () => { dead = true; preview.current?.dispose(); preview.current = null; };
   }, []);
 
   const shown = trying ?? look;
+  const shownRef = useRef(shown);
+  shownRef.current = shown;
   useEffect(() => { preview.current?.setLook(shown); }, [shown]);
 
   const slot = SLOTS.find((s) => s.slot === tab)!;

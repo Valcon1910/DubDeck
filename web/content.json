@@ -56,9 +56,19 @@
   },
   "updates": [
     {
+      "id": "pub-20261126134302",
+      "date": "2026-11-26T13:43:02.848Z",
+      "text": "General\n- profile pictures now accept gifs\n\nChat\n- new tutorial\n- gif and video player\n- emoji reactions\nHexdrift\n- added map editor and creator\n- overhauled maps and vehicles\n- new UI style and animations"
+    },
+    {
+      "id": "pub-20261123142253",
+      "date": "2026-11-23T14:22:53.825Z",
+      "text": "- Added chat\n- Added WIP game (3/10)"
+    },
+    {
       "id": "pub-20261119195747",
       "date": "2026-11-19T19:57:47.289Z",
-      "text": ""
+      "text": "- Fixes\n- Now only the owner can post announcements"
     },
     {
       "id": "pub-20261119",
@@ -71,11 +81,11 @@
     "subtitle": "News and updates from Vortex.",
     "items": [
       {
-        "id": "7d303791-c609-48eb-87f6-27ba9927897e",
-        "title": "Announcements Update Log",
-        "text": "- Fixed off centered profile pic\n- Added announcements",
+        "id": "c1d46e8c-70ee-41b2-aa1b-a006f27b4483",
+        "title": "Chat and Hexdrift!",
+        "text": "- New chat where you can talk to vortex members\n- New internal game called Hexdrift which is in beta 3/10 finished.",
         "image": "",
-        "date": "2026-11-19T18:23:37.481Z",
+        "date": "2026-11-23T14:24:00.302Z",
         "files": []
       }
     ]

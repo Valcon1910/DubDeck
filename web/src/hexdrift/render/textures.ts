@@ -55,10 +55,25 @@ export function noiseTex(): THREE.DataTexture {
  * Adds world-space grain to a vertex-coloured material, so big surfaces
  * (ground, rock, walls) don't look flat up close or from afar.
  */
+/** Surface grain per graphics level: texture taps (0 off, 1, 2 or all 3). */
+let grainTaps = 3;
+/** Sets the grain for a graphics level; true when materials need recompiling. */
+export function setGrainLevel(level: "low" | "medium" | "high"): boolean {
+  const n = level === "low" ? 1 : level === "medium" ? 2 : 3;
+  if (n === grainTaps) return false;
+  grainTaps = n;
+  return true;
+}
+/** Marks materials with grain (so a level change can recompile them). */
+export const GRAIN = Symbol("grain");
+
 export function addGrain(m: THREE.Material, fine = 0.22, coarse = 0.035, amount = 1) {
   const tex = noiseTex();
+  // The scales are uniforms, so every grainy material of a kind shares one shader program.
+  const params = new THREE.Vector3(fine, coarse, amount);
   m.onBeforeCompile = (s) => {
     s.uniforms.uNoise = { value: tex };
+    s.uniforms.uGrain = { value: params };
     s.vertexShader = s.vertexShader
       .replace("#include <common>", "#include <common>\nvarying vec3 vGrainP;")
       .replace("#include <project_vertex>", `#include <project_vertex>
@@ -67,16 +82,18 @@ export function addGrain(m: THREE.Material, fine = 0.22, coarse = 0.035, amount 
           grainW = instanceMatrix * grainW;
         #endif
         vGrainP = (modelMatrix * grainW).xyz;`);
+    const taps = grainTaps;
     s.fragmentShader = s.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying vec3 vGrainP;\nuniform sampler2D uNoise;")
+      .replace("#include <common>", "#include <common>\nvarying vec3 vGrainP;\nuniform sampler2D uNoise;\nuniform vec3 uGrain;")
       .replace("#include <color_fragment>", `#include <color_fragment>
         {
           vec2 gp = vGrainP.xz + vGrainP.y * vec2(0.37, 0.61);
-          float g1 = texture2D(uNoise, gp * ${fine.toFixed(3)}).r;
-          float g2 = texture2D(uNoise, gp * ${coarse.toFixed(4)}).g;
-          float g3 = texture2D(uNoise, gp * ${(fine * 4.1).toFixed(3)}).b;
-          diffuseColor.rgb *= 1.0 + ${amount.toFixed(2)} * ((g1 - 0.5) * 0.34 + (g2 - 0.5) * 0.42 + (g3 - 0.5) * 0.12);
+          float gr = (texture2D(uNoise, gp * uGrain.y).g - 0.5) * 0.42;
+          ${taps >= 2 ? "gr += (texture2D(uNoise, gp * uGrain.x).r - 0.5) * 0.34;" : ""}
+          ${taps >= 3 ? "gr += (texture2D(uNoise, gp * uGrain.x * 4.1).b - 0.5) * 0.12;" : ""}
+          diffuseColor.rgb *= 1.0 + uGrain.z * gr;
         }`);
   };
-  m.customProgramCacheKey = () => `grain${fine}-${coarse}-${amount}`;
+  m.customProgramCacheKey = () => `grain${grainTaps}`;
+  (m as unknown as Record<symbol, boolean>)[GRAIN] = true;
 }
