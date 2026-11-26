@@ -8,6 +8,15 @@ const hook = (page: Page) => page.evaluate(() => {
 });
 const autopilot = (page: Page) => page.evaluate(() => { (window as unknown as { __hexdrift: Hook }).__hexdrift.autopilot = true; });
 
+// Skips the race-start cutscene (any key), then waits out the countdown. With
+// software rendering frames are slow and the game clock runs behind real time,
+// so sitting through the whole cutscene left no margin.
+async function toGreenLight(page: Page) {
+  await expect.poll(async () => (await hook(page)) !== null).toBe(true);
+  await page.keyboard.press("x");
+  await expect.poll(async () => (await hook(page))?.phase, { timeout: 30_000 }).toBe("running");
+}
+
 async function fresh(page: Page, map: string) {
   await page.goto(`/#/hexdrift/${map}`);
   await expect.poll(async () => (await hook(page)) !== null).toBe(true);
@@ -40,7 +49,7 @@ test("Games page opens Hexdrift: title, five maps, a map's page, then the race",
 test("driving: countdown, gas moves the car, R restarts, pause", async ({ page }) => {
   await page.goto("/#/hexdrift/neon-downtown");
   await expect(page.locator("canvas.hx-canvas")).toBeVisible();
-  await expect.poll(async () => (await hook(page))?.phase, { timeout: 20_000 }).toBe("running");
+  await toGreenLight(page);
   await page.keyboard.down("ArrowUp");
   await expect.poll(async () => (await hook(page))?.speed ?? 0).toBeGreaterThan(10);
   await page.keyboard.up("ArrowUp");
@@ -78,7 +87,7 @@ test("a finished run is saved, then raced as a ghost with live splits", async ({
 
 test("a reload in the middle of a run puts the car back where it was", async ({ page }) => {
   await page.goto("/#/hexdrift/desert-mirage");
-  await expect.poll(async () => (await hook(page))?.phase, { timeout: 20_000 }).toBe("running");
+  await toGreenLight(page);
   await page.keyboard.down("ArrowUp");
   await page.waitForTimeout(2600);
   await page.evaluate(() => (window as unknown as { __hexdrift: { setPaused(p: boolean): void } }).__hexdrift.setPaused(true));
