@@ -632,3 +632,26 @@ a.hx-pl-name:hover { text-decoration: underline; }
 .hx-splash { position: absolute; inset: 0; z-index: 5; background: #0b0c12 center / cover no-repeat; pointer-events: none; }
 .hx-splash::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0, 0, 0, 0.15), rgba(0, 0, 0, 0.55)); }
 .hx-splash .hx-intro-title { z-index: 1; }
+
+/* Loading a map: its picture, its name and a bar in the Hexdrift colours. */
+.hx-loading { z-index: 40; display: grid; place-items: end center; padding: 0 20px max(56px, calc(env(safe-area-inset-bottom) + 40px)); pointer-events: auto; }
+.hx-loading::after { background: linear-gradient(180deg, rgba(8, 6, 24, 0.2), rgba(8, 6, 24, 0.85) 75%); }
+.hx-loading-box { position: relative; z-index: 1; width: min(520px, 100%); text-align: left; }
+.hx-loading-box h2 { margin: 2px 0 16px; font-size: clamp(28px, 6vw, 46px); font-style: italic; font-weight: 800; letter-spacing: -0.01em; text-transform: uppercase; color: #fff; text-shadow: 0 2px 18px rgba(0, 0, 0, 0.5); }
+.hx-load-bar { position: relative; height: 10px; border-radius: 999px; overflow: hidden; background: rgba(255, 255, 255, 0.12); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12); transform: skewX(-14deg); }
+.hx-load-bar span {
+  position: absolute; inset: 0; transform-origin: left; transition: transform 0.25s ease-out;
+  background: linear-gradient(90deg, var(--hx-cyan), var(--hx-violet), var(--hx-pink), var(--hx-cyan)) 0 0 / 300% 100%;
+  box-shadow: 0 0 16px rgba(255, 61, 242, 0.6);
+  animation: hx-load-flow 1.6s linear infinite;
+}
+/* A light sweeping along the filled part. */
+.hx-load-bar span::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent 0 35%, rgba(255, 255, 255, 0.55) 50%, transparent 65% 100%) 0 0 / 200% 100%;
+  animation: hx-load-shine 1.2s ease-in-out infinite;
+}
+.hx-load-step { display: flex; justify-content: space-between; margin: 10px 0 0; font-size: 13px; letter-spacing: 0.04em; color: rgba(255, 255, 255, 0.8); font-variant-numeric: tabular-nums; }
+@keyframes hx-load-flow { to { background-position: -300% 0; } }
+@keyframes hx-load-shine { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+@media (prefers-reduced-motion: reduce) { .hx-load-bar span, .hx-load-bar span::after { animation: none; } }

@@ -192,8 +192,14 @@ export function buildRoadWorld(track: Track, biome: Biome, id: BiomeId, lookIn?:
   const none = { hit() {}, update() {}, reset() {} } as unknown as World["breakables"];
   jobs.push(() => { props = buildProps(group, track, biome, id, geos, mats); });
   jobs.push(() => { kit = buildKit(group, road, look.night, new THREE.Color(look.skyHorizon), biome.fogFar, time); });
+  const total = jobs.length + (landWait ? 1 : 0) + 1;
+  let kitIn = false;
   const world: World = {
     group,
+    progress() {
+      if (kit && !kitIn) void kit.ready.then(() => { kitIn = true; });
+      return (total - jobs.length - (landWait ? 1 : 0) - (kitIn ? 0 : 1)) / total;
+    },
     get breakables() { return props?.breakables ?? none; },
     update(dt, cheer = 0, cam) {
       for (const u of updates) u(dt);
@@ -394,7 +400,8 @@ function terrainMesh(group: THREE.Group, track: Track, L: Look, geos: THREE.Buff
   g.setAttribute("color", new THREE.BufferAttribute(col, 3));
   g.setAttribute("normal", new THREE.BufferAttribute(nor, 3));
   geos.push(g);
-  const m = new THREE.MeshLambertMaterial({ vertexColors: true });
+  // Pushed back in the depth test: where the land comes close to a road surface, the road always wins (no flicker).
+  const m = new THREE.MeshLambertMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 6 });
   addGrain(m, 0.21, 0.018, 1.1);
   mats.push(m);
   // In tiles (sharing the one set of points), so what is off screen is

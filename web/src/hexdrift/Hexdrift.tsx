@@ -654,6 +654,25 @@ function CommunityRun({ id, records }: { id: string; records: boolean }) {
   return records ? <Records map={def} home={home} race={`${home}/race`} /> : <Play map={def} home={home} />;
 }
 
+/** While a map loads: its picture, its name and a bar in the Hexdrift colours. */
+function Loading({ map, p }: { map: MapDef; p: number }) {
+  const pic = thumbOf(map.id);
+  const step = p < 0.05 ? "Starting the engine" : p < 0.86 ? "Building the track" : p < 0.96 ? "Loading your car" : "Warming up";
+  const pct = Math.round(p * 100);
+  return (
+    <div className="hx-splash hx-loading" style={pic ? { backgroundImage: `url(${pic})` } : undefined}>
+      <div className="hx-loading-box">
+        <p className="hx-kicker">{BIOMES[map.biome].name}</p>
+        <h2>{map.name}</h2>
+        <div className="hx-load-bar" role="progressbar" aria-label={`Loading ${map.name}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}>
+          <span style={{ transform: `scaleX(${Math.max(0.02, p)})` }} />
+        </div>
+        <p className="hx-load-step"><span>{step}…</span><span>{pct}%</span></p>
+      </div>
+    </div>
+  );
+}
+
 function Play({ map, custom, home, practice, party }: { map: MapDef; custom?: CustomMap; home?: string; practice?: boolean; party?: PartyRun }) {
   // A party race: the room decides the start, nothing is saved, no restarts.
   const partyRef = useRef(party);
@@ -686,7 +705,8 @@ function Play({ map, custom, home, practice, party }: { map: MapDef; custom?: Cu
   // The race-start cutscene (only when arriving at the map, not on restarts).
   const [intro, setIntro] = useState<IntroStage>("done");
   // The map's picture and name until the 3D view's first frame is up.
-  const [drawn, setDrawn] = useState(false);
+  /** Loading the map (0..1); 1 once it's ready and the intro starts. */
+  const [load, setLoad] = useState(0);
 
   const loadGhost = useCallback((run: Run | null) => {
     game.current?.setGhost(run ? run.inputs : null, run?.t ?? 0);
@@ -768,7 +788,9 @@ function Play({ map, custom, home, practice, party }: { map: MapDef; custom?: Cu
     }
     game.current = g;
     g.setGraphics(gfxPref());
-    requestAnimationFrame(() => requestAnimationFrame(() => { if (!dead) setDrawn(true); }));
+    // The loading screen follows the game's progress until everything's in.
+    const watch = window.setInterval(() => { if (!dead) setLoad(g.loadProgress); }, 80);
+    void g.loaded.then(() => { window.clearInterval(watch); if (!dead) requestAnimationFrame(() => requestAnimationFrame(() => { if (!dead) setLoad(1); })); });
     const p = partyRef.current;
     if (p) {
       g.setGrid(p.slot, p.of, p.laps);
@@ -847,11 +869,7 @@ function Play({ map, custom, home, practice, party }: { map: MapDef; custom?: Cu
 
   return (
     <div className={`hx-play ${intro !== "done" ? "in-intro" : ""}`} ref={host}>
-      {!drawn && (
-        <div className="hx-splash" style={thumbOf(map.id) ? { backgroundImage: `url(${thumbOf(map.id)})` } : undefined} aria-hidden="true">
-          <div className="hx-intro-title"><p className="hx-kicker">{BIOMES[map.biome].name}</p><h2>{map.name}</h2></div>
-        </div>
-      )}
+      {load < 1 && <Loading map={map} p={load} />}
       {intro !== "done" && <Intro map={map} stage={intro} best={best} />}
       <div className="hx-hud" aria-live="off">
         <div className="hx-hud-top">

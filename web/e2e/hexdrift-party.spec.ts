@@ -54,6 +54,10 @@ test("Party: two players join a room, race and see the results", async ({ browse
     await expect(p.getByRole("button", { name: "Restart (R)" })).toHaveCount(0);
   }
   for (const p of [A, B]) await expect(p.locator(".hx-party-wait")).toHaveCount(0, { timeout: 30_000 });
+  // The other car is on screen (next to you on the grid).
+  for (const p of [A, B]) {
+    await expect.poll(() => p.evaluate(() => [...(window as unknown as { __hexdrift: { remotes: Map<string, { model: { root: { visible: boolean } } }> } }).__hexdrift.remotes.values()].map((r) => r.model.root.visible)), { timeout: 10_000 }).toEqual([true]);
+  }
   for (const p of [A, B]) await p.evaluate(() => { (window as unknown as { __hexdrift: { autopilot: boolean } }).__hexdrift.autopilot = true; });
 
   // Lined up side by side on the grid, then the race (the cars bump, so both just need to get there).

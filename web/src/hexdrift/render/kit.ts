@@ -337,6 +337,8 @@ export function setKitDetail(level: "low" | "medium" | "high") { detail = KIT_DE
 export interface KitView {
   /** Moves traffic and picks what to draw for this camera. */
   update(dt: number, cam: THREE.Camera): void;
+  /** Settles once the kit's models are in (or failed to load). */
+  ready: Promise<unknown>;
   dispose(): void;
 }
 
@@ -347,18 +349,19 @@ export function buildKit(group: THREE.Group, road: Road, night: boolean, sky: TH
   const mats: THREE.Material[] = [];
   let live: ((dt: number, cam: THREE.Camera) => void) | null = null;
   let gone = false;
-  if (!c) return { update() {}, dispose() {} };
+  if (!c) return { update() {}, ready: Promise.resolve(), dispose() {} };
 
   const sg = streets(c, road, night);
   if (sg) {
-    const sm = new THREE.MeshLambertMaterial({ vertexColors: true });
+    // Side streets give way to the main road where they meet (depth offset, no flicker).
+    const sm = new THREE.MeshLambertMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 3 });
     geos.push(sg); mats.push(sm);
     const sm2 = new THREE.Mesh(sg, sm);
     sm2.name = "road"; // flat: takes shadows, casts none
     group.add(sm2);
   }
 
-  loadKit(road.dress!.kit).then((kit) => {
+  const ready = loadKit(road.dress!.kit).then((kit) => {
     if (!kit || gone) return;
     const mat = kitMaterial(time, night ? 1 : 0.3, sky);
     mats.push(mat);
@@ -572,6 +575,7 @@ export function buildKit(group: THREE.Group, road: Road, night: boolean, sky: TH
 
   return {
     update(dt, cam) { live?.(dt, cam); },
+    ready: ready.catch(() => {}),
     dispose() {
       gone = true;
       for (const g of geos) g.dispose();

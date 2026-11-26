@@ -81,6 +81,8 @@ export interface World {
   update(dt: number, cheer?: number, cam?: THREE.Camera): void;
   /** Builds the next part still to come (road maps fill in after the start); true while there's more. */
   more?(): boolean;
+  /** How much of the world is in, 0..1 (1: all built, the scenery's models loaded). */
+  progress?(): number;
   dispose(): void;
 }
 
