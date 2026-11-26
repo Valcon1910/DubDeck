@@ -532,6 +532,7 @@ function Composer({ c, reply, editing, onDone, onTyping }: { c: Conversation; re
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [plus, setPlus] = useState(false);
   const pick = useRef<HTMLInputElement>(null);
   const box = useRef<HTMLTextAreaElement>(null);
   const draftKey = `vortex.chatDraft.${c.id}`;
@@ -606,11 +607,18 @@ function Composer({ c, reply, editing, onDone, onTyping }: { c: Conversation; re
       <div className="vx-composer-row">
         {!editing && (
           <>
-            <button type="button" className="vx-icon-btn vx-attach" aria-label="Attach files" title="Attach photos, videos or files" onClick={() => pick.current?.click()}>
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M21 11.5 12.5 20a5.5 5.5 0 0 1-7.8-7.8l8.5-8.5a3.7 3.7 0 0 1 5.2 5.2l-8.5 8.5a1.8 1.8 0 0 1-2.6-2.6L15 7" />
-              </svg>
-            </button>
+            <span className="vx-plus-wrap">
+              <button type="button" className={`vx-icon-btn vx-attach vx-plus${plus ? " is-open" : ""}`} aria-label={plus ? "Close menu" : "More"} aria-expanded={plus} aria-haspopup="menu" onClick={() => setPlus(!plus)}>
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+              </button>
+              {plus && (
+                <span className="vx-plus-menu" role="menu">
+                  <button type="button" role="menuitem" onClick={() => { setPlus(false); pick.current?.click(); }}>📎 Upload file</button>
+                  <button type="button" role="menuitem" disabled title="Coming soon">🏁 Create Hexdrift party</button>
+                  <button type="button" role="menuitem" disabled title="Coming soon">✉️ Invite to party</button>
+                </span>
+              )}
+            </span>
             <input ref={pick} type="file" multiple hidden onChange={(e) => { add(e.target.files); e.target.value = ""; }} />
           </>
         )}

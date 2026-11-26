@@ -1066,3 +1066,13 @@ html[data-gaming="on"] img, html[data-gaming="on"] a { -webkit-user-drag: none; 
 .vx-profile-maps strong, .vx-profile-maps .vx-muted { padding: 0 12px; }
 .vx-profile-pic { position: relative; display: block; aspect-ratio: 16 / 9; background: linear-gradient(160deg, #2a2160, #0d0b24); }
 .vx-profile-pic img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+
+.vx-plus-wrap { position: relative; display: inline-grid; }
+.vx-plus svg { transition: transform .25s cubic-bezier(.3,1.4,.5,1); }
+.vx-plus.is-open svg { transform: rotate(45deg); }
+.vx-plus-menu { position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 30; display: grid; min-width: 220px; padding: 6px; border-radius: 12px; background: var(--surface, #fff); border: 1px solid var(--border); box-shadow: 0 10px 30px #0003; transform-origin: bottom left; animation: vx-plus-in .18s ease-out; }
+.vx-plus-menu button { text-align: left; padding: 9px 12px; border: 0; border-radius: 8px; background: none; color: inherit; font: inherit; cursor: pointer; }
+.vx-plus-menu button:hover:not(:disabled) { background: var(--vx-accent-soft); }
+.vx-plus-menu button:disabled { opacity: .5; cursor: default; }
+@keyframes vx-plus-in { from { opacity: 0; transform: translateY(6px) scale(.96); } }
+@media (prefers-reduced-motion: reduce) { .vx-plus svg, .vx-plus-menu { transition: none; animation: none; } }
