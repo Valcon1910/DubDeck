@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 
 // Emoji reactions, shared by Chat messages and Announcements: a row of chips
 // ("👍 3", your own highlighted) plus a small picker. Tap a chip to add or
@@ -47,7 +47,34 @@ export function EmojiPicker({ onPick, label = "Add a reaction", chosen = [], cla
   onPick: (emoji: string) => void; label?: string; chosen?: string[]; className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [place, setPlace] = useState<CSSProperties>({ visibility: "hidden" });
   const box = useRef<HTMLSpanElement>(null);
+  const menu = useRef<HTMLSpanElement>(null);
+
+  // Keep the menu inside the box it belongs to (the open chat, or the screen):
+  // fewer columns when it's narrow, and above or below the button, whichever fits.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const fit = () => {
+      const btn = box.current?.getBoundingClientRect(), m = menu.current;
+      if (!btn || !m) return;
+      const area = box.current!.closest(".vx-chat-thread, .vx-pick-bounds")?.getBoundingClientRect()
+        ?? new DOMRect(0, 0, window.innerWidth, window.innerHeight);
+      const pad = 8, cell = 36;
+      const left0 = Math.max(area.left, 0) + pad, right0 = Math.min(area.right, window.innerWidth) - pad;
+      const top0 = Math.max(area.top, 0) + pad, bottom0 = Math.min(area.bottom, window.innerHeight) - pad;
+      const cols = Math.max(3, Math.min(6, Math.floor((right0 - left0 - 14) / cell)));
+      const w = cols * cell + 14 - 2, rows = Math.ceil(EMOJIS.length / cols), h = rows * cell + 14 - 2;
+      const left = Math.min(Math.max(btn.right - w, left0), Math.max(left0, right0 - w));
+      const above = btn.top - 6 - h, below = btn.bottom + 6;
+      const top = above >= top0 ? above : below + h <= bottom0 ? below : Math.max(top0, bottom0 - h);
+      setPlace({ position: "fixed", left, top, gridTemplateColumns: `repeat(${cols}, 34px)`, maxHeight: bottom0 - top0, overflowY: "auto" });
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    window.addEventListener("scroll", fit, true);
+    return () => { window.removeEventListener("resize", fit); window.removeEventListener("scroll", fit, true); setPlace({ visibility: "hidden" }); };
+  }, [open]);
   useEffect(() => {
     if (!open) return;
     const away = (e: PointerEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
@@ -64,7 +91,7 @@ export function EmojiPicker({ onPick, label = "Add a reaction", chosen = [], cla
         </svg>
       </button>
       {open && (
-        <span className="vx-react-menu" role="menu" aria-label={label}>
+        <span className="vx-react-menu" role="menu" aria-label={label} ref={menu} style={place}>
           {EMOJIS.map((e) => (
             <button key={e} type="button" role="menuitem" className={chosen.includes(e) ? "mine" : ""} aria-label={e}
               onClick={() => { onPick(e); setOpen(false); }}>{e}</button>

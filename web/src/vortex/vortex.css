@@ -1001,6 +1001,7 @@ button.vx-chat-person:hover { background: var(--surface-2); }
   animation: vx-zoom 0.15s var(--ease, ease-out) both; transform-origin: bottom left;
 }
 .vx-msg-mine .vx-react-menu { left: auto; right: 0; transform-origin: bottom right; }
+.vx-react-menu[style*="fixed"] { bottom: auto; right: auto; transform-origin: center; }
 .vx-react-menu button { width: 34px; height: 34px; border: 0; border-radius: 10px; background: none; font-size: 20px; line-height: 1; cursor: pointer; transition: transform 0.12s, background 0.12s; }
 .vx-react-menu button:hover { background: var(--surface-2); transform: scale(1.18); }
 .vx-react-menu button.mine { background: var(--vx-accent-soft); }

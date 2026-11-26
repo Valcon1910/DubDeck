@@ -253,15 +253,25 @@ export function ChatProvider({ email, owner, name, avatar, children }: Props) {
     void Notification.requestPermission().then((p) => save(p === "granted"));
   }, []);
 
+  // Your own picture and name always come from Settings on this device, so Chat
+  // matches the account menu even before (or if) the upload reaches the server.
+  const shownProfiles = useMemo(() => {
+    if (!me) return profiles;
+    const mine = profiles.get(me);
+    const m = new Map(profiles);
+    m.set(me, { email: me, member: true, last_seen: null, ...mine, name: name.trim() || mine?.name || "", avatar: avatar || mine?.avatar || "" });
+    return m;
+  }, [profiles, me, name, avatar]);
+
   const value = useMemo<ChatValue>(() => ({
-    status, error, sb, me, owner, profiles, conversations,
+    status, error, sb, me, owner, profiles: shownProfiles, conversations,
     unread: conversations.reduce((n, c) => n + c.unread, 0),
     setOpen: (id) => { open.current = id; },
     reload,
     retry: () => setAttempt((a) => a + 1),
     listen: (fn) => { listeners.current.add(fn); return () => { listeners.current.delete(fn); }; },
     notify, setNotify,
-  }), [status, error, sb, me, owner, profiles, conversations, reload, notify, setNotify]);
+  }), [status, error, sb, me, owner, shownProfiles, conversations, reload, notify, setNotify]);
 
   return (
     <Ctx.Provider value={value}>
