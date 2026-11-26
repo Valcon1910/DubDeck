@@ -606,6 +606,8 @@ export interface RoadHit {
 }
 
 /** Where (px, pz) falls on a segment: along, across, the clamped share and the distance. */
+/** near()'s answer: one object reused for every call (it runs many times a step; a new one each time fed the garbage collector, a cause of freezes). Read it before the next call. */
+const NQ = { along: 0, lat: 0, t: 0, d: 0 };
 function near(sg: Seg, px: number, pz: number) {
   const ex = px - sg.ax, ez = pz - sg.az;
   const along = ex * sg.fx + ez * sg.fz;
@@ -613,7 +615,8 @@ function near(sg: Seg, px: number, pz: number) {
   const t = along < 0 ? 0 : along > sg.len ? 1 : along / sg.len;
   const cx = sg.ax + sg.fx * sg.len * t, cz = sg.az + sg.fz * sg.len * t;
   const dx = px - cx, dz = pz - cz;
-  return { along, lat, t, d: Math.sqrt(dx * dx + dz * dz) };
+  NQ.along = along; NQ.lat = lat; NQ.t = t; NQ.d = Math.sqrt(dx * dx + dz * dz);
+  return NQ;
 }
 
 /** Is (px, pz) on this segment's road, and how high is it there? NaN when not. */

@@ -317,13 +317,28 @@ export class Game {
       // Compile every shader now (and draw one frame for the shadow and finishing passes), not mid-race.
       this.warmed = true;
       this.loadProgress = 0.97;
-      this.renderer.compile(this.scene, this.camera);
+      this.prime(this.scene, true);
       this.draw(this.introT >= 0 ? 0 : 1, 0);
       return;
     }
     this.loading = false;
     this.loadProgress = 1;
     this.loadedNow();
+  }
+
+  /**
+   * Gets everything under root onto the graphics card now: every shader
+   * compiled and (with draw) every mesh and texture uploaded, including what's
+   * hidden or off screen. Otherwise each first appearance mid-race (a building
+   * coming into view, a far version swapping in, a ghost, the first skid)
+   * compiles or uploads right then: a freeze.
+   */
+  private prime(root: THREE.Object3D, draw = false) {
+    const undo: [THREE.Object3D, boolean, boolean][] = [];
+    root.traverse((o) => { undo.push([o, o.visible, o.frustumCulled]); o.visible = true; o.frustumCulled = false; });
+    this.renderer.compile(root, this.camera, this.scene);
+    if (draw) this.post.render(this.scene, this.camera, 0);
+    for (const [o, v, f] of undo) { o.visible = v; o.frustumCulled = f; }
   }
 
   /** True while the race-start cutscene is playing. */
@@ -414,6 +429,7 @@ export class Game {
     const model = buildCar({ look: kind === "pb" ? this.look : undefined, ghost: kind, label });
     model.root.visible = false;
     this.scene.add(model.root);
+    this.prime(model.root);
     const race = newRace(this.race.track);
     const g: Ghost = { inputs, race, splits: check.splits.slice(), finish: check.finishTicks, model, prev: snap(race), cur: snap(race), n: new THREE.Vector3(0, 1, 0) };
     // Catch up with the race if it has already started.
@@ -427,6 +443,7 @@ export class Game {
     const model = buildCar({ look: look ?? undefined, label: name });
     model.root.visible = false;
     this.scene.add(model.root);
+    this.prime(model.root);
     const s0 = snap(this.race);
     this.remotes.set(email, { model, n: new THREE.Vector3(0, 1, 0), race: null, held: 0, at: 0, prev: s0, cur: s0, off: { x: 0, y: 0, z: 0, yaw: 0 } });
   }
@@ -1211,7 +1228,8 @@ export class Game {
     // Few, big steps; and once it has had to step down twice, it stays put.
     // Resolution first (no shaders rebuild, so no hitch), then on Auto a lighter level.
     if (this.frameMs > 21 && r > this.minRatio) { r = Math.max(this.minRatio, r - 0.25); this.lowered++; }
-    else if (this.frameMs < 12 && r < this.maxRatio && this.lowered < 2) r = Math.min(this.maxRatio, r + 0.25);
+    // Raising only before the start: every change reallocates the picture buffers (a hitch).
+    else if (this.frameMs < 12 && r < this.maxRatio && this.lowered < 2 && this.race.phase !== "running") r = Math.min(this.maxRatio, r + 0.25);
     if (r !== this.ratio) {
       this.ratio = r;
       this.renderer.setPixelRatio(r);
@@ -1234,6 +1252,8 @@ export class Game {
       const mm = (o as THREE.Mesh).material;
       if (!mm) return;
       for (const m of Array.isArray(mm) ? mm : [mm]) {
+        // See-through and two-sided: drawn in one pass (two passes switch shader programs twice per frame).
+        if (m.transparent && m.side === THREE.DoubleSide) m.forceSinglePass = true;
         const sm = m as THREE.MeshPhysicalMaterial;
         if (!sm.isMeshStandardMaterial) continue;
         const g = (sm.userData.gloss ??= { r: sm.roughness, m: sm.metalness, e: sm.envMapIntensity, cr: sm.clearcoatRoughness ?? 0, flat: false }) as { r: number; m: number; e: number; cr: number; flat: boolean };
