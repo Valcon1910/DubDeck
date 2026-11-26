@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createParty, inviteToParty, joinParty, parsePartyInvite, getParty, useParty } from "../../hexdrift/partyhub";
 import { Avatar } from "../Settings";
 import { squareAvatar } from "../account";
 import {
@@ -424,6 +425,7 @@ function Thread({ c, onInfo }: { c: Conversation; onInfo: () => void }) {
                         )}
                         {m.attachments.length > 0 && <Files files={m.attachments} urls={urls.get} />}
                         {m.body && <p className="vx-msg-text"><Linkify text={m.body} /></p>}
+                        {m.body && parsePartyInvite(m.body) && <PartyInvite code={parsePartyInvite(m.body)!} />}
                       </>
                     )}
                     <span className="vx-msg-time">{m.edited_at && !m.deleted ? "edited · " : ""}{clock(m.created_at)}</span>
@@ -533,6 +535,7 @@ function Composer({ c, reply, editing, onDone, onTyping }: { c: Conversation; re
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [plus, setPlus] = useState(false);
+  const party = useParty();
   const pick = useRef<HTMLInputElement>(null);
   const box = useRef<HTMLTextAreaElement>(null);
   const draftKey = `vortex.chatDraft.${c.id}`;
@@ -614,8 +617,8 @@ function Composer({ c, reply, editing, onDone, onTyping }: { c: Conversation; re
               {plus && (
                 <span className="vx-plus-menu" role="menu">
                   <button type="button" role="menuitem" onClick={() => { setPlus(false); pick.current?.click(); }}>📎 Upload file</button>
-                  <button type="button" role="menuitem" disabled title="Coming soon">🏁 Create Hexdrift party</button>
-                  <button type="button" role="menuitem" disabled title="Coming soon">✉️ Invite to party</button>
+                  <button type="button" role="menuitem" onClick={() => { setPlus(false); void createParty().then((code) => inviteToParty(code, c.id)).then(() => { location.hash = "#/hexdrift/party/" + getParty(); }).catch((e) => setErr(String(e?.message ?? e))); }}>🏁 Create Hexdrift party</button>
+                  <button type="button" role="menuitem" disabled={!party} title={party ? "Send your party link here" : "Create a party first"} onClick={() => { setPlus(false); if (party) void inviteToParty(party, c.id).catch((e) => setErr(String(e?.message ?? e))); }}>✉️ Invite to party</button>
                 </span>
               )}
             </span>
@@ -920,4 +923,15 @@ function lastSeen(p: Profile | undefined) {
   if (mins < 60) return `Active ${Math.round(mins)} min ago`;
   if (mins < 60 * 24) return `Active ${Math.round(mins / 60)} h ago`;
   return `Active ${new Date(p.last_seen).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+}
+
+function PartyInvite({ code }: { code: string }) {
+  const party = useParty();
+  const here = party === code;
+  return (
+    <span className="vx-party-invite">
+      <span>🏁 Hexdrift party <b>{code}</b></span>
+      <button type="button" className="vx-btn" disabled={here} onClick={() => { try { joinParty(code); } catch { /* bad code */ } }}>{here ? "Joined" : "Join"}</button>
+    </span>
+  );
 }
