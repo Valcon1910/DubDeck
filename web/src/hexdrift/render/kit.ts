@@ -327,8 +327,8 @@ const NEAR = 70, MID = 240, FAR_SMALL = 320;
 export interface KitDetail { near: number; mid: number; small: number; keep: number; cone: number; traffic: number; shadows: boolean }
 export const KIT_DETAIL: Record<"low" | "medium" | "high", KitDetail> = {
   high: { near: 1, mid: 1, small: 1, keep: 1, cone: 0.2, traffic: 3, shadows: true },
-  medium: { near: 0.65, mid: 0.7, small: 0.7, keep: 0.6, cone: 0.45, traffic: 2, shadows: false },
-  low: { near: 0.35, mid: 0.4, small: 0.4, keep: 0.3, cone: 0.6, traffic: 1, shadows: false },
+  medium: { near: 0.65, mid: 0.7, small: 0.7, keep: 0.5, cone: 0.45, traffic: 2, shadows: false },
+  low: { near: 0.35, mid: 0.4, small: 0.4, keep: 0, cone: 0.6, traffic: 1, shadows: false },
 };
 let detail: KitDetail = KIT_DETAIL.high;
 /** The kit's detail for the graphics level (takes effect on the next view update). */
@@ -337,6 +337,8 @@ export function setKitDetail(level: "low" | "medium" | "high") { detail = KIT_DE
 export interface KitView {
   /** Moves traffic and picks what to draw for this camera. */
   update(dt: number, cam: THREE.Camera): void;
+  /** Settles once the kit's models are in (or failed to load). */
+  ready: Promise<unknown>;
   dispose(): void;
 }
 
@@ -347,18 +349,19 @@ export function buildKit(group: THREE.Group, road: Road, night: boolean, sky: TH
   const mats: THREE.Material[] = [];
   let live: ((dt: number, cam: THREE.Camera) => void) | null = null;
   let gone = false;
-  if (!c) return { update() {}, dispose() {} };
+  if (!c) return { update() {}, ready: Promise.resolve(), dispose() {} };
 
   const sg = streets(c, road, night);
   if (sg) {
-    const sm = new THREE.MeshLambertMaterial({ vertexColors: true });
+    // Side streets give way to the main road where they meet (depth offset, no flicker).
+    const sm = new THREE.MeshLambertMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 3 });
     geos.push(sg); mats.push(sm);
     const sm2 = new THREE.Mesh(sg, sm);
     sm2.name = "road"; // flat: takes shadows, casts none
     group.add(sm2);
   }
 
-  loadKit(road.dress!.kit).then((kit) => {
+  const ready = loadKit(road.dress!.kit).then((kit) => {
     if (!kit || gone) return;
     const mat = kitMaterial(time, night ? 1 : 0.3, sky);
     mats.push(mat);
@@ -366,7 +369,7 @@ export function buildKit(group: THREE.Group, road: Road, night: boolean, sky: TH
     const e = new THREE.Euler();
 
     // ── Still objects ──
-    interface Set { near: THREE.InstancedMesh; far: THREE.InstancedMesh; block: THREE.InstancedMesh | null; mats: Float32Array; xz: Float32Array; big: boolean; r: number; boats?: Placed[] }
+    interface Set { near: THREE.InstancedMesh; far: THREE.InstancedMesh; block: THREE.InstancedMesh | null; mats: Float32Array; xz: Float32Array; big: boolean; core: boolean; r: number; boats?: Placed[] }
     const sets: Set[] = [];
     const byObj = new Map<string, Placed[]>();
     for (const p of c.placed) { const l = byObj.get(p.o); if (l) l.push(p); else byObj.set(p.o, [p]); }
@@ -391,7 +394,10 @@ export function buildKit(group: THREE.Group, road: Road, night: boolean, sky: TH
         im.receiveShadow = true; im.castShadow = im === near;
         group.add(im);
       }
-      sets.push({ near, far, block, mats: M, xz: XZ, big, r: g.r, boats: BOATS[o] ? list : undefined });
+      // Buildings, stands and the road's guidance stay on every level; the rest is decoration.
+      const kd = c.kit[o];
+      const core = big || (kd ? kd.a * kd.b >= 12 : false) || /closure|arrow|chevron|sign/.test(o);
+      sets.push({ near, far, block, mats: M, xz: XZ, big, core, r: g.r, boats: BOATS[o] ? list : undefined });
     }
     const boatSets = sets.filter((s) => s.boats);
     // Each boat's circle: the widest that stays on deep water.
@@ -468,9 +474,9 @@ export function buildKit(group: THREE.Group, road: Road, night: boolean, sky: TH
         const fs = FAR_SMALL * D.small;
         const lim = s.big ? far2 : fs * fs;
         const nearD = NEAR * D.near, midD = MID * D.mid;
-        // Lighter levels thin the small things out (the same ones each time).
-        const every = s.big || s.r >= 2.5 || D.keep >= 1 ? 1 : Math.max(1, Math.round(1 / D.keep));
-        for (let i = 0; i < n; i++) {
+        // Lighter levels thin the decoration out (the same ones each time); low has none, only buildings.
+        const every = s.core || D.keep >= 1 ? 1 : D.keep <= 0 ? Infinity : Math.max(1, Math.round(1 / D.keep));
+        for (let i = 0; i < n && every < Infinity; i++) {
           if (every > 1 && i % every) continue;
           const dx = s.xz[i * 2] - px, dz = s.xz[i * 2 + 1] - pz;
           const d2 = dx * dx + dz * dz;
@@ -572,6 +578,7 @@ export function buildKit(group: THREE.Group, road: Road, night: boolean, sky: TH
 
   return {
     update(dt, cam) { live?.(dt, cam); },
+    ready: ready.catch(() => {}),
     dispose() {
       gone = true;
       for (const g of geos) g.dispose();

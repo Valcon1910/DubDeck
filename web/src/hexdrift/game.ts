@@ -11,6 +11,7 @@ import { buildWorld, GROUND, type World } from "./render/world.ts";
 import { LOOKS, setupScene } from "./render/roadworld.ts";
 import { lookWith } from "./render/env.ts";
 import { setKitDetail } from "./render/kit.ts";
+import { setPropDetail } from "./render/props.ts";
 import { GRAIN, setGrainLevel } from "./render/textures.ts";
 import { GFX, gradeFor, guessGfx, Post, SunShadow, type Gfx } from "./render/post.ts";
 import { Particles } from "./render/particles.ts";
@@ -18,7 +19,7 @@ import { Skids } from "./render/skids.ts";
 import { Weather, WEATHER } from "./render/weather.ts";
 import type { Smash } from "./render/props.ts";
 import { NO_GROUND, terrainAt } from "./sim/terrain.ts";
-import { blobShadow, buildCar, type CarModel } from "./render/car.ts";
+import { blobShadow, buildCar, loadBody, loadWheels, type CarModel } from "./render/car.ts";
 import type { Controls } from "./input.ts";
 import { applyCar, decodeCar, encodeCar, stepRemote } from "./netcar.ts";
 import { dcos, dsin } from "./sim/math.ts";
@@ -134,6 +135,8 @@ export class Game {
   private cam = 0;
   private camYaw: number;
   private camPos = new THREE.Vector3();
+  private camY = 0;
+  private hitShakeAt = 0;
   private camLook = new THREE.Vector3();
   /** How far the camera has turned to follow a loop (0 to 1), and the loop's way forward. */
   private loopK = 0;
@@ -224,7 +227,7 @@ export class Game {
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.setPixelRatio(this.ratio);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.camera = new THREE.PerspectiveCamera(CAMS[this.cam].fov, 1, 0.5, 2600);
+    this.camera = new THREE.PerspectiveCamera(CAMS[this.cam].fov, 1, 0.8, 2600);
 
     // Studio maps can set their own time of day, fog and weather.
     const E = track.road ? lookWith(map.biome, LOOKS[map.biome] ?? LOOKS.miami!, biome, map.env) : null;
@@ -239,6 +242,8 @@ export class Game {
     this.scene.add(this.world.group);
     this.shadeWorld();
     this.car = buildCar({ look, mapAccent: biome.accent, env: biome });
+    // The race waits for the car's real body and wheels too.
+    void Promise.all([loadBody(itemOf("body", look.body)?.id ?? look.body), loadWheels()]).finally(() => { this.carIn = true; });
     
     this.scene.add(this.car.root);
     this.scene.add(this.shadow.mesh);
@@ -283,6 +288,41 @@ export class Game {
     });
   }
   private building = true;
+  /** Until the whole world, the car and the shaders are ready: nothing moves or draws (see loadStep). */
+  private loading = true;
+  private carIn = false;
+  private warmed = false;
+  /** 0..1 while loading; 1 once ready. */
+  loadProgress = 0;
+  private loadedNow!: () => void;
+  /** Settles once everything is loaded and the first picture can be drawn. */
+  readonly loaded = new Promise<void>((r) => { this.loadedNow = r; });
+
+  /** One slice of loading (about 14 ms a frame, so the loading screen stays smooth). */
+  private loadStep() {
+    const end = performance.now() + 14;
+    if (this.building && this.world.more) {
+      const n = this.world.group.children.length;
+      do { this.building = this.world.more(); } while (this.building && performance.now() < end);
+      if (this.world.group.children.length !== n) this.shadeWorld();
+    } else this.building = false;
+    const w = this.world.progress?.() ?? 1;
+    this.loadProgress = Math.min(0.96, w * 0.86 + (this.carIn ? 0.1 : 0));
+    if (w < 1 || this.building || !this.carIn) return;
+    if (!this.warmed) {
+      this.matte();
+      setPropDetail(this.world.group, this.gfxLevel);
+      // Compile every shader now (and draw one frame for the shadow and finishing passes), not mid-race.
+      this.warmed = true;
+      this.loadProgress = 0.97;
+      this.renderer.compile(this.scene, this.camera);
+      this.draw(this.introT >= 0 ? 0 : 1, 0);
+      return;
+    }
+    this.loading = false;
+    this.loadProgress = 1;
+    this.loadedNow();
+  }
 
   /** True while the race-start cutscene is playing. */
   get inIntro() { return this.introT >= 0; }
@@ -510,8 +550,9 @@ export class Game {
 
   /** Other cars and ghosts: full detail close by, plainer further out, gone behind you or far off. */
   private carLod(m: CarModel): boolean {
-    const p = m.root.position, c = this.camera.position;
-    const dx = p.x - c.x, dz = p.z - c.z, d = Math.hypot(dx, dz);
+    // Placed by its matrix (see pose), not its position.
+    const e = m.root.matrix.elements, c = this.camera.position;
+    const dx = e[12] - c.x, dz = e[14] - c.z, d = Math.hypot(dx, dz);
     const [full, lite, far] = CAR_LOD[this.gfxLevel];
     if (d > far || (d > 15 && dx * this.view.x + dz * this.view.z < -0.3 * d)) return false;
     m.setDetail(d < full ? 0 : d < lite ? 1 : 2);
@@ -652,12 +693,7 @@ export class Game {
     this.last = now;
     this.frameMs += ((dt * 1000) - this.frameMs) * 0.05;
     this.controls.pollPad();
-    // One more piece of the world per frame until it's all in.
-    if (this.building && this.world.more) {
-      const n = this.world.group.children.length;
-      this.building = this.world.more();
-      if (this.world.group.children.length !== n) this.shadeWorld();
-    } else this.building = false;
+    if (this.loading) { this.loadStep(); return; }
 
     if (!this.paused && this.introT >= 0) {
       if (this.introT === 0) this.setIntroStage("fly");
@@ -777,6 +813,8 @@ export class Game {
       (this.shadow.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 1 - (y - gh) / 25) * (this.post.shadowSize ? 0.55 : 1);
     } else this.shadow.mesh.visible = false;
     // The car's Blender body arrives after loading (and changes in the garage): keep it casting.
+    // New cars (other players, ghosts, bodies that just loaded) get the level's finish too.
+    if (this.castTick === 15) this.matte();
     if ((this.castTick = (this.castTick + 1) % 30) === 0 && this.post.shadowSize) {
       this.car.root.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh && !m.castShadow && !(m.material as THREE.Material).transparent) { m.castShadow = true; m.receiveShadow = true; } });
     }
@@ -789,16 +827,22 @@ export class Game {
     let dy = yaw - this.camYaw;
     while (dy > Math.PI) dy -= Math.PI * 2;
     while (dy < -Math.PI) dy += Math.PI * 2;
-    this.camYaw += dy * Math.min(1, dt * (this.cam === 2 ? 30 : 7));
+    // Smoothing that's the same at any frame rate.
+    const ease = (rate: number) => 1 - Math.exp(-dt * rate);
+    this.camYaw += dy * ease(this.cam === 2 ? 30 : 7);
     if (jump) this.camYaw = yaw;
+    // The car's height, smoothed: bumps in the road don't shake the view (jumps and ramps still follow).
+    const yGap = y - this.camY;
+    this.camY = !this.camInit || jump || Math.abs(yGap) > 6 ? y : this.camY + yGap * ease(this.cam === 2 ? 25 : 9);
+    const cyy = this.cam === 2 ? y : this.camY;
     const fx = Math.sin(this.camYaw), fz = Math.cos(this.camYaw);
     const sp = Math.abs(car.speed);
     const dist = c.dist + (this.cam === 2 ? 0 : sp * 0.025);
-    const want = this.vy.set(x - fx * dist, y + c.height, z - fz * dist);
+    const want = this.vy.set(x - fx * dist, cyy + c.height, z - fz * dist);
     if (!this.camInit || jump) { this.camPos.copy(want); this.camInit = true; }
-    else this.camPos.lerp(want, Math.min(1, dt * (this.cam === 2 ? 40 : 12)));
+    else this.camPos.lerp(want, ease(this.cam === 2 ? 40 : 12));
     if (this.cam === 2) this.camPos.copy(want);
-    this.camLook.set(x + fx * 6, y + c.look, z + fz * 6);
+    this.camLook.set(x + fx * 6, cyy + c.look, z + fz * 6);
     // Round a loop: behind the car along the loop and above it toward the loop's middle,
     // turning with it, so the camera stays inside the loop instead of cutting through it.
     const inLoop = this.cur.loop && !jump;
@@ -829,13 +873,13 @@ export class Game {
     if (this.introT < 0) {
       // Never inside a grandstand, a tower or a rock: rise over it instead.
       const need = this.camClear(this.camPos);
-      this.camLift += (need - this.camLift) * Math.min(1, dt * (need > this.camLift ? 10 : 2));
+      this.camLift += (need - this.camLift) * ease(need > this.camLift ? 6 : 1.5);
       this.camera.position.y += this.camLift;
       if (this.shake > 0.002) {
-        // A short, sharp shake for hits and hard landings.
-        const k = this.shake;
-        this.camera.position.x += (Math.random() - 0.5) * k; this.camera.position.y += (Math.random() - 0.5) * k * 0.7; this.camera.position.z += (Math.random() - 0.5) * k;
-        this.tmpV.x += (Math.random() - 0.5) * k * 0.4; this.tmpV.y += (Math.random() - 0.5) * k * 0.4;
+        // A short shake for hits and hard landings: a quick smooth wobble, not frame-to-frame noise.
+        const k = this.shake * 0.5, w = performance.now() / 1000;
+        this.camera.position.x += Math.sin(w * 31) * k; this.camera.position.y += Math.sin(w * 37 + 1.3) * k * 0.7; this.camera.position.z += Math.sin(w * 29 + 2.1) * k;
+        this.tmpV.y += Math.sin(w * 23 + 0.7) * k * 0.3;
       }
     }
     this.shake *= Math.exp(-dt * 7);
@@ -844,7 +888,7 @@ export class Game {
     const tall = Math.max(0, 1.3 - this.camera.aspect) * 30;
     const fov = Math.min(100, c.fov + tall + Math.min(14, sp * 0.16) + (car.boosting > 0 ? 6 : 0));
     if (Math.abs(this.camera.fov - fov) > 0.05) {
-      this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 4);
+      this.camera.fov += (fov - this.camera.fov) * ease(4);
       this.camera.updateProjectionMatrix();
     }
     const sky = this.world.group.getObjectByName("sky");
@@ -914,8 +958,9 @@ export class Game {
       for (let i = 0; i < 6 + k * 26; i++) {
         this.glow.emit({ x: x + rx * side * 1.0 + fx * (Math.random() * 3 - 1), y: y + 0.5, z: z + rz * side * 1.0 + fz * (Math.random() * 3 - 1), vx: car.vx * 0.4 + rx * side * 4, vy: 3 + Math.random() * 5, vz: car.vz * 0.4 + rz * side * 4, spread: 9, color: Math.random() < 0.6 ? "#ffcf6a" : "#ff7a2a", size: 0.16, life: 0.45 + Math.random() * 0.3, gravity: 22, drag: 1 });
       }
-      this.shake = Math.max(this.shake, 0.25 + k * 0.6);
       const now = performance.now();
+      // Scraping along a wall hits every step: one shake, then only for a fresh, harder knock.
+      if (now - this.hitShakeAt > 400) { this.shake = Math.max(this.shake, 0.2 + k * 0.5); this.hitShakeAt = now; }
       if (now - this.hitSoundAt > 140) { play("impact", k); this.hitSoundAt = now; }
     }
     // Hard landings: a puff of whatever is underfoot.
@@ -1172,8 +1217,30 @@ export class Game {
 
   get graphics(): Gfx { return this.post.gfx; }
 
+  /** Medium and low: no shine or reflections on any surface (high keeps them). Only values change: no shaders recompile. */
+  private matte() {
+    const flat = this.gfxLevel !== "high";
+    this.scene.traverse((o) => {
+      const mm = (o as THREE.Mesh).material;
+      if (!mm) return;
+      for (const m of Array.isArray(mm) ? mm : [mm]) {
+        const sm = m as THREE.MeshPhysicalMaterial;
+        if (!sm.isMeshStandardMaterial) continue;
+        const g = (sm.userData.gloss ??= { r: sm.roughness, m: sm.metalness, e: sm.envMapIntensity, cr: sm.clearcoatRoughness ?? 0, flat: false }) as { r: number; m: number; e: number; cr: number; flat: boolean };
+        if (g.flat === flat) continue;
+        g.flat = flat;
+        sm.roughness = flat ? 1 : g.r;
+        sm.metalness = flat ? 0 : g.m;
+        sm.envMapIntensity = flat ? 0 : g.e;
+        if (sm.isMeshPhysicalMaterial) sm.clearcoatRoughness = flat ? 1 : g.cr;
+      }
+    });
+  }
+
   private applyGfx(level: Gfx) {
     this.gfxLevel = level;
+    this.matte();
+    setPropDetail(this.world.group, level);
     this.post.setLevel(level);
     this.sun.setLevel(this.post.shadowSize);
     // Fewer small things and plainer versions further in on lighter levels.

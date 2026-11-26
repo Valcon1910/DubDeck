@@ -205,7 +205,8 @@ export class PartySession {
     }
     g.setPaused(!st.go);
     g.onNet = (packet) => this.room.sendCar(packet);
-    this.room.send({ k: "loaded", id: st.id });
+    // Ready once everything's loaded (the host waits for everyone, then says go).
+    void g.loaded.then(() => { const cur = this.stage; if (this.game === g && cur.k === "race" && cur.id === st.id) this.room.send({ k: "loaded", id: st.id }); });
     const t = setInterval(() => {
       const cur = this.stage;
       if (cur.k !== "race") return;

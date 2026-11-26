@@ -25,7 +25,7 @@ export function clampUnder(road: Road, x: number, z: number, h: number): number 
     const l = lat < -hw ? -hw : lat > hw ? hw : lat;
     const y = sg.ay + (sg.by - sg.ay) * t + bk * l;
     // Under the road surface; beside it, sloping down to meet the land.
-    const under = y - (sg.flags & FLUSH ? 0.06 : 0.2);
+    const under = y - (sg.flags & FLUSH ? 0.12 : 0.25);
     if (h > under) h = under;
   }
   return h;
