@@ -39,12 +39,19 @@ export function gradeFor(id: string, look?: Look): Grade {
   return look ? GRADES[id] ?? TILE : TILE;
 }
 
-/** What each level does. */
-const LEVELS: Record<Gfx, { samples: number; shadow: number; mips: number; first: number; rays: number; fxaa: boolean }> = {
-  low: { samples: 0, shadow: 0, mips: 3, first: 4, rays: 0, fxaa: true },
-  medium: { samples: 4, shadow: 1024, mips: 4, first: 2, rays: 20, fxaa: false },
-  high: { samples: 4, shadow: 2048, mips: 5, first: 2, rays: 32, fxaa: false },
+/**
+ * What each level does. The biggest cost on phones is the number of pixels, so
+ * each level also caps the resolution (pixels per screen point): high-density
+ * phone screens would otherwise draw 4x the pixels on every level. Low also
+ * draws into a lighter 8-bit buffer.
+ */
+const LEVELS: Record<Gfx, { samples: number; shadow: number; mips: number; first: number; rays: number; fxaa: boolean; ratio: number; floor: number; ldr: boolean }> = {
+  low: { samples: 0, shadow: 0, mips: 3, first: 4, rays: 0, fxaa: true, ratio: 1, floor: 0.7, ldr: true },
+  medium: { samples: 0, shadow: 1024, mips: 4, first: 2, rays: 16, fxaa: true, ratio: 1.5, floor: 0.85, ldr: false },
+  high: { samples: 4, shadow: 2048, mips: 5, first: 2, rays: 32, fxaa: false, ratio: 2, floor: 1, ldr: false },
 };
+/** The level's resolution: its cap and the lowest it may drop to when frames get slow. */
+export const ratioOf = (level: Gfx) => ({ max: LEVELS[level].ratio, min: LEVELS[level].floor });
 
 /** A first guess at what a device can run (frame timing adjusts it later). */
 export function guessGfx(): Gfx {
@@ -272,7 +279,6 @@ export class Post {
     this.sunCol = sunCol.clone();
     const ext = renderer.extensions;
     this.type = ext.has("EXT_color_buffer_float") || ext.has("EXT_color_buffer_half_float") ? THREE.HalfFloatType : THREE.UnsignedByteType;
-    if (this.type === THREE.UnsignedByteType) grade.threshold *= 0.8;
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3));
     this.quad = new THREE.Mesh(g);
@@ -305,13 +311,16 @@ export class Post {
     for (const m of this.mips) m.dispose();
     this.raysMat?.dispose(); this.fin?.dispose();
     const w = this.w, h = this.h;
-    this.scene = new THREE.WebGLRenderTarget(w, h, { type: this.type, samples: L.samples, depthTexture: new THREE.DepthTexture(w, h) });
+    const type = L.ldr ? THREE.UnsignedByteType : this.type;
+    // 8-bit buffers can't go past white: bloom starts a little lower.
+    this.pre.uniforms.uThreshold.value = this.grade.threshold * (type === THREE.UnsignedByteType ? 0.8 : 1);
+    this.scene = new THREE.WebGLRenderTarget(w, h, { type, samples: L.samples, depthTexture: new THREE.DepthTexture(w, h) });
     this.rays = new THREE.WebGLRenderTarget(Math.max(1, w >> 2), Math.max(1, h >> 2), { type: THREE.UnsignedByteType, depthBuffer: false });
     this.raysSoft = this.rays.clone();
     this.mips = [];
     for (let i = 0; i < L.mips; i++) {
       const k = L.first << i;
-      this.mips.push(new THREE.WebGLRenderTarget(Math.max(1, Math.round(w / k)), Math.max(1, Math.round(h / k)), { type: this.type, depthBuffer: false }));
+      this.mips.push(new THREE.WebGLRenderTarget(Math.max(1, Math.round(w / k)), Math.max(1, Math.round(h / k)), { type, depthBuffer: false }));
     }
     this.raysMat = shader(RAYS, { tDepth: { value: null }, uSun: { value: new THREE.Vector2() }, uAspect: { value: 1 } }, { SAMPLES: Math.max(1, L.rays) });
     const G = this.grade;

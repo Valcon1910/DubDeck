@@ -13,7 +13,7 @@ import { lookWith } from "./render/env.ts";
 import { setKitDetail } from "./render/kit.ts";
 import { setPropDetail } from "./render/props.ts";
 import { GRAIN, setGrainLevel } from "./render/textures.ts";
-import { GFX, gradeFor, guessGfx, Post, SunShadow, type Gfx } from "./render/post.ts";
+import { GFX, gradeFor, guessGfx, Post, ratioOf, SunShadow, type Gfx } from "./render/post.ts";
 import { Particles } from "./render/particles.ts";
 import { Skids } from "./render/skids.ts";
 import { Weather, WEATHER } from "./render/weather.ts";
@@ -150,6 +150,8 @@ export class Game {
   private minRatio: number;
   private lowered = 0;
   private frameMs = 16;
+  /** The screen's refresh interval (ms), measured. */
+  private refresh = 16.7;
   private post: Post;
   private sun: SunShadow;
   private gfxAuto = true;
@@ -357,8 +359,15 @@ export class Game {
   start() {
     if (this.raf) return;
     this.last = performance.now();
+    let prev = this.last, odd = false;
     const loop = (now: number) => {
       this.raf = requestAnimationFrame(loop);
+      // 120 Hz screens: medium and low draw every other refresh, an even 60 fps
+      // (half the work, and steadier than missing every few 120 Hz frames).
+      this.refresh += (Math.min(50, now - prev) - this.refresh) * 0.1;
+      prev = now;
+      odd = !odd;
+      if (odd && this.refresh < 10 && this.gfxLevel !== "high" && !this.loading) return;
       this.frame(now);
     };
     this.raf = requestAnimationFrame(loop);
@@ -1198,9 +1207,10 @@ export class Game {
     let r = this.ratio;
     // Slow frames: first a lighter graphics level (when it's on Auto), then fewer pixels.
     const lv = GFX.indexOf(this.post.gfx);
-    if (this.frameMs > 21 && this.gfxAuto && lv > 0) { this.applyGfx(GFX[lv - 1]); this.frameMs = 16; return; }
+    if (this.frameMs > 21 && this.gfxAuto && lv > 0 && this.ratio <= this.minRatio) { this.applyGfx(GFX[lv - 1], true); this.frameMs = 16; return; }
     // Few, big steps; and once it has had to step down twice, it stays put.
-    if (this.frameMs > 21 && r > this.minRatio) { r = Math.max(this.minRatio, r - 0.35); this.lowered++; }
+    // Resolution first (no shaders rebuild, so no hitch), then on Auto a lighter level.
+    if (this.frameMs > 21 && r > this.minRatio) { r = Math.max(this.minRatio, r - 0.25); this.lowered++; }
     else if (this.frameMs < 12 && r < this.maxRatio && this.lowered < 2) r = Math.min(this.maxRatio, r + 0.25);
     if (r !== this.ratio) {
       this.ratio = r;
@@ -1237,10 +1247,18 @@ export class Game {
     });
   }
 
-  private applyGfx(level: Gfx) {
+  private applyGfx(level: Gfx, stepDown = false) {
     this.gfxLevel = level;
     this.matte();
     setPropDetail(this.world.group, level);
+    // Each level has its own resolution.
+    const R = ratioOf(level), dpr = window.devicePixelRatio || 1;
+    this.maxRatio = Math.min(dpr, R.max);
+    this.minRatio = Math.min(this.maxRatio, R.min);
+    this.lowered = 0;
+    // Stepping down on its own keeps the resolution it had already dropped to.
+    const want = stepDown ? Math.min(this.ratio, this.maxRatio) : this.maxRatio;
+    if (this.ratio !== want) { this.ratio = want; this.renderer.setPixelRatio(this.ratio); this.resize(); }
     this.post.setLevel(level);
     this.sun.setLevel(this.post.shadowSize);
     // Fewer small things and plainer versions further in on lighter levels.

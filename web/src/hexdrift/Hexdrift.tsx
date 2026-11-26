@@ -698,6 +698,7 @@ function Play({ map, custom, home, practice, party }: { map: MapDef; custom?: Cu
   const [best, setBest] = useState<Best | null>(() => custom ? myTime() : bestTimeNow(map.id));
   const [error, setError] = useState("");
   const gaming = useGaming();
+  useNoSelect();
   const { sb, me, profiles, sync } = useOnlineRecords();
   const syncRef = useRef(sync);
   syncRef.current = sync;
@@ -1312,4 +1313,26 @@ function Garage() {
       </ul>
     </div>
   );
+}
+
+/**
+ * While a map is on screen nothing on the page can be selected or long-pressed
+ * (taps and drags steer, they shouldn't highlight text or open a menu). Typing
+ * in a text box still works.
+ */
+function useNoSelect() {
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.hxPlaying = "on";
+    window.getSelection()?.removeAllRanges();
+    const typing = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
+    const stop = (e: Event) => { if (!typing(e.target)) e.preventDefault(); };
+    document.addEventListener("selectstart", stop);
+    document.addEventListener("contextmenu", stop);
+    return () => {
+      delete root.dataset.hxPlaying;
+      document.removeEventListener("selectstart", stop);
+      document.removeEventListener("contextmenu", stop);
+    };
+  }, []);
 }

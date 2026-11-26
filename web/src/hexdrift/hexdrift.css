@@ -4,8 +4,11 @@
   background: #0d0b1f; color: #f2f3ff;
   font-family: "Space Grotesk Variable", system-ui, sans-serif;
   overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none;
-  -webkit-tap-highlight-color: transparent;
+  -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none;
 }
+/* While playing, nothing anywhere on the page highlights (party card and pop-ups included). */
+html[data-hx-playing="on"], html[data-hx-playing="on"] * { -webkit-user-select: none !important; user-select: none !important; -webkit-touch-callout: none !important; }
+html[data-hx-playing="on"] input, html[data-hx-playing="on"] textarea, html[data-hx-playing="on"] [contenteditable="true"] { -webkit-user-select: text !important; user-select: text !important; }
 .hx button, .hx a { font: inherit; color: inherit; }
 .hx-dim { opacity: 0.65; }
 
