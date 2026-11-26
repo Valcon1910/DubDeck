@@ -8,7 +8,7 @@ import { GridEditor } from "./gridedit.tsx";
 import { Studio } from "./studio.tsx";
 import { Community, CommunityMap } from "./communityview.tsx";
 import { getMap, isCommunity, mapDefFrom, markPlayed } from "./community.ts";
-import { profileHref } from "../vortex/profileLink.ts";
+import { emailFrom, pidOf, playerHref, profileHref } from "../vortex/profileLink.ts";
 import { authorOf, bestInputs, finishOn, mapDefOf, myBest, myMap, savePicture } from "./mymaps.ts";
 import { medalsOf, type CustomMap } from "./sim/custom.ts";
 import { formatTime } from "./sim/race.ts";
@@ -42,7 +42,7 @@ type View =
   | { kind: "map"; map: MapDef }
   | { kind: "play"; map: MapDef }
   | { kind: "records"; map: MapDef }
-  | { kind: "player"; email: string }
+  | { kind: "player"; id: string }
   | { kind: "garage" }
   | { kind: "mymaps" }
   | { kind: "edit"; id: string; mode?: string }
@@ -54,7 +54,7 @@ type View =
 
 /**
  * #/hexdrift (title), #/hexdrift/maps, #/hexdrift/map/<map> (its page),
- * #/hexdrift/<map> (race), #/hexdrift/<map>/records, #/hexdrift/player/<email>,
+ * #/hexdrift/<map> (race), #/hexdrift/<map>/records, #/hexdrift/player/<profile id>,
  * #/hexdrift/editor (my maps), #/hexdrift/editor/<id> (editing), #/hexdrift/test/<id> (driving one),
  * #/hexdrift/community, #/hexdrift/c/<id> (a community map), #/hexdrift/c/<id>/race, #/hexdrift/c/<id>/records
  */
@@ -67,7 +67,7 @@ function readView(): View {
   if (parts[1] === "community") return { kind: "community" };
   if (parts[1] === "c" && /^c[0-9a-z]{8}$/.test(parts[2] ?? "")) return parts[3] === "race" ? { kind: "crace", id: parts[2] } : parts[3] === "records" ? { kind: "crecords", id: parts[2] } : { kind: "cmap", id: parts[2] };
   if (parts[1] === "map") { const m = MAPS.find((x) => x.id === parts[2]); return m ? { kind: "map", map: m } : { kind: "maps" }; }
-  if (parts[1] === "player" && parts[2]) return { kind: "player", email: decodeURIComponent(parts[2]).toLowerCase() };
+  if (parts[1] === "player" && parts[2]) return { kind: "player", id: parts[2] };
   // Maps still being built open by address on the dev server only.
   const map = (import.meta.env.DEV ? ALL_MAPS : MAPS).find((m) => m.id === parts[1]);
   if (!map) return { kind: "menu" };
@@ -146,7 +146,7 @@ export function Hexdrift() {
         <div className="hx-view" key={viewKey}>
           {view.kind === "play" ? <Play map={view.map} />
             : view.kind === "records" ? <Records map={view.map} />
-            : view.kind === "player" ? <Player email={view.email} />
+            : view.kind === "player" ? <Player id={view.id} />
             : view.kind === "garage" ? <Garage />
             : view.kind === "mymaps" ? <MyMaps />
             : view.kind === "edit" ? <EditRoute id={view.id} mode={view.mode} sb={sb} me={me} />
@@ -285,7 +285,7 @@ function Title() {
   }, [sb, rev]);
   const pillars: Pillar[] = (leaders ?? []).map((l, i) => ({
     place: i + 1, look: l.look, name: l.email === me ? "You" : nameOf(profiles, l.email), me: l.email === me,
-    href: `#/hexdrift/player/${encodeURIComponent(l.email)}`,
+    href: playerHref(l.email),
     sub: <><IconMedal size={14} />{l.points} pts{l.wrs ? <> · <IconCrown size={13} />{l.wrs}</> : null}</>,
   }));
   return (
@@ -437,7 +437,7 @@ function MapDetail({ map }: { map: MapDef }) {
   const pillars: Pillar[] = sb && top
     ? top.map((e, i) => ({
       place: i + 1, look: e.look ?? (e.email === me ? readLook() : null), name: e.email === me ? "You" : nameOf(profiles, e.email), me: e.email === me,
-      href: `#/hexdrift/player/${encodeURIComponent(e.email)}`, sub: <><MedalIcon m={medalFor(map, e.ticks)} size={12} />{formatTime(e.ticks)}</>,
+      href: playerHref(e.email), sub: <><MedalIcon m={medalFor(map, e.ticks)} size={12} />{formatTime(e.ticks)}</>,
     }))
     : best ? [{ place: 1, look: readLook(), name: "You", me: true, sub: <><MedalIcon m={medal} size={12} />{formatTime(best.t)}</> }] : [];
   return (
@@ -990,7 +990,7 @@ function Records({ map, home, race }: { map: MapDef; home?: string; race?: strin
             <div className="hx-card hx-card-wr">
               <span className="hx-dim"><IconCrown size={14} /> World record</span>
               <strong>{wr ? formatTime(wr.ticks) : "—"}</strong>
-              <span>{wr ? <a href={`#/hexdrift/player/${encodeURIComponent(wr.email)}`}>{wr.email === me ? "You" : nameOf(profiles, wr.email)}</a> : "Nobody yet: be first"}</span>
+              <span>{wr ? <a href={playerHref(wr.email)}>{wr.email === me ? "You" : nameOf(profiles, wr.email)}</a> : "Nobody yet: be first"}</span>
             </div>
             <div className="hx-card">
               <span className="hx-dim">Your best</span>
@@ -1008,7 +1008,7 @@ function Records({ map, home, race }: { map: MapDef; home?: string; race?: strin
               {data.top.map((e, i) => (
                 <li key={e.email} className={e.email === me ? "me" : ""}>
                   <span className="hx-board-rank">{i === 0 ? <IconCrown size={18} /> : i + 1}</span>
-                  <a className="hx-board-who" href={`#/hexdrift/player/${encodeURIComponent(e.email)}`}>
+                  <a className="hx-board-who" href={playerHref(e.email)}>
                     <Avatar p={profiles.get(e.email)} email={e.email} size={28} />{nameOf(profiles, e.email)}{e.email === me && <em> (you)</em>}
                   </a>
                   <MedalIcon m={medalFor(map, e.ticks)} size={14} />
@@ -1025,12 +1025,18 @@ function Records({ map, home, race }: { map: MapDef; home?: string; race?: strin
 }
 
 /** A player's page: their record and rank on every map. */
-function Player({ email }: { email: string }) {
+function Player({ id }: { id: string }) {
   const { sb, me, profiles } = useOnlineRecords();
+  // The link names the member by profile ID (old links: by email), known once the member list is in.
+  const email = useMemo(() => emailFrom(id), [id, profiles]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const pid = email && (id.includes("%40") || id.includes("@")) ? pidOf(email) : undefined;
+    if (pid) history.replaceState(null, "", `#/hexdrift/player/${pid}`);
+  }, [id, email]);
   const [rows, setRows] = useState<{ e: Entry; rank: number; wr: boolean }[] | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
-    if (!sb) return;
+    if (!sb || !email) return;
     let alive = true;
     void (async () => {
       const recs = await playerRecords(sb, email);
@@ -1042,6 +1048,14 @@ function Player({ email }: { email: string }) {
     })().catch((e: unknown) => { if (alive) setError(e instanceof Error ? e.message : "Couldn't load the records"); });
     return () => { alive = false; };
   }, [sb, email]);
+  if (!email) {
+    return (
+      <div className="hx-menu hx-page">
+        <header className="hx-menu-bar"><a className="hx-back" href="#/hexdrift"><IconBack size={18} />Home</a></header>
+        {!sb ? <NeedOnline /> : <p className="hx-dim">{profiles.size ? "There's no player with that link." : "Loading…"}</p>}
+      </div>
+    );
+  }
   const p = profiles.get(email);
   const wrs = rows?.filter((r) => r.wr).length ?? 0;
   return (
