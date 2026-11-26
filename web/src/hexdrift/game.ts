@@ -11,6 +11,7 @@ import { buildWorld, GROUND, type World } from "./render/world.ts";
 import { LOOKS, setupScene } from "./render/roadworld.ts";
 import { lookWith } from "./render/env.ts";
 import { setKitDetail } from "./render/kit.ts";
+import { setPropDetail } from "./render/props.ts";
 import { GRAIN, setGrainLevel } from "./render/textures.ts";
 import { GFX, gradeFor, guessGfx, Post, SunShadow, type Gfx } from "./render/post.ts";
 import { Particles } from "./render/particles.ts";
@@ -309,6 +310,8 @@ export class Game {
     this.loadProgress = Math.min(0.96, w * 0.86 + (this.carIn ? 0.1 : 0));
     if (w < 1 || this.building || !this.carIn) return;
     if (!this.warmed) {
+      this.matte();
+      setPropDetail(this.world.group, this.gfxLevel);
       // Compile every shader now (and draw one frame for the shadow and finishing passes), not mid-race.
       this.warmed = true;
       this.loadProgress = 0.97;
@@ -810,6 +813,8 @@ export class Game {
       (this.shadow.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 1 - (y - gh) / 25) * (this.post.shadowSize ? 0.55 : 1);
     } else this.shadow.mesh.visible = false;
     // The car's Blender body arrives after loading (and changes in the garage): keep it casting.
+    // New cars (other players, ghosts, bodies that just loaded) get the level's finish too.
+    if (this.castTick === 15) this.matte();
     if ((this.castTick = (this.castTick + 1) % 30) === 0 && this.post.shadowSize) {
       this.car.root.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh && !m.castShadow && !(m.material as THREE.Material).transparent) { m.castShadow = true; m.receiveShadow = true; } });
     }
@@ -1212,8 +1217,30 @@ export class Game {
 
   get graphics(): Gfx { return this.post.gfx; }
 
+  /** Medium and low: no shine or reflections on any surface (high keeps them). Only values change: no shaders recompile. */
+  private matte() {
+    const flat = this.gfxLevel !== "high";
+    this.scene.traverse((o) => {
+      const mm = (o as THREE.Mesh).material;
+      if (!mm) return;
+      for (const m of Array.isArray(mm) ? mm : [mm]) {
+        const sm = m as THREE.MeshPhysicalMaterial;
+        if (!sm.isMeshStandardMaterial) continue;
+        const g = (sm.userData.gloss ??= { r: sm.roughness, m: sm.metalness, e: sm.envMapIntensity, cr: sm.clearcoatRoughness ?? 0, flat: false }) as { r: number; m: number; e: number; cr: number; flat: boolean };
+        if (g.flat === flat) continue;
+        g.flat = flat;
+        sm.roughness = flat ? 1 : g.r;
+        sm.metalness = flat ? 0 : g.m;
+        sm.envMapIntensity = flat ? 0 : g.e;
+        if (sm.isMeshPhysicalMaterial) sm.clearcoatRoughness = flat ? 1 : g.cr;
+      }
+    });
+  }
+
   private applyGfx(level: Gfx) {
     this.gfxLevel = level;
+    this.matte();
+    setPropDetail(this.world.group, level);
     this.post.setLevel(level);
     this.sun.setLevel(this.post.shadowSize);
     // Fewer small things and plainer versions further in on lighter levels.

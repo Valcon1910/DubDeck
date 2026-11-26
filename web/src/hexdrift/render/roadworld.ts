@@ -674,7 +674,8 @@ function roadSurface(group: THREE.Group, road: Road, L: Look, geos: THREE.Buffer
         }
         // Boost pads: arrows running forward.
         if (vMark.x < vMark.y && lat > vMark.x && lat < vMark.y) {
-          float chev = fract(sv * 0.2 - al * 0.2 - uTime * 1.8);
+          // Arrows pointing the way you drive (the tip on the middle line, furthest ahead), running forward.
+          float chev = fract(sv * 0.2 + al * 0.2 - uTime * 1.8);
           hxBoost = smoothstep(0.5, 0.56, chev) - smoothstep(0.8, 0.86, chev);
           col = mix(col * 0.55, uBoost * 0.35, 0.4);
           col = mix(col, uBoost, hxBoost);

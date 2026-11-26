@@ -639,6 +639,22 @@ export interface PropsView {
 }
 
 /** Adds every prop of the track to group. */
+const DECO = new Set<SolidKind>(["palm", "pine", "rock", "parked", "pylon", "chalet"]);
+
+/** Decoration by quality level: all of it on high, every other one on medium, none on low. */
+export function setPropDetail(root: THREE.Object3D, level: "low" | "medium" | "high") {
+  root.traverse((o) => {
+    const all = o.userData.deco as Float32Array | undefined;
+    if (!all) return;
+    const im = o as THREE.InstancedMesh;
+    im.visible = level !== "low";
+    const arr = im.instanceMatrix.array as Float32Array;
+    arr.set(all);
+    if (level === "medium") for (let i = 1; i < im.count; i += 2) arr.fill(0, i * 16, i * 16 + 16);
+    im.instanceMatrix.needsUpdate = true;
+  });
+}
+
 export function buildProps(group: THREE.Group, track: Track, biome: Biome, id: BiomeId, geos: G[], mats: THREE.Material[]): PropsView {
   const solids = propsOf(track).list;
   const byKind = new Map<SolidKind, Solid[]>();
@@ -685,6 +701,8 @@ export function buildProps(group: THREE.Group, track: Track, biome: Biome, id: B
       im.setMatrixAt(i, m);
       im.setColorAt(i, c.set(pal ? pal[Math.floor(sd.v * pal.length) % pal.length] : "#ffffff"));
     });
+    // Trees, rocks, parked cars and pylons: thinned out on medium, gone on low (setPropDetail).
+    if (DECO.has(kind)) im.userData.deco = Float32Array.from(im.instanceMatrix.array);
     group.add(im);
   }
 
