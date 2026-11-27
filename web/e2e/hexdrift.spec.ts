@@ -30,7 +30,7 @@ test("Games page opens Hexdrift: title, eleven maps, a map's page, then the race
   await page.getByRole("link", { name: /Hexdrift/ }).click();
   await expect(page).toHaveURL(/#\/hexdrift$/);
   await expect(page.getByRole("heading", { name: "HEXDRIFT" })).toBeVisible();
-  await page.getByRole("link", { name: "Play" }).click();
+  await page.getByRole("link", { name: "Play", exact: true }).click();
   await expect(page.locator(".hx-map")).toHaveCount(11);
   await page.locator(".hx-map", { hasText: "Canyon Rush" }).click();
   await expect(page.getByRole("heading", { name: "Canyon Rush" })).toBeVisible();

@@ -659,3 +659,7 @@ a.hx-pl-name:hover { text-decoration: underline; }
 @keyframes hx-load-flow { to { background-position: -300% 0; } }
 @keyframes hx-load-shine { from { background-position: 150% 0; } to { background-position: -50% 0; } }
 @media (prefers-reduced-motion: reduce) { .hx-load-bar span, .hx-load-bar span::after { animation: none; } }
+/* Choose a map: one group per difficulty, easiest first. */
+.hx-maps-group { max-width: 1180px; margin: 0 auto 26px; }
+.hx-maps-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; margin: 6px 2px 12px; font-size: 20px; font-style: italic; letter-spacing: 0.02em; text-transform: uppercase; }
+.hx-maps-head small { font-size: 14px; font-style: normal; text-transform: none; letter-spacing: 0; opacity: 0.65; font-weight: 400; }

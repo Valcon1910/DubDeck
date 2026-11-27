@@ -172,7 +172,17 @@ export const ALL_MAPS: MapDef[] = [
 ];
 
 /** The maps in the game. */
-export const MAPS: MapDef[] = ALL_MAPS.filter((m) => !m.wip);
+/** Easiest first. */
+export const DIFFICULTIES = ["Beginner", "Medium", "Hard", "Expert"] as const;
+export const DIFFICULTY_NOTES: Record<MapDef["difficulty"], string> = {
+  Beginner: "Wide roads and gentle turns: learn the car.",
+  Medium: "Jumps, slopes and tighter corners.",
+  Hard: "Open drops and narrow lines: one slip costs the run.",
+  Expert: "Everything at once, at full speed.",
+};
+/** The maps in play, easiest first (in their listed order within a difficulty). */
+export const MAPS: MapDef[] = ALL_MAPS.filter((m) => !m.wip)
+  .map((m, i) => ({ m, i })).sort((a, b) => DIFFICULTIES.indexOf(a.m.difficulty) - DIFFICULTIES.indexOf(b.m.difficulty) || a.i - b.i).map((x) => x.m);
 
 const NO_MEDALS = { vortex: 0, gold: 0, silver: 0, bronze: 0 };
 /** Closed circuits for party races (1 to 5 laps). */
