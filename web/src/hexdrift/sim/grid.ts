@@ -52,8 +52,8 @@ export const SHAPES: Record<TileKind, TileShape> = {
   loop: { cells: [[0, 0, 0], [0, -1, 0], [0, 0, 1], [0, -1, 1], [0, 0, 2], [0, -1, 2], [0, 0, 3], [0, -1, 3], [0, 0, 4], [0, -1, 4], [0, 0, 5], [0, -1, 5], [0, 0, 6], [0, -1, 6], [0, 0, 7], [0, -1, 7]],
     exit: [1, -1, 0, 0], pieces: [{ k: "S", len: 16 }, { k: "O", r: LOOP_R, off: CELL }, { k: "S", len: 16 }] },
   // Wall rides: the road curls up a wall (or right over onto the roof) and back down, three or five cells long.
-  wallleft: pipeShape(3, 1, 4), wallright: pipeShape(3, -1, 4),
-  roofleft: pipeShape(5, 1, 7), roofright: pipeShape(5, -1, 7),
+  wallleft: pipeShape(5, 1, 4), wallright: pipeShape(5, -1, 4),
+  roofleft: pipeShape(7, 1, 7), roofright: pipeShape(7, -1, 7),
   // The finish line, then room to stop.
   finish: { cells: [[0, 0, 0], [1, 0, 0]], exit: [2, 0, 0, 0], pieces: [{ k: "S", len: 16 }] },
 };

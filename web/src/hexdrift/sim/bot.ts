@@ -2,6 +2,7 @@
 // be finished and sets the medal times; the learning AI that checks
 // community maps later starts from it. Deterministic like the rest.
 import { dcos, dsin, clamp } from "./math.ts";
+import { pipeAxes } from "./road.ts";
 import { newRace, pack, step, COUNTDOWN, HZ, type Race } from "./race.ts";
 import type { Track } from "./track.ts";
 
@@ -15,9 +16,16 @@ export function botInput(r: Race, at: { i: number }, tune: BotTuning = DEFAULT_B
   if (car.loop >= 0) return pack({ steer: clamp(-car.ll * 0.3, -1, 1), gas: true, brake: false, drift: false, respawn: false });
   // Pipes: drive along the road, steering back toward its middle (left on it is toward the floor when the wall is on the right, and the other way round).
   if (car.pipe >= 0) {
-    const P = track.road!.pipes[car.pipe];
-    const want = clamp(P.w * car.ll * 0.04, -0.3, 0.3);
-    return pack({ steer: clamp((car.pa - want) * 4, -1, 1), gas: true, brake: false, drift: false, respawn: false });
+    // On a pipe: steer the way it's moving back toward the road's middle.
+    const P = track.road!.pipes[car.pipe], A = pipeAxes(P, car.ls, car.ll);
+    const ve = car.vx * A[3] + car.vy * A[4] + car.vz * A[5];
+    const va = car.vx * A[6] + car.vy * A[7] + car.vz * A[8];
+    // How fast it's crossing the road (the road's way and across it aren't square while it sweeps).
+    const c = A[3] * A[6] + A[4] * A[7] + A[5] * A[8];
+    const cross = (va - c * ve) / (1 - c * c);
+    const want = clamp(-car.ll, -6, 6);
+    const e = ve > 10 ? ve : 10;
+    return pack({ steer: clamp(P.w * (want - cross) / e * 8, -1, 1), gas: true, brake: false, drift: false, respawn: false });
   }
   for (const L of track.road?.loops ?? []) {
     const along = (car.x - L.x) * L.fx + (car.z - L.z) * L.fz, lat = (car.x - L.x) * L.rx + (car.z - L.z) * L.rz;

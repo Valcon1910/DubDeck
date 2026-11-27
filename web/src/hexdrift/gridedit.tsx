@@ -36,8 +36,8 @@ function roadOf(k: TileKind): { road: P[][]; gap?: P[] } {
     case "jump": return { road: [STRAIGHT], gap: [[0.5, 0], [1.5, 0]] };
     case "loop": return { road: [[[-0.5, 0], [0, 0]], [[0, -1], [0.5, -1]]] };
     case "finish": return { road: [[[-0.5, 0], [1.5, 0]]] };
-    case "wallleft": case "wallright": return { road: [[[-0.5, 0], [2.5, 0]]] };
-    case "roofleft": case "roofright": return { road: [[[-0.5, 0], [4.5, 0]]] };
+    case "wallleft": case "wallright": return { road: [[[-0.5, 0], [4.5, 0]]] };
+    case "roofleft": case "roofright": return { road: [[[-0.5, 0], [6.5, 0]]] };
     default: return { road: [STRAIGHT] };
   }
 }
@@ -61,7 +61,7 @@ function TileIcon({ k }: { k: TileKind }) {
       {gap && <path d={path(gap)} stroke="currentColor" strokeWidth={0.08} strokeDasharray="0.12 0.12" fill="none" />}
       {k === "loop" && <circle cx={0.5} cy={0} r={0.42} stroke="currentColor" strokeWidth={0.16} fill="none" />}
       {(k === "wallleft" || k === "wallright" || k === "roofleft" || k === "roofright") && (() => {
-        const s = k.endsWith("left") ? 1 : -1, n = k.startsWith("roof") ? 4 : 2;
+        const s = k.endsWith("left") ? 1 : -1, n = k.startsWith("roof") ? 6 : 4;
         return <path d={`M${-0.35 * s} 0.3Q${-0.6 * s} ${-n / 2} ${-0.35 * s} ${-n + 0.3}`} stroke="#ff4fd8" strokeWidth={0.12} fill="none" />;
       })()}
       {k === "boost" && <path d="M-0.2 0.1L0 -0.15L0.2 0.1M-0.2 0.35L0 0.1L0.2 0.35" stroke="#22e3ff" strokeWidth={0.08} fill="none" />}
