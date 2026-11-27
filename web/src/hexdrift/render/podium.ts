@@ -11,6 +11,8 @@ export interface Place { place: number; look: Look | null }
 const COLOURS: Record<number, string> = { 1: "#ffcf3d", 2: "#cfd8e6", 3: "#d98a4e", 4: "#7a5cff", 5: "#23e5ff" };
 const HEIGHT: Record<number, number> = { 1: 3.3, 2: 2.55, 3: 1.95, 4: 1.5, 5: 1.25 };
 export const SPACING = 4.6;
+const BEAM = 1.8;
+const CROWN_Y = 2.2;
 
 import { podiumOrder } from "./podiumOrder.ts";
 export { podiumOrder };
@@ -42,6 +44,19 @@ function dotTexture() {
   return (dot = new THREE.CanvasTexture(c));
 }
 
+let pool: THREE.Texture | null = null;
+/** Bright in the middle, gone at the edge: for the floor light (shared). */
+function poolTexture() {
+  if (pool) return pool;
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const g = c.getContext("2d")!;
+  const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, "#fff"); gr.addColorStop(0.55, "#666"); gr.addColorStop(1, "#000");
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+  return (pool = new THREE.CanvasTexture(c));
+}
+
 let fade: THREE.Texture | null = null;
 /** Bright at the bottom, gone at the top: for the light beams (shared, never disposed). */
 function fadeTexture() {
@@ -67,9 +82,9 @@ export class Podium {
   private bits: { geo: THREE.BufferGeometry[]; mat: THREE.Material[]; tex: THREE.Texture[] } = { geo: [], mat: [], tex: [] };
   private group = new THREE.Group();
   private count = 0;
+  private heights: number[] = [];
   private caps: THREE.MeshStandardMaterial[] = [];
   private spinners: { o: THREE.Object3D; w: number; bob?: number }[] = [];
-  private risers: { o: THREE.Object3D; m: THREE.MeshBasicMaterial; y0: number; span: number; t: number }[] = [];
   private sparks: { pos: THREE.BufferAttribute; speed: number[]; lo: number; hi: number }[] = [];
 
   constructor(host: HTMLElement) {
@@ -91,16 +106,30 @@ export class Podium {
   }
 
   private resize() {
-    const w = this.canvas.clientWidth || 1, h = this.canvas.clientHeight || 1;
-    this.renderer.setSize(w, h, false);
-    // Exactly the row's width, so HTML columns under it line up with the pillars.
+    const w = this.canvas.clientWidth || 1;
+    // Exactly the row's width, so HTML columns under it line up with the pillars,
+    // and exactly as tall as the tallest pillar with its beam and crown, so
+    // nothing is cut off: the stage takes the height that needs.
     const half = (Math.max(1, this.count) * SPACING) / 2;
-    const vh = (half * 2 * h) / w;
-    this.camera.left = -half; this.camera.right = half;
-    this.camera.top = vh * 0.62; this.camera.bottom = -vh * 0.38;
     this.camera.position.set(0, 8, 14);
     this.camera.lookAt(0, 2.1, 0);
+    this.camera.updateMatrixWorld();
+    const tallest = Math.max(1, ...this.heights);
+    const inv = this.camera.matrixWorldInverse, v = new THREE.Vector3();
+    let lo = Infinity, hi = -Infinity;
+    const R = SPACING * 0.48;
+    for (const [y, z] of [[0, R], [0, -R], [tallest + BEAM, R], [tallest + BEAM, -R], [tallest + CROWN_Y + 1.1, 0]]) {
+      v.set(0, y, z).applyMatrix4(inv);
+      lo = Math.min(lo, v.y); hi = Math.max(hi, v.y);
+    }
+    const pad = 0.3;
+    this.camera.left = -half; this.camera.right = half;
+    this.camera.top = hi + pad; this.camera.bottom = lo - pad;
     this.camera.updateProjectionMatrix();
+    const h = Math.round((w * (hi - lo + pad * 2)) / (half * 2));
+    const stage = this.canvas.parentElement;
+    if (stage && this.count && stage.style.height !== `${h}px`) stage.style.height = `${h}px`;
+    this.renderer.setSize(w, h || 1, false);
   }
 
   /** Shows these places (missing places simply have no pillar). */
@@ -108,6 +137,7 @@ export class Podium {
     this.clear();
     const row = podiumOrder(places);
     this.count = row.length;
+    this.heights = row.map((p) => HEIGHT[p.place] ?? 1);
     row.forEach((p, i) => {
       const x = (i - (row.length - 1) / 2) * SPACING;
       const h = HEIGHT[p.place] ?? 1;
@@ -134,17 +164,17 @@ export class Podium {
   }
 
   /**
-   * One pillar, built to look like a trophy plinth: a rotating holo ring and
+   * One pillar, built to look like a trophy plinth: a soft pool of light and
    * light pool on the floor, a three-step base, a dark glass hex column with
    * metal corner pilasters, inset face panels and glowing grooves, bands of
-   * light climbing the column, a metal collar and crown moulding, a glowing
-   * cap, a fading light beam with rings rising through it and sparkles
+   * light on the column, a metal collar and crown moulding, a glowing
+   * cap, a short fading light beam with sparkles
    * drifting up. The place number sits in a medal on the front, and first
    * place gets a floating crown. Flat, cheap materials only: no shadows.
    */
   private pillar(place: number, h: number, col: THREE.Color) {
     const g = new THREE.Group();
-    const R = 1.85, ap = R * Math.cos(Math.PI / 6), T = Math.PI / 6;
+    const R = 1.5, ap = R * Math.cos(Math.PI / 6), T = Math.PI / 6;
     const hex = (r: number, hh: number, y: number, r2 = r) => new THREE.CylinderGeometry(r2, r, hh, 6, 1).rotateY(T).translate(0, y + hh / 2, 0);
     const dark = new THREE.Color("#1a1735");
     const glowMat = (o: number, add = true) => {
@@ -156,13 +186,9 @@ export class Podium {
     const steel = new THREE.MeshStandardMaterial({ color: "#c9d3e2", metalness: 0.9, roughness: 0.25, flatShading: true });
     this.bits.mat.push(metal, steel);
 
-    // Floor: a soft pool of light and a slowly turning holo ring.
-    g.add(this.mesh(new THREE.CircleGeometry(R + 1.5, 6).rotateX(-Math.PI / 2).rotateY(T).translate(0, 0.004, 0), glowMat(0.12, false)));
-    const holo = this.mesh(new THREE.RingGeometry(R + 0.75, R + 0.95, 6, 1).rotateX(-Math.PI / 2).translate(0, 0.01, 0), glowMat(0.5));
-    g.add(holo);
-    const holo2 = this.mesh(new THREE.RingGeometry(R + 1.1, R + 1.16, 24, 1, 0, Math.PI * 1.4).rotateX(-Math.PI / 2).translate(0, 0.012, 0), glowMat(0.45));
-    g.add(holo2);
-    this.spinners.push({ o: holo, w: 0.25 }, { o: holo2, w: -0.4 });
+    // Floor: a soft round pool of light, inside this pillar's own slot.
+    g.add(this.mesh(new THREE.CircleGeometry(SPACING * 0.48, 40).rotateX(-Math.PI / 2).translate(0, 0.004, 0),
+      new THREE.MeshBasicMaterial({ color: col, alphaMap: poolTexture(), transparent: true, opacity: 0.35, depthWrite: false })));
 
     // Three-step base with a lit seam on each step.
     const plinthM = new THREE.MeshStandardMaterial({ color: "#121027", metalness: 0.75, roughness: 0.35, flatShading: true });
@@ -215,20 +241,12 @@ export class Podium {
     this.bits.mat.push(capM);
     this.caps.push(capM);
     g.add(this.mesh(hex(R + 0.18, 0.2, y0 + bh + 0.22, R + 0.02), capM));
-    g.add(this.mesh(new THREE.RingGeometry(R + 0.2, R + 0.75, 6, 1).rotateX(-Math.PI / 2).rotateY(T).translate(0, h + 0.005, 0), glowMat(0.22)));
 
-    // The beam: a fading shaft of light with rings rising through it.
-    const beamH = 2.4 + (6 - Math.min(5, place)) * 0.45;
+    // The beam: a short fading shaft of light.
+    const beamH = BEAM;
     const beamM = new THREE.MeshBasicMaterial({ color: col, alphaMap: fadeTexture(), transparent: true, opacity: 0.4, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
     beamM.forceSinglePass = true;
-    g.add(this.mesh(new THREE.CylinderGeometry(R * 1.05, R * 0.9, beamH, 6, 1, true).rotateY(T).translate(0, h + beamH / 2, 0), beamM));
-    for (let i = 0; i < 2; i++) {
-      const m = glowMat(0.5);
-      const ring = this.mesh(new THREE.RingGeometry(R * 0.86, R * 0.92, 6, 1).rotateX(-Math.PI / 2).rotateY(T), m);
-      ring.position.y = h;
-      g.add(ring);
-      this.risers.push({ o: ring, m, y0: h, span: beamH * 0.8, t: i * 0.5 });
-    }
+    g.add(this.mesh(new THREE.CylinderGeometry(R * 1.02, R * 0.92, beamH, 24, 1, true).translate(0, h + beamH / 2, 0), beamM));
     // Sparkles drifting up through the beam (more for higher places).
     const n = [0, 36, 24, 18, 10, 8][place] ?? 8;
     const pos = new Float32Array(n * 3), seedArr: number[] = [];
@@ -241,7 +259,8 @@ export class Podium {
     pg.setAttribute("position", new THREE.BufferAttribute(pos, 3));
     const pm = new THREE.PointsMaterial({ color: col.clone().lerp(new THREE.Color("#ffffff"), 0.5), size: 0.16, map: dotTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
     this.bits.geo.push(pg); this.bits.mat.push(pm);
-    g.add(new THREE.Points(pg, pm));
+    const pts = new THREE.Points(pg, pm); pts.frustumCulled = false;
+    g.add(pts);
     this.sparks.push({ pos: pg.getAttribute("position") as THREE.BufferAttribute, speed: seedArr, lo: h, hi: h + beamH });
 
     // The place number in a medal on the front.
@@ -255,26 +274,51 @@ export class Podium {
     g.add(this.mesh(new THREE.PlaneGeometry(md * 1.7, md * 1.7).translate(0, my, ap + 0.022), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false })));
 
     // First place: a crown floating over the car.
-    if (place === 1) {
-      const crown = new THREE.Group();
-      const gold = new THREE.MeshStandardMaterial({ color: "#ffd24a", emissive: "#ff9d00", emissiveIntensity: 0.45, metalness: 0.9, roughness: 0.2, flatShading: true });
-      this.bits.mat.push(gold);
-      crown.add(this.mesh(new THREE.CylinderGeometry(0.5, 0.45, 0.24, 10, 1, true), gold));
-      for (let i = 0; i < 5; i++) {
-        const a = (i / 5) * Math.PI * 2;
-        const spike = this.mesh(new THREE.ConeGeometry(0.11, 0.32, 4).translate(0, 0.28, 0), gold);
-        spike.position.set(Math.sin(a) * 0.47, 0, Math.cos(a) * 0.47);
-        crown.add(spike);
-        const gem = this.mesh(new THREE.OctahedronGeometry(0.06), new THREE.MeshBasicMaterial({ color: i % 2 ? "#7af7ff" : "#ff5fd2" }));
-        gem.position.set(Math.sin(a) * 0.48, 0.45, Math.cos(a) * 0.48);
-        crown.add(gem);
-      }
-      crown.scale.setScalar(1.5);
-      crown.position.y = h + 2.1;
-      g.add(crown);
-      this.spinners.push({ o: crown, w: 0.8, bob: h + 2.1 });
-    }
+    if (place === 1) { const crown = this.crown(); crown.position.y = h + CROWN_Y; g.add(crown); this.spinners.push({ o: crown, w: 0.7, bob: h + CROWN_Y }); }
     return g;
+  }
+
+
+  /**
+   * A solid gold crown: a closed band with a lit rim, five points tipped with
+   * pearls, a ruby on the front and a velvet cap inside. Every part is closed
+   * or two-sided, so nothing disappears as it turns.
+   */
+  private crown() {
+    const c = new THREE.Group();
+    const gold = new THREE.MeshStandardMaterial({ color: "#ffcf3d", emissive: "#ff9d00", emissiveIntensity: 0.35, metalness: 0.95, roughness: 0.18, flatShading: true, side: THREE.DoubleSide });
+    const pearl = new THREE.MeshStandardMaterial({ color: "#fff6e0", emissive: "#fff0c0", emissiveIntensity: 0.4, roughness: 0.3 });
+    const velvet = new THREE.MeshStandardMaterial({ color: "#a0122f", roughness: 0.9 });
+    const ruby = new THREE.MeshStandardMaterial({ color: "#ff2a55", emissive: "#ff1040", emissiveIntensity: 0.7, metalness: 0.2, roughness: 0.1, flatShading: true });
+    const sapphire = new THREE.MeshStandardMaterial({ color: "#3dc8ff", emissive: "#2090ff", emissiveIntensity: 0.6, roughness: 0.1, flatShading: true });
+    this.bits.mat.push(gold, pearl, velvet, ruby, sapphire);
+    // Band: a thick ring with a top and bottom rim.
+    c.add(this.mesh(new THREE.CylinderGeometry(0.62, 0.56, 0.34, 40, 1, true), gold));
+    c.add(this.mesh(new THREE.TorusGeometry(0.57, 0.05, 8, 40).rotateX(Math.PI / 2).translate(0, -0.17, 0), gold));
+    c.add(this.mesh(new THREE.TorusGeometry(0.63, 0.045, 8, 40).rotateX(Math.PI / 2).translate(0, 0.17, 0), gold));
+    // Velvet cap inside.
+    c.add(this.mesh(new THREE.SphereGeometry(0.55, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.75, 1).translate(0, 0.05, 0), velvet));
+    // Five points with pearls, and gems between them on the band.
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2;
+      const pt = this.mesh(new THREE.ConeGeometry(0.15, 0.42, 4).translate(0, 0.38, 0), gold);
+      pt.position.set(Math.sin(a) * 0.6, 0, Math.cos(a) * 0.6);
+      pt.rotation.y = a;
+      c.add(pt);
+      const p = this.mesh(new THREE.SphereGeometry(0.075, 12, 8), pearl);
+      p.position.set(Math.sin(a) * 0.6, 0.63, Math.cos(a) * 0.6);
+      c.add(p);
+      const b = a + Math.PI / 5;
+      const gem = this.mesh(new THREE.OctahedronGeometry(i === 0 ? 0.11 : 0.075).scale(1, 1.3, 0.6), i === 0 ? ruby : sapphire);
+      gem.position.set(Math.sin(b) * 0.63, 0, Math.cos(b) * 0.63);
+      gem.rotation.y = b;
+      c.add(gem);
+    }
+    // An orb on top.
+    c.add(this.mesh(new THREE.SphereGeometry(0.1, 16, 10).translate(0, 0.5, 0), gold));
+    c.scale.setScalar(1.25);
+    c.traverse((o) => { o.frustumCulled = false; });
+    return c;
   }
 
   private keep<M extends THREE.Material>(m: M, geo: THREE.BufferGeometry) { this.bits.geo.push(geo); this.bits.mat.push(m); return m; }
@@ -287,7 +331,7 @@ export class Podium {
     for (const m of this.bits.mat) m.dispose();
     for (const t of this.bits.tex) t.dispose();
     this.bits = { geo: [], mat: [], tex: [] };
-    this.caps = []; this.spinners = []; this.risers = []; this.sparks = [];
+    this.caps = []; this.spinners = []; this.sparks = [];
   }
 
   private frame(now: number) {
@@ -307,11 +351,6 @@ export class Podium {
     for (const s of this.spinners) {
       s.o.rotation.y += s.w * dt;
       if (s.bob !== undefined) s.o.position.y = s.bob + Math.sin(now / 600) * 0.12;
-    }
-    for (const r of this.risers) {
-      r.t = (r.t + dt * 0.35) % 1;
-      r.o.position.y = r.y0 + r.t * r.span;
-      r.m.opacity = 0.55 * Math.sin(r.t * Math.PI);
     }
     for (const sp of this.sparks) {
       const a = sp.pos.array as Float32Array;
