@@ -62,7 +62,7 @@ export const ALL_MAPS: MapDef[] = [
     road: {
       land: { kind: "coast", seed: 11, base: 3, amp: 4, scale: 260, sea: 0, shore: [-1, 0, 90], fall: 26, shoulder: 0.15, verge: 6 },
       start: [-62, 0, 3.6, 0], bank: 4,
-      route: "H12 S60 B S180 C S40 @a L60/70 S60 R60/70 S80 R60/70 S60 L60/70 @b S80 C L90/90 H9 WB S100 R45/60 S30 L45/60 W0 U10 S140 D10 S60 H10 @c R90/45 S70 L90/45 @d S60 R90/70 S100 BL S90 J3 S25 G32/-3 S60 C R90/70 S270 B S274 L90/70 B S160 C S40 R30/120 L30/120 S60 F S80",
+      route: "H12 S60 B S180 C S40 @a L60/70 S60 R60/70 S80 R60/70 S60 L60/70 @b S80 C L90/90 H9 WB S100 R45/60 S30 L45/60 W0 U10 S140 D10 S60 H10 @c R90/45 S70 L90/45 @d S60 R90/70 S100 BL S90 J3 S25 G32/-3 S60 C R90/70 S270 B S60 QL96/90 S40 QR96/90 S80 L90/70 B S160 C S40 R30/120 L30/120 S60 F S80",
       alts: [
         { from: "a", to: "b", via: [[0.3, 7], [0.7, 7]], hw: 6, surf: "sand", flush: true },
         { from: "c", to: "d", via: [[0.5, -6]], hw: 4.5 },
@@ -73,7 +73,7 @@ export const ALL_MAPS: MapDef[] = [
         set: [["stand", 30, -1, 3], ["stand", 30, 1, 3], ["billboard", 200, -1, 2], ["pier", 150, 1, 30], ["beachbar", 420, 1, 6], ["guard_a", 240, 1, 20], ["stand", 3250, -1, 3], ["stand", 3250, 1, 3]],
       },
     },
-    medals: { vortex: 3899, gold: 4261, silver: 4904, bronze: 6030 }, since: 8,
+    medals: { vortex: 3969, gold: 4339, silver: 4994, bronze: 6141 }, since: 9,
   },
   {
     id: "alpine-pass", name: "Alpine Pass", biome: "alpine", difficulty: "Medium",
@@ -86,7 +86,7 @@ export const ALL_MAPS: MapDef[] = [
       dress: { kit: "alpine", zones: [[0, 260, "village", "village"], [260, 700, "forest", "forest"], [700, 1200, "cliff", "forest"], [1200, 1700, "forest", "cliff"], [1700, 2100, "forest", "forest"], [2100, 2800, "village", "village"]],
         set: [["stand", 25, -1, 3], ["stand", 25, 1, 3], ["icesign", 560, 1, 1.5], ["icesign", 560, -1, 1.5], ["plough", 640, 1, 3]] },
     },
-    medals: { vortex: 3181, gold: 3476, silver: 4000, bronze: 4919 }, since: 8,
+    medals: { vortex: 3181, gold: 3476, silver: 4000, bronze: 4919 }, since: 9,
   },
   {
     id: "baja-rally", name: "Baja Rally", biome: "baja", difficulty: "Medium",
@@ -99,7 +99,7 @@ export const ALL_MAPS: MapDef[] = [
       dress: { kit: "baja", zones: [[0, 220, "camp", "camp"], [220, 760, "desert", "desert"], [760, 1300, "cliff", "desert"], [1300, 1900, "desert", "cliff"], [1900, 2350, "desert", "desert"], [2350, 2900, "village", "village"]],
         set: [["stand", 25, -1, 3], ["stand", 25, 1, 3], ["mesa", 1100, 1, 30], ["windpump", 600, -1, 12], ["wreck", 900, 1, 5]] },
     },
-    medals: { vortex: 3202, gold: 3499, silver: 4027, bronze: 4952 }, since: 8,
+    medals: { vortex: 3202, gold: 3499, silver: 4027, bronze: 4952 }, since: 9,
   },
   {
     id: "sky-kingdom", name: "Sky Kingdom", biome: "sky", difficulty: "Hard",
@@ -107,12 +107,12 @@ export const ALL_MAPS: MapDef[] = [
     road: {
       land: { kind: "isles", seed: 64, base: 60, amp: 20, scale: 260, fall: 24, shoulder: 0.2 },
       start: [0, 0, 60, 0], bank: 4,
-      route: "H7 S50 B S150 C R60/80 S100 U5 S90 L45/90 S60 BL S80 J4 S20 G42/-3 S80 C R90/55 S70 U6 S90 L90/50 @a S70 R45/90 S90 L45/90 @b S60 B S80 J5 S20 G46/-4 S100 C D5 S90 R60/70 S120 L90/55 S80 U4 S70 C B S90 J5 S20 G50/-3 S90 R45/90 S100 L60/80 S140 C D4 S80 B S120 F",
+      route: "H7 S50 B S150 C R60/80 S100 U5 S90 L45/90 S60 BL S80 J4 S20 G42/-3 S80 C R90/55 S70 U6 S90 L90/50 @a S70 R45/90 S90 L45/90 @b S60 B S80 J5 S20 G46/-4 S100 C D5 S90 R60/70 S120 L90/55 S80 U4 S70 C B S90 J5 S20 G50/-3 S90 R45/90 S100 L60/80 S30 QL120/130 S40 C D4 S80 B S120 F",
       alts: [{ from: "a", to: "b", via: [[0.5, 5]], hw: 4 }],
       dress: { kit: "sky", zones: [[0, 280, "village", "village"], [280, 900, "park", "cliff"], [900, 1700, "cliff", "park"], [1700, 2400, "park", "cliff"], [2400, 3200, "village", "village"]],
         set: [["stand", 25, -1, 3], ["stand", 25, 1, 3], ["gatehouse", 8, 1, 4], ["keep", 140, -1, 26], ["windmill", 700, 1, 14], ["temple", 1300, -1, 16], ["wizard", 2000, 1, 14], ["keep", 2700, 1, 26], ["wizard", 2950, -1, 14]] },
     },
-    medals: { vortex: 3714, gold: 4059, silver: 4671, bronze: 5744 }, since: 8,
+    medals: { vortex: 3747, gold: 4096, silver: 4714, bronze: 5797 }, since: 9,
   },
   {
     id: "interstellar", name: "Interstellar", biome: "space", difficulty: "Expert",
@@ -120,12 +120,12 @@ export const ALL_MAPS: MapDef[] = [
     road: {
       land: { kind: "void", seed: 1, base: 0, amp: 0, scale: 100, fall: 20, shoulder: 0.2 },
       start: [0, 0, 100, 0], bank: 6, grav: 0.55,
-      route: "H6 Mmetal S50 B S160 C R90/60 S80 U8 S100 L60/70 B S120 J5 S25 G70/-6 S90 C L90/50 S60 R90/50 @a S80 D8 S100 L45/80 S60 R45/80 @b S70 B S100 J6 S25 G80/-4 S100 C U10 S120 R120/45 S70 L60/70 S90 BL S60 J5 S20 G75/-8 S90 C R90/55 WB S140 W0 L90/50 D6 S100 B S110 J6 S25 G90/-5 S120 C L60/80 S100 B S160 F",
+      route: "H6 Mmetal S50 B S160 C R90/60 S80 U8 S100 L60/70 B S120 J5 S25 G70/-6 S90 C L90/50 S60 R90/50 @a S80 D8 S100 L45/80 S60 R45/80 @b S70 B S100 J6 S25 G80/-4 S100 C U10 S120 R120/45 S70 L60/70 S90 BL S60 J5 S20 G75/-8 S90 C R90/55 B S40 QR160/180 S40 L90/50 D6 S100 B S110 J6 S25 G90/-5 S120 C L60/80 S100 B S160 F",
       alts: [{ from: "a", to: "b", via: [[0.5, 6]], hw: 3.5 }],
       dress: { kit: "space", zones: [[0, 320, "village", "village"], [320, 1100, "park", "cliff"], [1100, 1900, "cliff", "park"], [1900, 2900, "park", "cliff"], [2900, 3800, "village", "village"]],
         set: [["stand", 25, -1, 3], ["stand", 25, 1, 3], ["spire", 150, -1, 10], ["ring", 900, 1, 160], ["ring", 2300, -1, 200], ["spire", 3150, 1, 10]] },
     },
-    medals: { vortex: 4366, gold: 4771, silver: 5491, bronze: 6752 }, since: 8,
+    medals: { vortex: 4449, gold: 4863, silver: 5597, bronze: 6883 }, since: 9,
   },
   {
     id: "miami-storm", name: "Miami Storm", biome: "storm", difficulty: "Beginner",
@@ -141,32 +141,32 @@ export const ALL_MAPS: MapDef[] = [
         set: [["stand", 30, -1, 3], ["stand", 30, 1, 3], ["billboard", 180, 1, 2], ["billboard", 700, -1, 2], ["billboard", 1500, 1, 2]],
       },
     },
-    medals: { vortex: 2809, gold: 3070, silver: 3533, bronze: 4344 }, since: 8,
+    medals: { vortex: 2809, gold: 3070, silver: 3533, bronze: 4344 }, since: 9,
   },
   {
     id: "neon-downtown", blurb: "Midnight in the glass canyons. Long neon straights, a boost through the plaza and three tight turns that reward a clean line.", name: "Neon Downtown", biome: "city", difficulty: "Beginner",
     recipe: "W+ S3 C R S2 B S2 R S C S3 L S2 R S2 C S2 R S4 B F",
-    medals: { vortex: 1211, gold: 1323, silver: 1523, bronze: 1872 }, since: 8,
+    medals: { vortex: 1211, gold: 1323, silver: 1523, bronze: 1872 }, since: 9,
   },
   {
     id: "canyon-rush", blurb: "Red rock, hot wind and a gap you have to jump. Climb out of the gorge, fly the ravine and keep your speed through the switchbacks.", name: "Canyon Rush", biome: "canyon", difficulty: "Medium",
     recipe: "S2 U S C L S2 D S B J G S2 C R S3 U U S L S2 C D D S2 R S B J G S F",
-    medals: { vortex: 1278, gold: 1397, silver: 1608, bronze: 1977 }, since: 8,
+    medals: { vortex: 1278, gold: 1397, silver: 1608, bronze: 1977 }, since: 9,
   },
   {
     id: "glacier-run", blurb: "Sheet ice between blue walls. Grip comes and goes: brake before the frozen corners, not on them.", name: "Glacier Run", biome: "glacier", difficulty: "Medium",
     recipe: "W+ S2 I+ S2 I- C R S2 I+ L S L I- S2 C R S3 I+ S2 I- B S F",
-    medals: { vortex: 926, gold: 1012, silver: 1165, bronze: 1433 }, since: 8,
+    medals: { vortex: 926, gold: 1012, silver: 1165, bronze: 1433 }, since: 9,
   },
   {
     id: "cloud-kingdom", blurb: "Roads hung between sky islands. Three jumps over open air, and nothing below to catch you if you miss.", name: "Cloud Kingdom", biome: "sky", difficulty: "Hard",
     recipe: "S2 B J G S C U U S R S2 B J G S2 C L D S J G S C S R B S2 F",
-    medals: { vortex: 983, gold: 1074, silver: 1236, bronze: 1520 }, since: 8,
+    medals: { vortex: 983, gold: 1074, silver: 1236, bronze: 1520 }, since: 9,
   },
   {
     id: "desert-mirage", blurb: "Endless dunes, shimmering heat. Fast sweepers and boost pads that pay back every bit of commitment.", name: "Desert Mirage", biome: "desert", difficulty: "Medium",
     recipe: "S2 B S3 C R S4 B S4 R S C S2 L S3 B S4 R S2 D S2 F",
-    medals: { vortex: 1274, gold: 1392, silver: 1602, bronze: 1970 }, since: 8,
+    medals: { vortex: 1274, gold: 1392, silver: 1602, bronze: 1970 }, since: 9,
   },
 ];
 
@@ -199,7 +199,7 @@ export const CIRCUITS: MapDef[] = [
         set: [["stand", 30, -1, 3], ["stand", 30, 1, 3], ["billboard", 600, 1, 2], ["billboard", 1500, -1, 2]],
       },
     },
-    medals: NO_MEDALS, since: 8,
+    medals: NO_MEDALS, since: 9,
   },
   {
     id: "mesa-loop", name: "Mesa Loop", biome: "baja", difficulty: "Medium", circuit: true,
@@ -211,7 +211,7 @@ export const CIRCUITS: MapDef[] = [
       dress: { kit: "baja", zones: [[0, 300, "camp", "camp"], [300, 1000, "desert", "desert"], [1000, 1600, "cliff", "desert"], [1600, 2300, "desert", "camp"]],
         set: [["stand", 25, -1, 3], ["stand", 25, 1, 3], ["mesa", 900, 1, 30], ["windpump", 1400, -1, 12]] },
     },
-    medals: NO_MEDALS, since: 8,
+    medals: NO_MEDALS, since: 9,
   },
 ];
 /** What a party room can race on: the circuits, then the maps. */

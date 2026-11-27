@@ -2,7 +2,7 @@
 // checkpoints) on one of the road themes; it turns into the same road the
 // built-in maps use (road.ts). Pure and deterministic, so the server can
 // rebuild a map and replay a run on it.
-import { buildRoad, LOOP_R, MAT, SCULPT, type RoadDef, type LandDef, type Sculpt, type Strip, type Surf, type Road } from "./road.ts";
+import { buildRoad, LOOP_R, MAT, PIPE_LEN, SCULPT, type RoadDef, type LandDef, type Sculpt, type Strip, type Surf, type Road } from "./road.ts";
 import { MATS, PART_LIMITS, SHAPES, type PartDef } from "./parts.ts";
 import { KITS } from "./kit.ts";
 import { chainOf, cleanGrid, piecesOfGrid, starterGrid, type Tile } from "./grid.ts";
@@ -63,11 +63,13 @@ export const THEMES: Record<ThemeId, Theme> = {
 
 /** One piece of road. Bends turn by `a` degrees on a radius of `r` m. */
 export interface Piece {
-  /** Straight, left, right, checkpoint, gap, loop. */
-  k: "S" | "L" | "R" | "C" | "G" | "O";
+  /** Straight, left, right, checkpoint, gap, loop, pipe (wall or roof ride). */
+  k: "S" | "L" | "R" | "C" | "G" | "O" | "Q";
   /** Straight length, or the gap's length (G). */
   len?: number;
   a?: number; r?: number;
+  /** A pipe's wall side: it curls up to the left or right. Its length is `len`, how far round it goes `a` (90 a wall, 180 the roof). */
+  side?: "L" | "R";
   /** A loop's sideways step: the road goes on this far to the right of where it went in (m). */
   off?: number;
   /** Climb (+) or drop (−) over the piece (m); for a gap, how much higher the landing is. */
@@ -153,7 +155,7 @@ export const withGrid = (m: CustomMap, grid: Tile[]): CustomMap => ({ ...m, grid
 
 /** Metres a piece adds along the road. */
 export function pieceLen(p: Piece): number {
-  if (p.k === "S" || p.k === "G") return p.len ?? 0;
+  if (p.k === "S" || p.k === "G" || p.k === "Q") return p.len ?? 0;
   if (p.k === "L" || p.k === "R") return ((p.a ?? 0) * Math.PI / 180) * (p.r ?? 0);
   return 0;
 }
@@ -174,6 +176,7 @@ export function routeOf(m: CustomMap): string {
     if (p.walls !== undefined && p.walls !== walls) { walls = p.walls; out.push(`W${walls || "0"}`); }
     if (p.tunnel !== undefined && p.tunnel !== tun) { tun = p.tunnel; out.push(tun ? "T+" : "T-"); }
     if (p.k === "G") { out.push(`G${num(p.len ?? 20)}/${num(p.rise ?? 0)}`); continue; }
+    if (p.k === "Q") { out.push(`Q${p.side === "R" ? "R" : "L"}${num(p.len ?? 96)}/${num(p.a ?? 90)}`); continue; }
     if (p.k === "O") { out.push(p.off ? `O${num(p.r ?? 14)}/${num(p.off)}` : `O${num(p.r ?? 14)}`); continue; }
     if (p.rise) out.push(p.rise > 0 ? `U${num(p.rise)}` : `D${num(-p.rise)}`);
     if (p.boost) out.push(p.boost === "A" ? "B" : `B${p.boost}`);
@@ -243,6 +246,7 @@ export function checkMap(m: CustomMap): Check {
     if ((p.k === "L" || p.k === "R") && ((p.r ?? 0) < 15 || (p.a ?? 0) <= 0 || (p.a ?? 0) > 270)) problems.push({ piece: i, text: "Bends need a radius of 15 m or more and up to 270°." });
     if (p.k === "S" && ((p.len ?? 0) < 5 || (p.len ?? 0) > 800)) problems.push({ piece: i, text: "Straights are 5 to 800 m." });
     if (p.k === "G" && ((p.len ?? 0) < 5 || (p.len ?? 0) > 120)) problems.push({ piece: i, text: "Gaps are 5 to 120 m." });
+    if (p.k === "Q" && ((p.len ?? 0) < PIPE_LEN[0] || (p.len ?? 0) > PIPE_LEN[1] || (p.a ?? 0) < 30 || (p.a ?? 0) > 180)) problems.push({ piece: i, text: `Wall rides are ${PIPE_LEN[0]} to ${PIPE_LEN[1]} m long and go 30° to 180° round.` });
     if (p.k === "O" && ((p.r ?? 0) < LOOP_R[0] || (p.r ?? 0) > LOOP_R[1])) problems.push({ piece: i, text: `Loops have a radius of ${LOOP_R[0]} to ${LOOP_R[1]} m.` });
     if (p.rise && Math.abs(p.rise) > Math.max(2, pieceLen(p) * 0.3)) problems.push({ piece: i, text: "Too steep: climb at most 3 m per 10 m." });
   }
@@ -326,7 +330,7 @@ export function cleanMap(o: unknown, id: string): CustomMap | null {
   for (const raw of r.pieces.slice(0, LIMITS.pieces)) {
     if (!raw || typeof raw !== "object") continue;
     const q = raw as Record<string, unknown>;
-    if (!["S", "L", "R", "C", "G", "O"].includes(q.k as string)) continue;
+    if (!["S", "L", "R", "C", "G", "O", "Q"].includes(q.k as string)) continue;
     const p: Piece = { k: q.k as Piece["k"] };
     const len = n(q.len, 0, 800), a = n(q.a, 0, 270), rr = n(q.r, 0, 2000), rise = n(q.rise, -80, 80), hw = n(q.hw, 3, 16), ramp = n(q.ramp, 0, 8);
     if (len !== undefined) p.len = len;
@@ -337,6 +341,7 @@ export function cleanMap(o: unknown, id: string): CustomMap | null {
     if (ramp) p.ramp = ramp;
     const off = n(q.off, 0, 80);
     if (p.k === "O" && off) p.off = off;
+    if (p.k === "Q") p.side = q.side === "R" ? "R" : "L";
     if (SURFS.includes(q.surf as Surf)) p.surf = q.surf as Surf;
     if (q.walls === "B" || q.walls === "L" || q.walls === "R" || q.walls === "") p.walls = q.walls;
     if (q.boost === "A" || q.boost === "L" || q.boost === "R") p.boost = q.boost;

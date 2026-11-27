@@ -112,12 +112,13 @@ function carried(m: CustomMap, i: number) {
   return { hw, surf, walls, tunnel };
 }
 
-const NAMES: Record<Piece["k"], string> = { S: "Straight", L: "Left", R: "Right", C: "Checkpoint", G: "Jump gap", O: "Loop" };
+const NAMES: Record<Piece["k"], string> = { S: "Straight", L: "Left", R: "Right", C: "Checkpoint", G: "Jump gap", O: "Loop", Q: "Wall ride" };
 function label(p: Piece) {
   if (p.k === "S") return `${p.len} m`;
   if (p.k === "L" || p.k === "R") return `${p.k === "L" ? "←" : "→"} ${p.a}°`;
   if (p.k === "G") return `Gap ${p.len} m`;
   if (p.k === "O") return `Loop ${p.r} m`;
+  if (p.k === "Q") return `${(p.a ?? 90) > 120 ? "Roof" : "Wall"} ${p.side === "R" ? "→" : "←"} ${p.a ?? 90}°`;
   return "CP";
 }
 
@@ -139,7 +140,7 @@ export function usePieceOps(map: CustomMap | null, sel: number, commit: (m: Cust
     if (map.pieces.length >= LIMITS.pieces) { setMsg(`At most ${LIMITS.pieces} pieces.`); return; }
     const like = [...map.pieces.slice(0, sel + 1)].reverse().find((p) => p.k === k);
     const c = carried(map, sel);
-    const base: Piece = k === "S" ? { k, len: like?.len ?? 60 } : k === "L" || k === "R" ? { k, a: like?.a ?? 90, r: like?.r ?? 60 } : k === "G" ? { k, len: like?.len ?? 20 } : { k };
+    const base: Piece = k === "S" ? { k, len: like?.len ?? 60 } : k === "L" || k === "R" ? { k, a: like?.a ?? 90, r: like?.r ?? 60 } : k === "G" ? { k, len: like?.len ?? 20 } : k === "Q" ? { k, side: like?.side ?? "L", len: like?.len ?? 96, a: like?.a ?? 90 } : { k };
     if (k !== "C") Object.assign(base, { hw: c.hw, surf: c.surf, walls: c.walls });
     const pieces = [...map.pieces];
     const at = map.pieces.length ? sel + 1 : 0;
@@ -192,7 +193,7 @@ export function RoadPanel({ map, sel, setSel, ops, bad, wide }: { map: CustomMap
 
         <div className="hx-ed-add">
           <span className="hx-dim">Add</span>
-          {(["S", "L", "R", "C", "G"] as const).map((k) => (
+          {(["S", "L", "R", "C", "G", "Q"] as const).map((k) => (
             <button key={k} type="button" className="hx-chip-btn" onClick={() => add(k)} title={`${NAMES[k]} (${k})`}>{NAMES[k]}</button>
           ))}
         </div>
@@ -208,7 +209,7 @@ export function RoadPanel({ map, sel, setSel, ops, bad, wide }: { map: CustomMap
                 <button type="button" className="hx-icon hx-danger" aria-label="Delete piece" title="Delete" onClick={remove}>✕</button>
               </span>
             </div>
-            {p.k !== "C" && p.k !== "G" && p.k !== "O" && (
+            {p.k !== "C" && p.k !== "G" && p.k !== "O" && p.k !== "Q" && (
               <div className="hx-tabs" role="tablist">
                 {(["shape", "road", "extras"] as const).map((t) => (
                   <button key={t} type="button" role="tab" aria-selected={tab === t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>{t === "shape" ? "Shape" : t === "road" ? "Road" : "Extras"}</button>
@@ -218,6 +219,15 @@ export function RoadPanel({ map, sel, setSel, ops, bad, wide }: { map: CustomMap
             {p.k === "O" && <>
               <Chips label="Size" values={[["Small", 10], ["Medium", 14], ["Big", 20]]} value={p.r} onPick={(v) => edit({ r: v })} step={1} min={8} max={40} />
               <p className="hx-dim">A loop the loop: the road goes on beside it. It needs speed, so put a long straight or a boost before it.</p>
+            </>}
+            {p.k === "Q" && <>
+              <Chips label="Round" values={[["Wall 90°", 90], ["High 130°", 130], ["Roof 180°", 180]]} value={p.a ?? 90} onPick={(v) => edit({ a: v })} step={10} min={30} max={180} />
+              <Chips label="Length" values={[["Short", 72], ["Medium", 96], ["Long", 160]]} value={p.len ?? 96} onPick={(v) => edit({ len: v })} step={8} min={40} max={240} />
+              <div className="hx-ed-row"><span className="hx-dim">Side</span>
+                <button type="button" className={`hx-chip-btn ${p.side !== "R" ? "on" : ""}`} onClick={() => edit({ side: "L" })}>Left</button>
+                <button type="button" className={`hx-chip-btn ${p.side === "R" ? "on" : ""}`} onClick={() => edit({ side: "R" })}>Right</button>
+              </div>
+              <p className="hx-dim">The road curls up a wall and back down. Walls keep your speed, the roof bleeds it and drops you if you're slow, and the way down from the roof is a big boost.</p>
             </>}
             {p.k === "C" && <p className="hx-dim">A checkpoint gate. Crash after it and you come back here.</p>}
             {p.k === "G" && <>

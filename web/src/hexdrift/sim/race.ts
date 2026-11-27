@@ -2,9 +2,9 @@
 // 60 steps a second. Every step takes one input byte, so a whole run is just
 // a list of bytes: replaying them gives the exact same drive (ghosts, and
 // record checks on the server later).
-import { clamp, dcos, dsin } from "./math.ts";
+import { clamp, datan2, dcos, dsin } from "./math.ts";
 import { CELL, DIRV, groundAt, HALF_W, heightAlong, key, local, CURVE_IN, CURVE_OUT, LEVEL, THICK, WALL_H, WALL_T, yawOf, type Piece, type Spot, type Track } from "./track.ts";
-import { roadSolids, type Loop } from "./road.ts";
+import { pipePoint, pipeRoll, roadSolids, type Loop, type Pipe } from "./road.ts";
 import { hitParts, type Mat } from "./parts.ts";
 import { NO_GROUND, terrainAt } from "./terrain.ts";
 import { hitSolids } from "./props.ts";
@@ -12,10 +12,10 @@ import { hitSolids } from "./props.ts";
 /**
  * Bump whenever the handling or track physics change: runs from older
  * physics can't be replayed exactly, so their records and ghosts are dropped.
- * Version 8 is meant to be the final one: every leaderboard and all medal
+ * Version 9 added wall and roof rides; every leaderboard and all medal
  * points started fresh with it.
  */
-export const PHYSICS_V = 8;
+export const PHYSICS_V = 9;
 
 export const HZ = 60;
 const DT = 1 / HZ;
@@ -60,7 +60,9 @@ export interface Car {
   rough: number;
   /** Going round a loop (its index; -1 when not): distance round it, and across it. */
   loop: number; ls: number; ll: number;
-  /** Which way the car points in a loop (for drawing it). */
+  /** Riding a pipe (its index; -1 when not): ls is metres along it, ll metres across (+ toward its wall). */
+  pipe: number;
+  /** Which way the car points in a loop or a pipe (for drawing it). */
   tx: number; ty: number; tz: number;
   /** The material of the part it stands on ("" when not on a part). */
   part: Mat | "";
@@ -73,7 +75,7 @@ function place(car: Car, p: Spot) {
   car.rough = VMAX_OFF;
   car.grounded = true; car.nx = 0; car.ny = 1; car.nz = 0;
   car.speed = 0; car.slip = 0; car.boosting = 0; car.offroad = false; car.drift = 0; car.hit = 0; car.land = 0;
-  car.loop = -1; car.ls = 0; car.ll = 0; car.tx = 0; car.ty = 0; car.tz = 0; car.part = "";
+  car.loop = -1; car.pipe = -1; car.ls = 0; car.ll = 0; car.tx = 0; car.ty = 0; car.tz = 0; car.part = "";
 }
 
 export type Phase = "countdown" | "running" | "finished";
@@ -119,6 +121,7 @@ export function step(r: Race, byte: number) {
 
   if (byte & 128) { respawn(r); return; }
   if (car.loop >= 0) { loopStep(r, steer, gas, brake); return; }
+  if (car.pipe >= 0) { pipeStep(r, steer, gas, brake); return; }
 
   const fx = dsin(car.yaw), fz = dcos(car.yaw);
   const grav = GRAVITY * r.track.grav;
@@ -226,6 +229,21 @@ export function step(r: Race, byte: number) {
       }
     }
   }
+  // Into a pipe: the car crosses its mouth on the road.
+  if (r.track.road?.pipes.length && car.grounded && !car.offroad) {
+    const pipes = r.track.road.pipes;
+    for (let i = 0; i < pipes.length; i++) {
+      const P = pipes[i];
+      const a0 = (px - P.x) * P.fx + (pz - P.z) * P.fz, a1 = (car.x - P.x) * P.fx + (car.z - P.z) * P.fz;
+      const lat = (car.x - P.x) * P.rx + (car.z - P.z) * P.rz;
+      if (a0 < 0 && a1 >= 0 && lat > -P.hw && lat < P.hw && car.y - P.y < 2 && P.y - car.y < 2) {
+        car.pipe = i; car.ls = a1; car.ll = lat * P.w;
+        car.speed = car.vx * P.fx + car.vz * P.fz;
+        pipePose(car, P);
+        return;
+      }
+    }
+  }
   if (r.track.road) {
     const w = roadSolids(r.track.road, car, px, pz, CAR_R, CAR_H);
     if (w > car.hit) car.hit = w;
@@ -305,6 +323,88 @@ function loopStep(r: Race, steer: number, gas: boolean, brake: boolean) {
   // The track has to push the car in to hold it: too slow at the top and it drops.
   if (vf * vf / L.r + g * dcos(car.ls / L.r) < 0 || (vf < 1 && car.ls > L.r)) {
     car.loop = -1; car.grounded = false; car.tx = car.ty = car.tz = 0;
+    car.nx = 0; car.ny = 1; car.nz = 0;
+  }
+}
+
+// ── Pipes: wall rides and roof rides ────────────────────────────────────────
+// Arcade rules, tuned for flow rather than a lecture on centripetal force:
+//   · a slope into a wall keeps the car's momentum, and on the wall the
+//     throttle pulls harder, so a wall ride can even gain speed;
+//   · over the roof the speed bleeds away fast, and below a speed that rises
+//     the further round it is the car drops off;
+//   · coming down from the roof onto the wall on the throttle turns the drop
+//     into a big surge of speed.
+const WALL_KEEP = 0.25;   // share of the climb's slow-down felt up to the wall
+const WALL_PULL = 9;      // extra drive on a wall, m/s²
+const ROOF_DRAG = 14;     // extra slow-down upside down, m/s² (at the very top)
+const ROOF_SURGE = 2.4;   // the drop from roof to wall on the throttle, times
+const WALL_SLIDE = 7;     // how fast a slow car slides down the wall, m/s
+
+/** Where the car is on its pipe (from car.ls, car.ll), which way it points, and its velocity. */
+function pipePose(car: Car, P: Pipe) {
+  const [rc, dr] = pipeRoll(P, car.ls);
+  const sn = dsin(rc), cs = dcos(rc);
+  const sdx = P.w * P.rx, sdz = P.w * P.rz;
+  [car.x, car.y, car.z] = pipePoint(P, car.ls, car.ll);
+  // Along the road: forward, plus the banking carrying it round.
+  const k = P.R * dr;
+  let tx = P.fx + k * cs * sdx, ty = k * sn, tz = P.fz + k * cs * sdz;
+  const tl = Math.sqrt(tx * tx + ty * ty + tz * tz);
+  tx /= tl; ty /= tl; tz /= tl;
+  car.tx = tx; car.ty = ty; car.tz = tz;
+  car.nx = -sn * sdx; car.ny = cs; car.nz = -sn * sdz;
+  car.vx = tx * car.speed; car.vy = ty * car.speed; car.vz = tz * car.speed;
+  car.yaw = P.yaw;
+  car.grounded = true; car.offroad = false; car.slip = 0; car.yawRate = 0; car.part = "";
+}
+
+function pipeStep(r: Race, steer: number, gas: boolean, brake: boolean) {
+  const car = r.car, P = r.track.road!.pipes[car.pipe];
+  const g = GRAVITY * r.track.grav;
+  const [rc, dr] = pipeRoll(P, car.ls);
+  const sn = dsin(rc), cs = dcos(rc);
+  const J = Math.sqrt(1 + P.R * dr * P.R * dr);
+  let vf = car.speed;
+  if (gas) vf += ENGINE * (1 - vf / VMAX) * DT;
+  if (brake) vf -= 30 * DT;
+  vf -= vf * (vf < 0 ? -vf : vf) * 0.0006 * DT;
+  // Gravity along the way: up the wall or over the roof, or back down.
+  const climb = P.R * dr * sn / J;
+  if (climb > 0) vf -= g * climb * (cs > -0.17 ? WALL_KEEP : 1) * DT;
+  else vf -= g * climb * (gas && cs < 0.5 ? ROOF_SURGE : 1) * DT;
+  // On the wall the throttle pulls harder; upside down the speed bleeds away.
+  if (gas && sn > 0.7 && cs > -0.3 && vf < VMAX * 1.35) vf += WALL_PULL * sn * DT;
+  if (cs < 0) vf -= ROOF_DRAG * -cs * DT;
+  if (vf > VMAX * 1.6) vf = VMAX * 1.6;
+  // Steering moves across; a slow car slides down toward the floor.
+  const slow = clamp(1 - vf / 45, 0, 1);
+  car.ll += (steer * 9 * P.w - WALL_SLIDE * sn * slow) * DT;
+  const lim = P.hw - 1.5;
+  if (car.ll > lim) car.ll = lim; else if (car.ll < -lim) car.ll = -lim;
+  if (car.boosting > 0) car.boosting--;
+  car.speed = vf;
+  car.ls += vf * DT / J;
+  if (car.ls >= P.len || car.ls < 0) {
+    // Out onto the road again.
+    const along = car.ls, side = car.ll * P.w;
+    car.x = P.x + P.fx * along + P.rx * side;
+    car.y = P.y;
+    car.z = P.z + P.fz * along + P.rz * side;
+    car.vx = P.fx * vf; car.vy = 0; car.vz = P.fz * vf;
+    car.nx = 0; car.ny = 1; car.nz = 0; car.yaw = P.yaw;
+    car.grounded = true; car.offroad = false;
+    car.pipe = -1; car.tx = car.ty = car.tz = 0;
+    return;
+  }
+  pipePose(car, P);
+  // High up the wall or on the roof it takes speed to hold on.
+  const need = rc > 1.3 ? 6 + 22 * (cs < 0 ? -cs : 0) : 0;
+  if (vf < need || (vf < 1 && rc > 0.5)) {
+    car.pipe = -1; car.grounded = false;
+    const hx = car.tx, hz = car.tz;
+    if (hx * hx + hz * hz > 0.01) car.yaw = datan2(hx, hz);
+    car.tx = car.ty = car.tz = 0;
     car.nx = 0; car.ny = 1; car.nz = 0;
   }
 }

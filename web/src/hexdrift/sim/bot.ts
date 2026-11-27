@@ -13,6 +13,7 @@ export function botInput(r: Race, at: { i: number }, tune: BotTuning = DEFAULT_B
   const line = track.line;
   // Loops: flat out, kept to the middle.
   if (car.loop >= 0) return pack({ steer: clamp(-car.ll * 0.3, -1, 1), gas: true, brake: false, drift: false, respawn: false });
+  if (car.pipe >= 0) { const P = r.track.road!.pipes[car.pipe]; return pack({ steer: clamp(-car.ll * 0.3 * P.w, -1, 1), gas: true, brake: false, drift: false, respawn: false }); }
   for (const L of track.road?.loops ?? []) {
     const along = (car.x - L.x) * L.fx + (car.z - L.z) * L.fz, lat = (car.x - L.x) * L.rx + (car.z - L.z) * L.rz;
     if (along > -90 && along < 0 && lat > -L.hw - 3 && lat < L.hw + 3 && car.grounded) {

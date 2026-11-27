@@ -2,7 +2,7 @@
 // glowing for boost and kill) so even hundreds of them cost two draw calls.
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import type { Loop, Road } from "../sim/road.ts";
+import { pipePoint, pipeRoll, type Loop, type Road } from "../sim/road.ts";
 import type { Mat, Part, Parts } from "../sim/parts.ts";
 
 export const MAT_COLOR: Record<Mat, string> = { solid: "#9aa3b5", bouncy: "#ff4fa3", ice: "#bfe9ff", boost: "#22e3ff", kill: "#ff3346" };
@@ -79,6 +79,58 @@ export function loopPoint(L: Loop, th: number, lat: number, up = 0): [number, nu
     L.y + L.r - r * cs,
     L.z + r * L.fz * sn + L.rz * side,
   ];
+}
+
+/** Wall rides: the road curling up the inside of a pipe and back down, with edges, rails and a thick underside. */
+export function buildPipes(group: THREE.Group, road: Road, geos: THREE.BufferGeometry[], mats: THREE.Material[], asphalt: string, line: string) {
+  if (!road.pipes.length) return;
+  const pos: number[] = [], col: number[] = [], nrm: number[] = [];
+  const A = new THREE.Color(asphalt), W = new THREE.Color(line), R = new THREE.Color("#d9dde6"), N = new THREE.Color("#ff4fd8");
+  // Each corner is [point, normal]; normals follow the bank so the curve shades smoothly.
+  type V = [number[], number[]];
+  const quad = (a: V, b: V, c: V, d: V, k: THREE.Color) => {
+    for (const v of [a, c, b, a, d, c]) { pos.push(...v[0]); nrm.push(...v[1]); col.push(k.r, k.g, k.b); }
+  };
+  for (const P of road.pipes) {
+    const n = Math.max(24, Math.round(P.len / 2)), hw = P.hw;
+    const sdx = P.w * P.rx, sdz = P.w * P.rz;
+    // Strips across the road, the outer ones white.
+    const cuts = [-hw, -hw + 0.5];
+    for (let i = 1; i < 4; i++) cuts.push(-hw + 0.5 + ((2 * hw - 1) * i) / 4);
+    cuts.push(hw - 0.5, hw);
+    const v = (u: number, l: number, up: number, side = 0): V => {
+      const th = pipeRoll(P, u)[0], sn = Math.sin(th), cs = Math.cos(th);
+      // Up off the road, or out across it (for the rails).
+      const nn = side ? [side * cs * sdx, side * sn, side * cs * sdz] : [-sn * sdx * Math.sign(up + 0.01), cs * Math.sign(up + 0.01), -sn * sdz * Math.sign(up + 0.01)];
+      return [pipePoint(P, u, l, up), nn];
+    };
+    for (let i = 0; i < n; i++) {
+      const u0 = (i / n) * P.len, u1 = ((i + 1) / n) * P.len;
+      for (let j = 0; j < cuts.length - 1; j++) {
+        const l0 = cuts[j], l1 = cuts[j + 1];
+        const k = j === 0 || j === cuts.length - 2 ? W : A;
+        quad(v(u0, l0, 0.04), v(u1, l0, 0.04), v(u1, l1, 0.04), v(u0, l1, 0.04), k);
+        quad(v(u0, l1, -0.5), v(u1, l1, -0.5), v(u1, l0, -0.5), v(u0, l0, -0.5), A);
+      }
+      // A dashed middle line.
+      if (i % 3 === 0) quad(v(u0, -0.15, 0.06), v(u1, -0.15, 0.06), v(u1, 0.15, 0.06), v(u0, 0.15, 0.06), W);
+      for (const e of [-hw, hw]) {
+        const k = e > 0 ? N : R, s = e > 0 ? -1 : 1;
+        quad(v(u0, e, 0, s), v(u1, e, 0, s), v(u1, e, 1.1, s), v(u0, e, 1.1, s), k);
+        quad(v(u0, e, 1.1, -s), v(u1, e, 1.1, -s), v(u1, e, 0, -s), v(u0, e, 0, -s), k);
+      }
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("normal", new THREE.Float32BufferAttribute(nrm, 3));
+  g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+  geos.push(g);
+  const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0.05, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  mats.push(m);
+  const mesh = new THREE.Mesh(g, m);
+  mesh.castShadow = true; mesh.receiveShadow = true;
+  group.add(mesh);
 }
 
 /** Loops: the road surface (both faces), white edges, low rails and a pair of legs. */

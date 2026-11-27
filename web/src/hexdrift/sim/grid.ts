@@ -7,8 +7,8 @@ import type { Piece } from "./custom.ts";
 
 export const CELL = 32, LEVEL = 4;
 
-export type TileKind = "start" | "straight" | "left" | "right" | "bigleft" | "bigright" | "up" | "down" | "jump" | "loop" | "boost" | "cp" | "finish";
-export const TILE_KINDS: TileKind[] = ["start", "straight", "left", "right", "bigleft", "bigright", "up", "down", "jump", "loop", "boost", "cp", "finish"];
+export type TileKind = "start" | "straight" | "left" | "right" | "bigleft" | "bigright" | "up" | "down" | "jump" | "loop" | "wallleft" | "wallright" | "roofleft" | "roofright" | "boost" | "cp" | "finish";
+export const TILE_KINDS: TileKind[] = ["start", "straight", "left", "right", "bigleft", "bigright", "up", "down", "jump", "loop", "wallleft", "wallright", "roofleft", "roofright", "boost", "cp", "finish"];
 
 /** A tile: kind, entry cell (x, z), entry level y, and the way you drive into it (0 +z, 1 +x, 2 −z, 3 −x). */
 export interface Tile { k: TileKind; x: number; z: number; y: number; d: 0 | 1 | 2 | 3 }
@@ -29,6 +29,12 @@ export interface TileShape {
 
 export const LOOP_R = 14;
 
+function pipeShape(n: number, side: 1 | -1, levels: number): TileShape {
+  const cells: [number, number, number][] = [];
+  for (let f = 0; f < n; f++) for (let up = 0; up < levels; up++) cells.push([f, 0, up]);
+  return { cells, exit: [n, 0, 0, 0], pieces: [{ k: "Q", side: side > 0 ? "L" : "R", len: n * CELL, a: levels > 4 ? 180 : 90 }] };
+}
+
 export const SHAPES: Record<TileKind, TileShape> = {
   start: { cells: [[0, 0, 0]], exit: [1, 0, 0, 0], pieces: [{ k: "S", len: 32 }] },
   straight: { cells: [[0, 0, 0]], exit: [1, 0, 0, 0], pieces: [{ k: "S", len: 32 }] },
@@ -45,13 +51,16 @@ export const SHAPES: Record<TileKind, TileShape> = {
   // A corkscrew loop: in on this lane, out on the lane to its right.
   loop: { cells: [[0, 0, 0], [0, -1, 0], [0, 0, 1], [0, -1, 1], [0, 0, 2], [0, -1, 2], [0, 0, 3], [0, -1, 3], [0, 0, 4], [0, -1, 4], [0, 0, 5], [0, -1, 5], [0, 0, 6], [0, -1, 6], [0, 0, 7], [0, -1, 7]],
     exit: [1, -1, 0, 0], pieces: [{ k: "S", len: 16 }, { k: "O", r: LOOP_R, off: CELL }, { k: "S", len: 16 }] },
+  // Wall rides: the road curls up a wall (or right over onto the roof) and back down, three or five cells long.
+  wallleft: pipeShape(3, 1, 4), wallright: pipeShape(3, -1, 4),
+  roofleft: pipeShape(5, 1, 7), roofright: pipeShape(5, -1, 7),
   // The finish line, then room to stop.
   finish: { cells: [[0, 0, 0], [1, 0, 0]], exit: [2, 0, 0, 0], pieces: [{ k: "S", len: 16 }] },
 };
 
 export const TILE_NAMES: Record<TileKind, string> = {
   start: "Start", straight: "Straight", left: "Curve left", right: "Curve right", bigleft: "Wide left", bigright: "Wide right",
-  up: "Slope up", down: "Slope down", jump: "Jump", loop: "Loop", boost: "Boost", cp: "Checkpoint", finish: "Finish",
+  up: "Slope up", down: "Slope down", jump: "Jump", loop: "Loop", wallleft: "Wall left", wallright: "Wall right", roofleft: "Roof left", roofright: "Roof right", boost: "Boost", cp: "Checkpoint", finish: "Finish",
 };
 
 /** A step `f` forward and `l` left of (x, z) facing d. */
@@ -165,7 +174,7 @@ export function cleanGrid(raw: unknown): Tile[] | undefined {
 
 /** Metres of run-up a loop needs (from a standing start, as at the start line). */
 const RUNUP = 120;
-const LEN: Partial<Record<TileKind, number>> = { start: 72, straight: 32, cp: 32, up: 32, down: 32, jump: 64, bigleft: 75, bigright: 75, finish: 64 };
+const LEN: Partial<Record<TileKind, number>> = { start: 72, straight: 32, cp: 32, up: 32, down: 32, jump: 64, wallleft: 96, wallright: 96, roofleft: 160, roofright: 160, bigleft: 75, bigright: 75, finish: 64 };
 
 /** Loops on the track that the car may not get round: too little straight road before them and no boost. */
 export function slowLoops(tiles: Tile[], chain = chainOf(tiles)): number[] {

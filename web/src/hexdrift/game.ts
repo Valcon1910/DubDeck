@@ -84,7 +84,7 @@ const REMOTE_STALE = 4000;
 /** Car bodies for bumping: two circles along each car. */
 const BUMP_R = 1.25, BUMP_AT = 1.15;
 
-const snap = (r: Race): Snap => ({ x: r.car.x, y: r.car.y, z: r.car.z, yaw: r.car.yaw, nx: r.car.nx, ny: r.car.ny, nz: r.car.nz, loop: r.car.loop >= 0, tx: r.car.tx, ty: r.car.ty, tz: r.car.tz });
+const snap = (r: Race): Snap => ({ x: r.car.x, y: r.car.y, z: r.car.z, yaw: r.car.yaw, nx: r.car.nx, ny: r.car.ny, nz: r.car.nz, loop: r.car.loop >= 0 || r.car.pipe >= 0, tx: r.car.tx, ty: r.car.ty, tz: r.car.tz });
 
 /** Other cars by quality level: full detail within, plainer within, drawn within (metres). */
 const CAR_LOD: Record<Gfx, [number, number, number]> = { high: [45, 160, 700], medium: [25, 90, 450], low: [12, 45, 260] };
@@ -546,7 +546,7 @@ export class Game {
       r.prev = r.cur;
       if (r.race.phase !== "finished") stepRemote(r.race, r.held);
       r.cur = snap(r.race);
-      if (now - r.at > REMOTE_STALE || this.race.phase !== "running" || r.race.phase !== "running" || c.loop >= 0 || r.race.car.loop >= 0) continue;
+      if (now - r.at > REMOTE_STALE || this.race.phase !== "running" || r.race.phase !== "running" || c.loop >= 0 || r.race.car.loop >= 0 || c.pipe >= 0 || r.race.car.pipe >= 0) continue;
       const o = r.race.car;
       if (Math.abs(o.y - c.y) > 2.5) continue;
       // The closest pair of body circles.

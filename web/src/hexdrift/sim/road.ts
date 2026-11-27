@@ -141,6 +141,39 @@ export interface Loop {
 }
 export const LOOP_R = [8, 40] as const;
 
+/**
+ * A pipe: the road curls up the inside of a horizontal pipe of radius `R`
+ * whose axis runs along the way of travel `R` above the road. Over its length
+ * the road rolls from flat up the side (`w` -1: left, 1: right) to `peak`
+ * (radians: π/2 a wall, π the roof) and back down, so one piece is a slope
+ * into a wall ride, and with a high peak over the roof and down the wall
+ * again. The plain road carries on beneath, to land on after a fall.
+ */
+export interface Pipe {
+  x: number; y: number; z: number; yaw: number;
+  fx: number; fz: number; rx: number; rz: number;
+  len: number; peak: number; R: number; hw: number; w: number;
+}
+export const PIPE_LEN = [40, 240] as const;
+export const PIPE_R = 12;
+
+/** How far round the pipe the road's middle is at `u` m in (radians), and how fast that changes. */
+export function pipeRoll(P: Pipe, u: number): [number, number] {
+  const k = 6.283185307179586 / P.len;
+  return [P.peak * (1 - dcos(k * u)) / 2, P.peak * k * dsin(k * u) / 2];
+}
+
+/** A point on a pipe's surface: `u` m in, `l` m across from the middle (+ toward the wall), `up` off the surface. */
+/** A point on a pipe's road: u along it, l across (+ toward the wall), up off the surface. The road stays flat across and banks as a whole. */
+export function pipePoint(P: Pipe, u: number, l: number, up = 0): [number, number, number] {
+  const th = pipeRoll(P, u)[0], sn = dsin(th), cs = dcos(th);
+  const sdx = P.w * P.rx, sdz = P.w * P.rz;
+  // Out from the axis by R − up, then l along the road's width.
+  const a = P.R - up;
+  const o = a * sn + l * cs, h = P.R - a * cs + l * sn;
+  return [P.x + P.fx * u + o * sdx, P.y + h, P.z + P.fz * u + o * sdz];
+}
+
 export interface Sample {
   x: number; y: number; z: number;
   /** Direction of travel (unit). */
@@ -190,6 +223,7 @@ export interface Road {
   minY: number;
   dress?: Dress;
   loops: Loop[];
+  pipes: Pipe[];
   /** Circuits: the length of a lap (0 on roads from a start to a finish). */
   lapLen: number;
 }
@@ -279,6 +313,8 @@ function baseLand(L: LandDef, x: number, z: number): { h: number; mat: number } 
  *   Mdirt    surface from here (asphalt, dirt, ice, metal, sand)
  *   O14      a loop of 14 m radius here (the road goes on beside it)
  *   O14/32   the same, going on 32 m to the right
+ *   QL80/90  a pipe 80 m long curling up to the left into a wall ride (90°)
+ *   QR120/180  the same to the right, over the roof (180°) and back down
  */
 export function buildRoad(def: RoadDef): Road {
   const L = def.land;
@@ -287,6 +323,7 @@ export function buildRoad(def: RoadDef): Road {
   let finish: Gate | null = null;
   const marks: Record<string, number> = {};
   const loops: Loop[] = [];
+  const pipes: Pipe[] = [];
   let [x, z, y, hd] = def.start;
   let yaw = hd * DEG;
   let s = 0, hw = 9, walls = 0, flags = 0, surf: Surf = "asphalt", cp = 0;
@@ -381,6 +418,16 @@ export function buildRoad(def: RoadDef): Road {
       main[main.length - 1].flags |= GAP | LOOPJ;
       x += -fz * off; z += fx * off;
       push();
+    } else if (c === "Q") {
+      const side = rest[0];
+      const [len, peak] = rest.slice(1).split("/").map(num);
+      if ((side !== "L" && side !== "R") || len < PIPE_LEN[0] || len > PIPE_LEN[1] || !(peak >= 30 && peak <= 180)) throw new Error(`Bad pipe ${tok}`);
+      const fx = dsin(yaw), fz = dcos(yaw);
+      pipes.push({ x, y, z, yaw, fx, fz, rx: -fz, rz: fx, len, peak: peak * DEG, R: PIPE_R, hw, w: side === "L" ? -1 : 1 });
+      // The plain road beneath, without walls (the pipe's wall is beside it).
+      const keep = walls; walls = 0; rise = 0; ramp = 0;
+      piece(len, 0);
+      walls = keep;
     } else throw new Error(`Bad road token ${tok}`);
   }
   // Circuits: a smooth curve from where the route ends back onto the start line.
@@ -523,7 +570,7 @@ export function buildRoad(def: RoadDef): Road {
   if (L.sea !== undefined && L.sea < minY) minY = L.sea;
   return {
     strands, segs, grid, tgrid, gates, finish, land: L, grav: def.grav ?? 1, dress: def.dress,
-    runout: main[main.length - 1].s - main[fi].s, x0, x1, z0, z1, minY, loops, lapLen: def.circuit ? main[main.length - 1].s : 0,
+    runout: main[main.length - 1].s - main[fi].s, x0, x1, z0, z1, minY, loops, pipes, lapLen: def.circuit ? main[main.length - 1].s : 0,
   };
 }
 

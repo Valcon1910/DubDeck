@@ -16,7 +16,7 @@ import type { BotReply } from "./botworker.ts";
 
 const THEME_IDS = Object.keys(THEMES) as ThemeId[];
 const MAX_TILES = 200;
-const PALETTE: TileKind[] = ["straight", "left", "right", "bigleft", "bigright", "up", "down", "jump", "loop", "boost", "cp", "finish", "start"];
+const PALETTE: TileKind[] = ["straight", "left", "right", "bigleft", "bigright", "up", "down", "jump", "loop", "wallleft", "wallright", "roofleft", "roofright", "boost", "cp", "finish", "start"];
 
 // ── Tile drawings, in the tile's own frame: forward and left, in cells, from its entry cell's centre ──
 type P = [number, number];
@@ -36,6 +36,8 @@ function roadOf(k: TileKind): { road: P[][]; gap?: P[] } {
     case "jump": return { road: [STRAIGHT], gap: [[0.5, 0], [1.5, 0]] };
     case "loop": return { road: [[[-0.5, 0], [0, 0]], [[0, -1], [0.5, -1]]] };
     case "finish": return { road: [[[-0.5, 0], [1.5, 0]]] };
+    case "wallleft": case "wallright": return { road: [[[-0.5, 0], [2.5, 0]]] };
+    case "roofleft": case "roofright": return { road: [[[-0.5, 0], [4.5, 0]]] };
     default: return { road: [STRAIGHT] };
   }
 }
@@ -58,6 +60,10 @@ function TileIcon({ k }: { k: TileKind }) {
       {road.map((r, i) => <path key={i} d={path(r)} stroke="currentColor" strokeWidth={ROAD_W} fill="none" strokeLinecap="butt" opacity={0.85} />)}
       {gap && <path d={path(gap)} stroke="currentColor" strokeWidth={0.08} strokeDasharray="0.12 0.12" fill="none" />}
       {k === "loop" && <circle cx={0.5} cy={0} r={0.42} stroke="currentColor" strokeWidth={0.16} fill="none" />}
+      {(k === "wallleft" || k === "wallright" || k === "roofleft" || k === "roofright") && (() => {
+        const s = k.endsWith("left") ? 1 : -1, n = k.startsWith("roof") ? 4 : 2;
+        return <path d={`M${-0.35 * s} 0.3Q${-0.6 * s} ${-n / 2} ${-0.35 * s} ${-n + 0.3}`} stroke="#ff4fd8" strokeWidth={0.12} fill="none" />;
+      })()}
       {k === "boost" && <path d="M-0.2 0.1L0 -0.15L0.2 0.1M-0.2 0.35L0 0.1L0.2 0.35" stroke="#22e3ff" strokeWidth={0.08} fill="none" />}
       {k === "cp" && <path d="M-0.4 0H0.4" stroke="#ffd23d" strokeWidth={0.12} />}
       {(k === "start" || k === "finish") && <path d={k === "start" ? "M-0.3 0.2H0.3" : "M-0.3 0H0.3"} stroke="#fff" strokeWidth={0.12} strokeDasharray="0.1 0.1" />}
