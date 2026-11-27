@@ -2,7 +2,7 @@
 // the HUD, the finish screen and Gaming Mode; the game itself is in game.ts.
 // Loaded only when someone opens it, so it adds nothing to the rest of the site.
 import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { ALL_MAPS, MAPS, BIOMES, medalFor, type MapDef, type Medal } from "./maps.ts";
+import { ALL_MAPS, DIFFICULTIES, DIFFICULTY_NOTES, MAPS, BIOMES, medalFor, type MapDef, type Medal } from "./maps.ts";
 import type { PartyRun } from "./party.tsx";
 import { thumbOf } from "./thumbs.ts";
 import { isRoomCode } from "./room.ts";
@@ -451,8 +451,11 @@ function MapSelect() {
     <div className="hx-menu hx-maps-page">
       <TopBar back={{ href: "#/hexdrift", label: "Home" }} />
       <h1 className="hx-h1"><IconRoute size={28} />Choose a map</h1>
+      {DIFFICULTIES.map((d) => ({ d, list: MAPS.filter((m) => m.difficulty === d) })).filter((g) => g.list.length).map(({ d, list }) => (
+      <section key={d} className="hx-maps-group">
+        <h2 className="hx-maps-head"><span className={`hx-diff hx-diff-${d.toLowerCase()}`}>{d}</span><small>{DIFFICULTY_NOTES[d]}</small></h2>
       <ul className="hx-maps">
-        {MAPS.map((m, i) => {
+        {list.map((m) => { const i = MAPS.indexOf(m);
           const best = bests?.get(m.id) ?? null;
           const medal = best ? medalFor(m, best.t) : null;
           const b = BIOMES[m.biome];
@@ -477,6 +480,8 @@ function MapSelect() {
           );
         })}
       </ul>
+      </section>
+      ))}
     </div>
   );
 }
