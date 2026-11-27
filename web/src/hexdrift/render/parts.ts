@@ -2,7 +2,7 @@
 // glowing for boost and kill) so even hundreds of them cost two draw calls.
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { pipePoint, pipeRoll, type Loop, type Road } from "../sim/road.ts";
+import { pipeAxes, pipePoint, type Loop, type Road } from "../sim/road.ts";
 import type { Mat, Part, Parts } from "../sim/parts.ts";
 
 export const MAT_COLOR: Record<Mat, string> = { solid: "#9aa3b5", bouncy: "#ff4fa3", ice: "#bfe9ff", boost: "#22e3ff", kill: "#ff3346" };
@@ -85,7 +85,7 @@ export function loopPoint(L: Loop, th: number, lat: number, up = 0): [number, nu
 export function buildPipes(group: THREE.Group, road: Road, geos: THREE.BufferGeometry[], mats: THREE.Material[], asphalt: string, line: string) {
   if (!road.pipes.length) return;
   const pos: number[] = [], col: number[] = [], nrm: number[] = [];
-  const A = new THREE.Color(asphalt), W = new THREE.Color(line), R = new THREE.Color("#d9dde6"), N = new THREE.Color("#ff4fd8");
+  const A = new THREE.Color(asphalt), W = new THREE.Color(line), N = new THREE.Color("#ff4fd8");
   // Each corner is [point, normal]; normals follow the bank so the curve shades smoothly.
   type V = [number[], number[]];
   const quad = (a: V, b: V, c: V, d: V, k: THREE.Color) => {
@@ -93,15 +93,14 @@ export function buildPipes(group: THREE.Group, road: Road, geos: THREE.BufferGeo
   };
   for (const P of road.pipes) {
     const n = Math.max(24, Math.round(P.len / 2)), hw = P.hw;
-    const sdx = P.w * P.rx, sdz = P.w * P.rz;
     // Strips across the road, the outer ones white.
     const cuts = [-hw, -hw + 0.5];
     for (let i = 1; i < 4; i++) cuts.push(-hw + 0.5 + ((2 * hw - 1) * i) / 4);
     cuts.push(hw - 0.5, hw);
     const v = (u: number, l: number, up: number, side = 0): V => {
-      const th = pipeRoll(P, u)[0], sn = Math.sin(th), cs = Math.cos(th);
-      // Up off the road, or out across it (for the rails).
-      const nn = side ? [side * cs * sdx, side * sn, side * cs * sdz] : [-sn * sdx * Math.sign(up + 0.01), cs * Math.sign(up + 0.01), -sn * sdz * Math.sign(up + 0.01)];
+      // The surface's own normal (off the road, or under it), or out across it for the rail.
+      const x = pipeAxes(P, u, l), k = up < 0 ? -1 : 1;
+      const nn = side ? [side * x[6], side * x[7], side * x[8]] : [x[0] * k, x[1] * k, x[2] * k];
       return [pipePoint(P, u, l, up), nn];
     };
     for (let i = 0; i < n; i++) {
@@ -114,11 +113,9 @@ export function buildPipes(group: THREE.Group, road: Road, geos: THREE.BufferGeo
       }
       // A dashed middle line.
       if (i % 3 === 0) quad(v(u0, -0.15, 0.06), v(u1, -0.15, 0.06), v(u1, 0.15, 0.06), v(u0, 0.15, 0.06), W);
-      for (const e of [-hw, hw]) {
-        const k = e > 0 ? N : R, s = e > 0 ? -1 : 1;
-        quad(v(u0, e, 0, s), v(u1, e, 0, s), v(u1, e, 1.1, s), v(u0, e, 1.1, s), k);
-        quad(v(u0, e, 1.1, -s), v(u1, e, 1.1, -s), v(u1, e, 0, -s), v(u0, e, 0, -s), k);
-      }
+      // A rail along the high edge only: off the low edge you fall.
+      quad(v(u0, hw, 0, -1), v(u1, hw, 0, -1), v(u1, hw, 1.1, -1), v(u0, hw, 1.1, -1), N);
+      quad(v(u0, hw, 1.1, 1), v(u1, hw, 1.1, 1), v(u1, hw, 0, 1), v(u0, hw, 0, 1), N);
     }
   }
   const g = new THREE.BufferGeometry();
