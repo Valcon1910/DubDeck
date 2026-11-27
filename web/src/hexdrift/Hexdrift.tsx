@@ -357,7 +357,7 @@ function Title() {
           <div className="hx-cta">
             <a className="hx-big" href="#/hexdrift/maps" data-sound="confirm"><IconPlay size={22} /><span>Play</span></a>
             <a className="hx-big hx-big-2" href="#/hexdrift/garage"><IconGarage size={22} /><span>Garage</span></a>
-            <a className="hx-big hx-big-2" href="#/hexdrift/party"><IconCrown size={22} /><span>Party</span></a>
+            <a className="hx-big hx-big-2" href="#/hexdrift/party"><IconCrown size={22} /><span>Multiplayer</span></a>
             <a className="hx-big hx-big-2" href="#/hexdrift/community"><IconFlag size={22} /><span>Community</span></a>
             <a className="hx-big hx-big-2" href="#/hexdrift/editor"><IconRoute size={22} /><span>Create</span></a>
           </div>
