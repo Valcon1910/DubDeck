@@ -4,7 +4,7 @@
 import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { ALL_MAPS, DIFFICULTIES, DIFFICULTY_NOTES, MAPS, BIOMES, medalFor, type MapDef, type Medal } from "./maps.ts";
 import type { PartyRun } from "./party.tsx";
-import { thumbOf } from "./thumbs.ts";
+import { clipOf, thumbOf } from "./thumbs.ts";
 import { isRoomCode } from "./room.ts";
 import { getMap, isCommunity, mapDefFrom, markPlayed } from "./community.ts";
 import { emailFrom, pidOf, playerHref, profileHref } from "../vortex/profileLink.ts";
@@ -398,10 +398,22 @@ function Title() {
 
 export { thumbOf };
 
-/** A map's picture: made ahead (or a still from above), and the live drone view while hovered. */
+/** Clips play unless the player asked for less motion or less data. */
+const clipsOk = () => !matchMedia("(prefers-reduced-motion: reduce)").matches
+  && !(navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData;
+
+/**
+ * A map's picture: made ahead (or a still from above). While it's live (hovered,
+ * or the card in the middle of a phone's screen) its recorded clip plays over it;
+ * maps without one (and old browsers) get the live drone view instead.
+ */
 function MapArt({ map, live = false }: { map: MapDef; live?: boolean }) {
   const el = useRef<HTMLSpanElement>(null);
+  const vid = useRef<HTMLVideoElement>(null);
+  const clip = clipOf(map.id);
   const [src, setSrc] = useState(() => thumbOf(map.id) ?? "");
+  // The video is only made the first time it's wanted (nothing downloads before).
+  const [play, setPlay] = useState(false);
   useEffect(() => {
     if (thumbOf(map.id)) { setSrc(thumbOf(map.id)!); return; }
     let alive = true;
@@ -414,7 +426,15 @@ function MapArt({ map, live = false }: { map: MapDef; live?: boolean }) {
     return () => { alive = false; io.disconnect(); };
   }, [map]);
   useEffect(() => {
-    if (!live) return;
+    if (!live || !clip) return;
+    if (!clipsOk()) return;
+    setPlay(true);
+    const v = vid.current;
+    if (v) { v.currentTime = 0; void v.play().catch(() => {}); }
+    return () => { vid.current?.pause(); };
+  }, [live, clip]);
+  useEffect(() => {
+    if (!live || clip) return;
     const h = el.current!;
     // The live drone view only after a moment (the picture shows straight away).
     let dead = false, shown: (() => void) | null = null;
@@ -424,13 +444,49 @@ function MapArt({ map, live = false }: { map: MapDef; live?: boolean }) {
       shown = () => spectator()?.hide(h);
     }), 700);
     return () => { dead = true; clearTimeout(t); shown?.(); };
-  }, [live, map]);
+  }, [live, map, clip]);
   const b = BIOMES[map.biome];
   return (
     <span className="hx-art" ref={el} style={{ ["--hx-sky" as string]: b.sky, ["--hx-g" as string]: b.ground }} aria-hidden="true">
       {src && <img src={src} alt="" draggable={false} />}
+      {play && clip && (
+        <video ref={vid} className={live ? "on" : ""} src={clip} muted loop playsInline autoPlay={live} preload="auto"
+          disablePictureInPicture />
+      )}
     </span>
   );
+}
+
+/**
+ * Phones have no hover: the card nearest the middle of the screen plays its clip.
+ * Only one at a time, so scrolling the list stays smooth.
+ */
+function useCentreCard(set: (id: string) => void) {
+  useEffect(() => {
+    if (!matchMedia("(hover: none)").matches) return;
+    const seen = new Map<Element, number>();
+    let raf = 0;
+    const pick = () => {
+      raf = 0;
+      let best = "", bestD = Infinity;
+      const mid = innerHeight / 2;
+      for (const [e, r] of seen) {
+        if (r < 0.6) continue;
+        const b = e.getBoundingClientRect();
+        const d = Math.abs(b.top + b.height / 2 - mid);
+        if (d < bestD) { bestD = d; best = (e as HTMLElement).dataset.map ?? ""; }
+      }
+      set(best);
+    };
+    const io = new IntersectionObserver((es) => {
+      for (const e of es) seen.set(e.target, e.intersectionRatio);
+      raf ||= requestAnimationFrame(pick);
+    }, { threshold: [0, 0.6, 1] });
+    const onScroll = () => { raf ||= requestAnimationFrame(pick); };
+    document.querySelectorAll(".hx-map[data-map]").forEach((e) => io.observe(e));
+    addEventListener("scroll", onScroll, { passive: true });
+    return () => { io.disconnect(); removeEventListener("scroll", onScroll); cancelAnimationFrame(raf); };
+  }, [set]);
 }
 
 function MapSelect() {
@@ -438,6 +494,7 @@ function MapSelect() {
   const { sb, me, profiles, rev } = useOnlineRecords();
   const [wrs, setWrs] = useState<Map<string, Entry> | null>(null);
   const [hover, setHover] = useState("");
+  useCentreCard(setHover);
   useEffect(() => {
     if (!sb) return;
     let alive = true;
@@ -466,7 +523,7 @@ function MapSelect() {
           const wr = wrs?.get(m.id);
           return (
             <li key={m.id} style={{ animationDelay: `${60 + i * 70}ms` }}>
-              <a className="hx-map" href={`#/hexdrift/map/${m.id}`} style={{ ["--hx-a" as string]: b.accent }}
+              <a className="hx-map" data-map={m.id} href={`#/hexdrift/map/${m.id}`} style={{ ["--hx-a" as string]: b.accent }}
                 onPointerEnter={(e) => { if (e.pointerType === "mouse") setHover(m.id); }}
                 onPointerLeave={() => setHover((h) => (h === m.id ? "" : h))}
                 onFocus={() => setHover(m.id)} onBlur={() => setHover((h) => (h === m.id ? "" : h))}>
@@ -523,7 +580,7 @@ function MapDetail({ map }: { map: MapDef }) {
       <section className={`hx-detail ${idx % 2 ? "flip" : ""}`}>
         <div className="hx-detail-view">
           <MapArt map={map} live />
-          <span className="hx-live"><i />Live</span>
+          {!clipOf(map.id) && <span className="hx-live"><i />Live</span>}
         </div>
         <div className="hx-detail-text">
           <p className="hx-kicker">{String(idx + 1).padStart(2, "0")} · {b.name} · <span className={`hx-diff hx-diff-${map.difficulty.toLowerCase()}`}>{map.difficulty}</span></p>
