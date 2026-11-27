@@ -965,7 +965,7 @@ export class Game {
     this.audio.update({
       speed: this.coast ? this.coast.v : car.speed, slip: this.coast ? 0 : car.slip,
       gas, brake: (lastIn & 32) !== 0, grounded: this.coast ? true : car.grounded, boosting: car.boosting > 0,
-      surface, phase: this.coast || this.finished ? "finished" : r.phase, fromStart,
+      surface, phase: this.coast || this.finished ? "finished" : r.phase, fromStart, scrape: this.ev.hit,
     }, dt);
   }
 
@@ -987,7 +987,8 @@ export class Game {
       const now = performance.now();
       // Scraping along a wall hits every step: one shake, then only for a fresh, harder knock.
       if (now - this.hitShakeAt > 400) { this.shake = Math.max(this.shake, 0.2 + k * 0.5); this.hitShakeAt = now; }
-      if (now - this.hitSoundAt > 140) { play("impact", k); this.hitSoundAt = now; }
+      // A real crash for a big hit; knocks and thumps for the rest.
+      if (now - this.hitSoundAt > 140) { play(ev.hit > 22 ? "crash" : "impact", k); this.hitSoundAt = now; }
     }
     // Hard landings: a puff of whatever is underfoot.
     if (ev.land > 7 && running) {
@@ -1210,6 +1211,8 @@ export class Game {
     else if (r.phase === "countdown") count = String(Math.ceil((COUNTDOWN - r.tick) / HZ));
     else if (r.phase === "running" && r.tick - COUNTDOWN < 40) count = "GO!";
     if (count !== cache.count && count && this.raf) play(count === "GO!" ? "go" : "count");
+    // The engine fires up as the countdown starts.
+    if (count !== cache.count && count === String(Math.ceil(COUNTDOWN / HZ)) && this.raf) play("start");
     set("count", h.count, count);
     if (h.count && h.count.dataset.n !== count) { h.count.dataset.n = count; h.count.classList.remove("pop"); void h.count.offsetWidth; h.count.classList.add("pop"); }
     const split = r.tick < this.splitUntil ? this.splitText : "";

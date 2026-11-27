@@ -9,6 +9,7 @@
 import impactsUrl from "../sfx/impacts.mp3?url";
 import uiUrl from "../sfx/ui.mp3?url";
 import raceUrl from "../sfx/race.wav?url";
+import crashUrl from "../sfx/crash.mp3?url";
 
 type Ctx = AudioContext;
 let ctx: Ctx | null = null;
@@ -65,8 +66,33 @@ function loadSprite(c: Ctx) {
   fetch(impactsUrl).then((r) => r.arrayBuffer()).then((b) => c.decodeAudioData(b)).then((buf) => { sprite = buf; })
     .catch(() => { spriteLoading = false; });
 }
+// ── Crashes and the engine start (CC0, see sfx/CREDITS.txt): a second small sheet ──
+const CRASH: Record<string, [number, number][]> = {
+  crash: [[0.05, 0.4484]], glass: [[0.6484, 0.6035], [1.4019, 0.7467]],
+  debris: [[2.2986, 0.7722], [3.2207, 0.5815]], knock: [[3.9522, 0.2635], [4.3657, 0.2762], [4.7919, 0.2009]],
+  start: [[5.1428, 1.8438]],
+};
+let crashBuf: AudioBuffer | null = null;
+let crashLoading = false;
+function loadCrash(c: Ctx) {
+  if (crashBuf || crashLoading) return;
+  crashLoading = true;
+  fetch(crashUrl).then((r) => r.arrayBuffer()).then((b) => c.decodeAudioData(b)).then((buf) => { crashBuf = buf; }).catch(() => { crashLoading = false; });
+}
+function crashClip(c: Ctx, out: AudioNode, name: string, vol: number, rate = 1, at = 0): boolean {
+  if (!crashBuf) { loadCrash(c); return false; }
+  const takes = CRASH[name];
+  const [t, d] = takes[Math.floor(Math.random() * takes.length)];
+  const s = c.createBufferSource(); s.buffer = crashBuf;
+  s.playbackRate.value = rate * (0.95 + Math.random() * 0.1);
+  const g = c.createGain(); g.gain.value = vol;
+  s.connect(g).connect(out);
+  s.start(c.currentTime + at, Math.max(0, t - 0.01), d / s.playbackRate.value + 0.05);
+  return true;
+}
+
 /** Fetches the recorded hits and race sounds ahead of a race (once the audio is unlocked). */
-export function preloadSounds() { const a = audio(); if (a) { loadSprite(a.c); loadRace(a.c); } }
+export function preloadSounds() { const a = audio(); if (a) { loadSprite(a.c); loadRace(a.c); loadCrash(a.c); } }
 
 // ── Recorded interface sounds (Kenney's Interface Sounds, CC0) ──
 const UI: Partial<Record<UiSound, [number, number, number]>> = {
@@ -99,6 +125,7 @@ function uiClip(c: Ctx, out: AudioNode, s: UiSound, k: number): boolean {
 export const RACE_CLIPS = {
   e0: [0.1, 0.864082], e1: [1.064082, 0.666667], e2: [1.830748, 0.682585], e3: [2.613333, 0.616054],
   e4: [3.329388, 0.630839], e5: [4.060227, 0.629569], squeal: [4.789796, 3.0], boost: [7.889796, 0.341723], rush: [8.331519, 2.5],
+  wind: [11.031519, 3.5],
 } as const;
 let raceBuf: AudioBuffer | null = null;
 let raceLoading = false;
@@ -156,7 +183,7 @@ function noise(c: Ctx, out: AudioNode, n: Noise) {
 
 export type UiSound = "hover" | "click" | "confirm" | "back" | "whoosh" | "toggle" | "locked" | "tick" | "count" | "go" | "reveal" | "medal"
   // In the race (synthesised for now; recorded sounds come with the sound pass):
-  | "impact" | "land" | "checkpoint" | "boost" | "finish"
+  | "impact" | "crash" | "start" | "land" | "checkpoint" | "boost" | "finish"
   | "smash-metal" | "smash-wood" | "smash-plastic" | "smash-snow";
 
 let lastHover = 0;
@@ -224,11 +251,27 @@ export function play(s: UiSound, k = 1) {
       // Recorded metal on top: heavy crunches for big hits, knocks for taps.
       const v = 0.15 + 0.45 * k;
       const rec = clip(c, out, k > 0.45 ? "hit_heavy" : "hit_light", 0.35 + 0.55 * k, 1.05 - 0.2 * k);
+      if (k > 0.25) crashClip(c, out, "knock", 0.25 + 0.4 * k, 1.1 - 0.3 * k);
       tone(c, out, { f: 95 + 60 * (1 - k), f2: 40, type: "sine", dur: 0.22, vol: v * (rec ? 0.7 : 1) });
       noise(c, out, { dur: 0.12 + 0.2 * k, vol: v * (rec ? 0.35 : 0.7), f: 900, f2: 300, q: 0.7 });
       if (!rec) noise(c, out, { dur: 0.05, vol: v * 0.5, f: 3200, q: 1 });
       break;
     }
+    case "crash": {
+      // A real car crash: the bang, then glass and bits of metal coming down.
+      if (crashClip(c, out, "crash", 0.55 + 0.45 * k, 1.05 - 0.15 * k)) {
+        if (k > 0.75) crashClip(c, out, "glass", 0.3 + 0.3 * k, 1, 0.06);
+        crashClip(c, out, "debris", 0.25 + 0.3 * k, 1, 0.12);
+      }
+      clip(c, out, "hit_heavy", 0.5 * k, 0.85);
+      tone(c, out, { f: 70, f2: 30, type: "sine", dur: 0.45, vol: 0.35 + 0.35 * k });
+      noise(c, out, { dur: 0.4, vol: 0.25 * k, f: 700, f2: 200, q: 0.6 });
+      break;
+    }
+    case "start":
+      // The engine firing up on the grid.
+      if (!crashClip(c, out, "start", 0.7)) tone(c, out, { f: 40, f2: 90, type: "sawtooth", dur: 0.9, vol: 0.06, attack: 0.2 });
+      break;
     case "land": {
       const rec = clip(c, out, "land", 0.3 + 0.5 * k, 0.9);
       tone(c, out, { f: 70, f2: 38, type: "sine", dur: 0.2, vol: 0.2 + 0.35 * k });

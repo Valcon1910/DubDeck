@@ -15,3 +15,14 @@ race.wav, a sheet of:
           https://opengameart.org/content/boost-or-launch-or-thruster-sound-effect
   rush    "Air whoosh" by pyranostudios, CC0 (looped)
           https://opengameart.org/content/air-whoosh
+  wind    "wind woosh loop" by SketchMan3, CC0, looped with a crossfade
+          https://opengameart.org/content/wind-whoosh-loop
+
+crash.mp3, a sheet of:
+  crash   "Crash Collision" by qubodup, CC0
+          https://opengameart.org/content/crash-collision
+  glass, debris, knock
+          "75 CC0 breaking / falling / hit sfx" by rubberduck, CC0
+          https://opengameart.org/content/75-cc0-breaking-falling-hit-sfx
+  start   "Car Sound Effects Pack (Low Quality)" by GGBotNet, Car_Engine_Start_Up, CC0
+          https://opengameart.org/content/car-sound-effects-pack-low-quality
