@@ -2,7 +2,7 @@
 // be finished and sets the medal times; the learning AI that checks
 // community maps later starts from it. Deterministic like the rest.
 import { dcos, dsin, clamp } from "./math.ts";
-import { pipeAxes } from "./road.ts";
+import { pipeAxes, pipeTop } from "./road.ts";
 import { newRace, pack, step, COUNTDOWN, HZ, type Race } from "./race.ts";
 import type { Track } from "./track.ts";
 
@@ -14,18 +14,27 @@ export function botInput(r: Race, at: { i: number }, tune: BotTuning = DEFAULT_B
   const line = track.line;
   // Loops: flat out, kept to the middle.
   if (car.loop >= 0) return pack({ steer: clamp(-car.ll * 0.3, -1, 1), gas: true, brake: false, drift: false, respawn: false });
-  // Pipes: drive along the road, steering back toward its middle (left on it is toward the floor when the wall is on the right, and the other way round).
+  // Wall rides: up onto the wall before the road runs out, ride it over the
+  // gap, and back down once the road is there again.
   if (car.pipe >= 0) {
-    // On a pipe: steer the way it's moving back toward the road's middle.
     const P = track.road!.pipes[car.pipe], A = pipeAxes(P, car.ls, car.ll);
     const ve = car.vx * A[3] + car.vy * A[4] + car.vz * A[5];
-    const va = car.vx * A[6] + car.vy * A[7] + car.vz * A[8];
-    // How fast it's crossing the road (the road's way and across it aren't square while it sweeps).
-    const c = A[3] * A[6] + A[4] * A[7] + A[5] * A[8];
-    const cross = (va - c * ve) / (1 - c * c);
-    const want = clamp(-car.ll, -6, 6);
+    const up = car.vx * A[6] + car.vy * A[7] + car.vz * A[8];
+    const ride = car.ls < P.g1 ? 0.7 * P.R * Math.min(pipeTop(P, car.ls + ve * 0.3), 1.2) : -2;
+    const want = clamp((ride - car.ll) * 1.5, -14, 10);
     const e = ve > 10 ? ve : 10;
-    return pack({ steer: clamp(P.w * (want - cross) / e * 8, -1, 1), gas: true, brake: false, drift: false, respawn: false });
+    return pack({ steer: clamp(P.w * (want - up) / e * 8, -1, 1), gas: true, brake: false, drift: false, respawn: false });
+  }
+  if (car.grounded) for (const P of track.road?.pipes ?? []) {
+    const u = (car.x - P.x) * P.fx + (car.z - P.z) * P.fz;
+    const o = ((car.x - P.x) * P.rx + (car.z - P.z) * P.rz) * P.w;
+    if (u < -40 || u > P.g0 || o < -P.hw - 2 || o > P.hw + 6) continue;
+    // Toward the wall's foot, but not off the road's edge before the wall is there.
+    const ve = car.vx * P.fx + car.vz * P.fz, vo = (car.vx * P.rx + car.vz * P.rz) * P.w;
+    const aim = pipeTop(P, u + ve * 0.25) * P.R > 2 ? P.hw + 3 : P.hw - 2.5;
+    const want = clamp((aim - o) * 1.5, -12, 12);
+    const e = ve > 10 ? ve : 10;
+    return pack({ steer: clamp(P.w * (want - vo) / e * 8, -1, 1), gas: true, brake: false, drift: false, respawn: false });
   }
   for (const L of track.road?.loops ?? []) {
     const along = (car.x - L.x) * L.fx + (car.z - L.z) * L.fz, lat = (car.x - L.x) * L.rx + (car.z - L.z) * L.rz;

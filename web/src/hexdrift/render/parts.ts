@@ -2,7 +2,7 @@
 // glowing for boost and kill) so even hundreds of them cost two draw calls.
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { pipeAxes, pipePoint, type Loop, type Road } from "../sim/road.ts";
+import { pipeAxes, pipePoint, pipeTop, type Loop, type Road } from "../sim/road.ts";
 import type { Mat, Part, Parts } from "../sim/parts.ts";
 
 export const MAT_COLOR: Record<Mat, string> = { solid: "#9aa3b5", bouncy: "#ff4fa3", ice: "#bfe9ff", boost: "#22e3ff", kill: "#ff3346" };
@@ -92,30 +92,42 @@ export function buildPipes(group: THREE.Group, road: Road, geos: THREE.BufferGeo
     for (const v of [a, c, b, a, d, c]) { pos.push(...v[0]); nrm.push(...v[1]); col.push(k.r, k.g, k.b); }
   };
   for (const P of road.pipes) {
-    const n = Math.max(24, Math.round(P.len / 2)), hw = P.hw;
-    // Strips across the road, the outer ones white.
-    const cuts = [-hw, -hw + 0.5];
-    for (let i = 1; i < 4; i++) cuts.push(-hw + 0.5 + ((2 * hw - 1) * i) / 4);
-    cuts.push(hw - 0.5, hw);
-    const v = (u: number, l: number, up: number, side = 0): V => {
-      // The surface's own normal (off the road, or under it), or out across it for the rail.
-      const x = pipeAxes(P, u, l), k = up < 0 ? -1 : 1;
-      const nn = side ? [side * x[6], side * x[7], side * x[8]] : [x[0] * k, x[1] * k, x[2] * k];
-      return [pipePoint(P, u, l, up), nn];
+    const n = Math.max(24, Math.round(P.len / 2)), m = 12;
+    const v = (u: number, sv: number, up: number): V => {
+      // The wall's own normal (off it, or off its back).
+      const x = pipeAxes(P, u, sv), k = up < 0 ? -1 : 1;
+      return [pipePoint(P, u, sv, up), [x[0] * k, x[1] * k, x[2] * k]];
+    };
+    const edge = (u: number, sv: number, up: number): V => {
+      // Across the wall, for its lip and foot.
+      const x = pipeAxes(P, u, sv), k = sv > 0.01 ? 1 : -1;
+      return [pipePoint(P, u, sv, up), [x[6] * k, x[7] * k, x[8] * k]];
     };
     for (let i = 0; i < n; i++) {
       const u0 = (i / n) * P.len, u1 = ((i + 1) / n) * P.len;
-      for (let j = 0; j < cuts.length - 1; j++) {
-        const l0 = cuts[j], l1 = cuts[j + 1];
-        const k = j === 0 || j === cuts.length - 2 ? W : A;
-        quad(v(u0, l0, 0.04), v(u1, l0, 0.04), v(u1, l1, 0.04), v(u0, l1, 0.04), k);
-        quad(v(u0, l1, -0.5), v(u1, l1, -0.5), v(u1, l0, -0.5), v(u0, l0, -0.5), A);
+      const t0 = P.R * pipeTop(P, u0), t1 = P.R * pipeTop(P, u1);
+      if (t0 < 0.05 && t1 < 0.05) continue;
+      // The face: a white line at its foot, asphalt up the curve, a neon lip.
+      const bands: [number, number, THREE.Color][] = [[0, 0.5, W]];
+      for (let j = 0; j < m; j++) bands.push([0.5 + (j / m) * 0.5, 0.5 + ((j + 1) / m) * 0.5, A]);
+      for (const [f0, f1, k] of bands) {
+        // f in [0, 0.5) is the foot line (metres), [0.5, 1] the rest of the way up (fraction).
+        const at = (t: number, f: number) => f <= 0.5 ? Math.min(f, t) : Math.min(0.5, t) + (t - Math.min(0.5, t)) * (f - 0.5) * 2;
+        const a0 = at(t0, f0), a1 = at(t1, f0), b0 = at(t0, f1), b1 = at(t1, f1);
+        const top = f1 >= 1;
+        const kk = top ? N : k;
+        // The last band carries the lip colour on its upper part.
+        if (top) {
+          const c0 = Math.max(a0, t0 - 0.6), c1 = Math.max(a1, t1 - 0.6);
+          quad(v(u0, a0, 0.04), v(u1, a1, 0.04), v(u1, c1, 0.04), v(u0, c0, 0.04), k);
+          quad(v(u0, c0, 0.04), v(u1, c1, 0.04), v(u1, b1, 0.04), v(u0, b0, 0.04), kk);
+        } else quad(v(u0, a0, 0.04), v(u1, a1, 0.04), v(u1, b1, 0.04), v(u0, b0, 0.04), k);
+        // Its back.
+        quad(v(u0, b0, -0.6), v(u1, b1, -0.6), v(u1, a1, -0.6), v(u0, a0, -0.6), A);
       }
-      // A dashed middle line.
-      if (i % 3 === 0) quad(v(u0, -0.15, 0.06), v(u1, -0.15, 0.06), v(u1, 0.15, 0.06), v(u0, 0.15, 0.06), W);
-      // A rail along the high edge only: off the low edge you fall.
-      quad(v(u0, hw, 0, -1), v(u1, hw, 0, -1), v(u1, hw, 1.1, -1), v(u0, hw, 1.1, -1), N);
-      quad(v(u0, hw, 1.1, 1), v(u1, hw, 1.1, 1), v(u1, hw, 0, 1), v(u0, hw, 0, 1), N);
+      // The lip's edge, and the foot's edge where the road is gone.
+      quad(edge(u0, t0, -0.6), edge(u1, t1, -0.6), edge(u1, t1, 0.04), edge(u0, t0, 0.04), N);
+      quad(edge(u0, 0, 0.04), edge(u1, 0, 0.04), edge(u1, 0, -0.6), edge(u0, 0, -0.6), A);
     }
   }
   const g = new THREE.BufferGeometry();

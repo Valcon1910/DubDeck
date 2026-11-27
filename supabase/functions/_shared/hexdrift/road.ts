@@ -143,72 +143,70 @@ export interface Loop {
 export const LOOP_R = [8, 40] as const;
 
 /**
- * A pipe: the road curls up the inside of a pipe of radius `R` whose axis
- * runs along the way of travel `R` above the road. Over its length the road
- * rolls from flat up the side (`w` -1: left, 1: right) to `peak` (radians:
- * π/2 a wall, π the roof) and back down, so its middle sweeps out toward the
- * wall and back like a bend. Nothing holds the car on but physics: taking
- * that bend fast presses it into the wall, with grip, gravity and a little
- * downforce; too slow and it slides down or falls. It rises as it rolls so
- * its low edge never dips below the road. The plain road carries on beneath,
- * to land on after a fall.
+ * A wall ride: beside the road (on side `w`, -1 left, 1 right) a wall curves
+ * up from its edge, round an arc of radius `R`: steeper the higher it goes,
+ * to `peak` (radians: π/2 straight up, past that leaning over the road, π a
+ * roof). Its top is a bare lip, with nothing to rest on. It grows out of the
+ * road over the first metres and sinks back at the end. In the middle the
+ * road itself is gone (from `g0` to `g1` m along): only the wall carries you
+ * over the drop. Nothing holds the car on but physics: speed, grip, gravity
+ * and downforce.
  */
 export interface Pipe {
   x: number; y: number; z: number; yaw: number;
   fx: number; fz: number; rx: number; rz: number;
   len: number; peak: number; R: number; hw: number; w: number;
+  g0: number; g1: number;
 }
 export const PIPE_LEN = [40, 240] as const;
-export const PIPE_R = 3;
+export const PIPE_R = 10;
 
-/** How far round the pipe the road's middle is at `u` m in (radians), and how fast that changes. */
-export function pipeRoll(P: Pipe, u: number): [number, number] {
-  const k = 6.283185307179586 / P.len;
-  return [P.peak * (1 - dcos(k * u)) / 2, P.peak * k * dsin(k * u) / 2];
+/** How far round the wall reaches at `u` m along (radians): it rises out of the road, stands, then sinks back. */
+export function pipeTop(P: Pipe, u: number): number {
+  const q = P.len * 0.18 < 36 ? P.len * 0.18 : 36;
+  const e = u < P.len - u ? u : P.len - u;
+  return e <= 0 ? 0 : e >= q ? P.peak : P.peak * smooth(e / q);
 }
 
-/** How high the bank lifts the road at θ, and how fast that changes with θ: hw·sinθ up to the wall, then hw, so the floor-side edge never sinks below the road. */
-function pipeLift(P: Pipe, sn: number, cs: number): [number, number] {
-  return cs > 0 ? [P.hw * sn, P.hw * cs] : [P.hw, 0];
+/** Whether the road is under the wall ride at `u` m along. */
+export function pipeFloor(P: Pipe, u: number): boolean {
+  return u < P.g0 || u > P.g1;
 }
 
 /**
- * A point on a pipe's road: u along it, l across (+ toward the wall), up off
- * the surface. Each cross-section is a straight plank banked by θ(u), so the
- * road is flat across and twists along.
+ * A point on the wall: u along, s up it (metres round the arc from the
+ * road's edge; below 0 it's the road beside it), up off the surface.
  */
-export function pipePoint(P: Pipe, u: number, l: number, up = 0): [number, number, number] {
-  const th = pipeRoll(P, u)[0], sn = dsin(th), cs = dcos(th);
+export function pipePoint(P: Pipe, u: number, s: number, up = 0): [number, number, number] {
+  let o: number, h: number;
+  if (s <= 0) { o = P.hw + s; h = up; } else {
+    const a = s / P.R, sn = dsin(a), cs = dcos(a);
+    o = P.hw + (P.R - up) * sn; h = P.R - (P.R - up) * cs;
+  }
   const sdx = P.w * P.rx, sdz = P.w * P.rz;
-  const a = P.R - up;
-  const o = a * sn + l * cs, h = P.R - a * cs + l * sn + pipeLift(P, sn, cs)[0];
   return [P.x + P.fx * u + o * sdx, P.y + h, P.z + P.fz * u + o * sdz];
 }
 
-/**
- * The surface's exact axes at (u, l): its normal (off the road, into the
- * pipe), then the unit direction along the road and across it (+ toward the wall).
- */
-export function pipeAxes(P: Pipe, u: number, l: number): number[] {
-  const [th, dr] = pipeRoll(P, u), sn = dsin(th), cs = dcos(th);
+/** The wall's axes at (u, s): [its normal (off it, into the curve), along the road, up the wall], all unit and square. */
+export function pipeAxes(P: Pipe, _u: number, s: number): number[] {
+  const a = s > 0 ? s / P.R : 0, sn = dsin(a), cs = dcos(a);
   const sdx = P.w * P.rx, sdz = P.w * P.rz;
-  const dO = (P.R * cs - l * sn) * dr, dH = (P.R * sn + l * cs + pipeLift(P, sn, cs)[1]) * dr;
-  let ux = P.fx + dO * sdx, uy = dH, uz = P.fz + dO * sdz;
-  const ax = cs * sdx, ay = sn, az = cs * sdz;
-  let nx = uy * az - uz * ay, ny = uz * ax - ux * az, nz = ux * ay - uy * ax;
-  if (nx * -sn * sdx + ny * cs + nz * -sn * sdz < 0) { nx = -nx; ny = -ny; nz = -nz; }
-  const n = Math.sqrt(nx * nx + ny * ny + nz * nz), ul = Math.sqrt(ux * ux + uy * uy + uz * uz);
-  ux /= ul; uy /= ul; uz /= ul;
-  return [nx / n, ny / n, nz / n, ux, uy, uz, ax, ay, az];
+  return [-sn * sdx, cs, -sn * sdz, P.fx, 0, P.fz, cs * sdx, sn, cs * sdz];
 }
 
-/** Where a point is against a pipe: u along it, l across, and its height above the road in that cross-section. */
+/**
+ * Where a point is against a wall ride: [u along, s up the wall, d off its
+ * surface (+ on the open side, - behind it)]. Beside the wall, s < 0 and d
+ * is the height over the road.
+ */
 export function pipeProbe(P: Pipe, x: number, y: number, z: number): [number, number, number] {
-  const u = (x - P.x) * P.fx + (z - P.z) * P.fz;
-  const th = pipeRoll(P, u < 0 ? 0 : u > P.len ? P.len : u)[0], sn = dsin(th), cs = dcos(th);
-  const o = ((x - P.x) * P.rx + (z - P.z) * P.rz) * P.w - P.R * sn;
-  const h = y - P.y - (P.R - P.R * cs + pipeLift(P, sn, cs)[0]);
-  return [u, o * cs + h * sn, -o * sn + h * cs];
+  const dx0 = x - P.x, dz0 = z - P.z;
+  const u = dx0 * P.fx + dz0 * P.fz;
+  const ox = (dx0 * P.rx + dz0 * P.rz) * P.w - P.hw, oy = y - P.y - P.R;
+  if (ox <= 0 && oy <= 0) return [u, ox, y - P.y];
+  let a = datan2(ox, -oy);
+  if (a < -1.5707963267948966) a += 6.283185307179586;
+  return [u, a * P.R, P.R - Math.sqrt(ox * ox + oy * oy)];
 }
 
 export interface Sample {
@@ -350,8 +348,9 @@ function baseLand(L: LandDef, x: number, z: number): { h: number; mat: number } 
  *   Mdirt    surface from here (asphalt, dirt, ice, metal, sand)
  *   O14      a loop of 14 m radius here (the road goes on beside it)
  *   O14/32   the same, going on 32 m to the right
- *   QL80/90  a pipe 80 m long curling up to the left into a wall ride (90°)
- *   QR120/180  the same to the right, over the roof (180°) and back down
+ *   QL160/90  a wall ride 160 m long: a wall curving up beside the road on
+ *            the left to straight up (90°), over a gap in the road
+ *   QR200/180  the same on the right, curving on over into a roof (180°)
  */
 export function buildRoad(def: RoadDef): Road {
   const L = def.land;
@@ -460,10 +459,18 @@ export function buildRoad(def: RoadDef): Road {
       const [len, peak] = rest.slice(1).split("/").map(num);
       if ((side !== "L" && side !== "R") || len < PIPE_LEN[0] || len > PIPE_LEN[1] || !(peak >= 30 && peak <= 180)) throw new Error(`Bad pipe ${tok}`);
       const fx = dsin(yaw), fz = dcos(yaw);
-      pipes.push({ x, y, z, yaw, fx, fz, rx: -fz, rz: fx, len, peak: peak * DEG, R: PIPE_R, hw, w: side === "L" ? -1 : 1 });
-      // The plain road beneath, without walls (the pipe's wall is beside it).
+      // The road runs on under the wall's ends; in the middle it's gone.
+      const n = Math.floor(len * 0.36 / SEG + 0.5), gap = n * SEG, g0 = (len - gap) / 2;
+      pipes.push({ x, y, z, yaw, fx, fz, rx: -fz, rz: fx, len, peak: peak * DEG, R: PIPE_R, hw, w: side === "L" ? -1 : 1, g0, g1: g0 + gap });
       const keep = walls; walls = 0; rise = 0; ramp = 0;
-      piece(len, 0);
+      piece(g0, 0);
+      main[main.length - 1].flags |= GAP;
+      for (let j = 1; j <= n; j++) {
+        x += fx * SEG; z += fz * SEG; s += SEG;
+        push();
+        if (j < n) main[main.length - 1].flags |= GAP;
+      }
+      piece(len - g0 - gap, 0);
       walls = keep;
     } else throw new Error(`Bad road token ${tok}`);
   }

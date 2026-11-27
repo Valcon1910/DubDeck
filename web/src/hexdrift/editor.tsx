@@ -221,13 +221,13 @@ export function RoadPanel({ map, sel, setSel, ops, bad, wide }: { map: CustomMap
               <p className="hx-dim">A loop the loop: the road goes on beside it. It needs speed, so put a long straight or a boost before it.</p>
             </>}
             {p.k === "Q" && <>
-              <Chips label="Round" values={[["Wall 90°", 90], ["High 130°", 130], ["Roof 180°", 180]]} value={p.a ?? 90} onPick={(v) => edit({ a: v })} step={10} min={30} max={180} />
+              <Chips label="Round" values={[["Wall 90°", 90], ["Leaning 130°", 130], ["Roof 180°", 180]]} value={p.a ?? 90} onPick={(v) => edit({ a: v })} step={10} min={30} max={180} />
               <Chips label="Length" values={[["Short", 120], ["Medium", 160], ["Long", 220]]} value={p.len ?? 160} onPick={(v) => edit({ len: v })} step={8} min={40} max={240} />
               <div className="hx-ed-row"><span className="hx-dim">Side</span>
                 <button type="button" className={`hx-chip-btn ${p.side !== "R" ? "on" : ""}`} onClick={() => edit({ side: "L" })}>Left</button>
                 <button type="button" className={`hx-chip-btn ${p.side === "R" ? "on" : ""}`} onClick={() => edit({ side: "R" })}>Right</button>
               </div>
-              <p className="hx-dim">The road curls up a wall and back down, and it's all physics: steer to follow it, and carry speed. Fast, the curve holds you on the wall and you can hang from the roof; slow, you slide down and fall off the low edge. Climbing costs speed and the way down gives it back. Longer is gentler.</p>
+              <p className="hx-dim">A wall curves up beside the road, and in the middle the road is gone: steer up onto the wall before the drop and ride it across. It's all physics: fast, you stick high on the wall (or hang from a roof); slow, you slide down and fall. There's nothing to rest on at the top.</p>
             </>}
             {p.k === "C" && <p className="hx-dim">A checkpoint gate. Crash after it and you come back here.</p>}
             {p.k === "G" && <>

@@ -5,7 +5,7 @@
 // record checks on the server later).
 import { clamp, datan2, dcos, dsin } from "./math.ts";
 import { CELL, DIRV, groundAt, HALF_W, heightAlong, key, local, CURVE_IN, CURVE_OUT, LEVEL, THICK, WALL_H, WALL_T, yawOf, type Piece, type Spot, type Track } from "./track.ts";
-import { pipeAxes, pipePoint, pipeProbe, roadSolids, type Loop, type Pipe } from "./road.ts";
+import { pipeAxes, pipeFloor, pipePoint, pipeProbe, pipeTop, roadSolids, type Loop, type Pipe } from "./road.ts";
 import { hitParts, type Mat } from "./parts.ts";
 import { NO_GROUND, terrainAt } from "./terrain.ts";
 import { hitSolids } from "./props.ts";
@@ -212,22 +212,6 @@ export function step(r: Race, byte: number) {
       }
     }
   }
-  // Into a pipe: the car crosses its mouth on the road.
-  if (r.track.road?.pipes.length && car.grounded && !car.offroad) {
-    const pipes = r.track.road.pipes;
-    for (let i = 0; i < pipes.length; i++) {
-      const P = pipes[i];
-      const a0 = (px - P.x) * P.fx + (pz - P.z) * P.fz, a1 = (car.x - P.x) * P.fx + (car.z - P.z) * P.fz;
-      const lat = (car.x - P.x) * P.rx + (car.z - P.z) * P.rz;
-      if (a0 < 0 && a1 >= 0 && lat > -P.hw && lat < P.hw && car.y - P.y < 2 && P.y - car.y < 2) {
-        // Drive on onto it as you were: same heading, same speed.
-        car.pipe = i; car.load = GRAVITY * r.track.grav;
-        car.tx = fx; car.ty = 0; car.tz = fz;
-        stick(car, P, a1, lat * P.w);
-        return;
-      }
-    }
-  }
   if (r.track.road) {
     const w = roadSolids(r.track.road, car, px, pz, CAR_R, CAR_H);
     if (w > car.hit) car.hit = w;
@@ -343,50 +327,45 @@ function loopStep(r: Race, steer: number, gas: boolean, brake: boolean) {
   }
 }
 
-// ── Pipes: wall rides and roof rides ────────────────────────────────────────
-// The road curls up a wall (or over onto the roof) and back down, and the car
-// drives on it like anywhere else: the same engine, brakes and steering, real
-// gravity, and downforce that grows with speed. Nothing scripted holds it on.
-// The road's curve presses it in, and grip comes from how hard it's pressed,
-// so fast it rides the wall and hangs from the roof; slower, gravity slides
-// it down and off the low edge (which has no rail) and it falls. Climbing
-// costs speed and the way down gives it back. The pipe is solid: you can land
-// on it, and you can't drive through it from underneath.
-const HOLD = 30; // m/s: at this speed the downforce matches gravity (enough to hang from the roof)
+// ── Wall rides ──────────────────────────────────────────────────────────────
+// A wall curves up beside the road, and over a gap in the road it's the only
+// way across. The car drives on it like anywhere else: the same engine,
+// brakes and steering, real gravity, and downforce that grows with speed.
+// Nothing scripted holds it on: grip comes from how hard it's pressed onto
+// the wall, so fast it rides high (or hangs from a roof), and slower gravity
+// slides it down. Off the lip, or down off the wall over the gap, it falls.
+// The wall is solid: you can land on it and can't pass through it.
+const HOLD = 30; // m/s: at this speed the downforce matches gravity (enough to hang from a roof)
 
-/** Puts the car on pipe P at (u, l): on its surface, moving along it, facing the way it was (laid onto the surface). */
-function stick(car: Car, P: Pipe, u: number, l: number) {
-  const A = pipeAxes(P, u, l);
-  [car.x, car.y, car.z] = pipePoint(P, u, l);
-  car.ls = u; car.ll = l;
-  // Into the surface's plane: velocity and heading (heading from the velocity if it points off it).
+/** Puts the car on wall ride P at (u, s): on its surface, moving along it, facing the way it was (laid onto the surface). */
+function stick(car: Car, P: Pipe, u: number, s: number) {
+  const A = pipeAxes(P, u, s);
+  [car.x, car.y, car.z] = pipePoint(P, u, s);
+  car.ls = u; car.ll = s;
   const vn = car.vx * A[0] + car.vy * A[1] + car.vz * A[2];
   if (vn < 0) car.land = Math.max(car.land, -vn);
   car.vx -= A[0] * vn; car.vy -= A[1] * vn; car.vz -= A[2] * vn;
-  // Left of the road's way is normal × way.
+  const hn = car.tx * A[0] + car.ty * A[1] + car.tz * A[2];
+  let hx = car.tx - A[0] * hn, hy = car.ty - A[1] * hn, hz = car.tz - A[2] * hn;
+  let hl = Math.sqrt(hx * hx + hy * hy + hz * hz);
+  if (hl < 0.2) { hx = car.vx; hy = car.vy; hz = car.vz; hl = Math.sqrt(hx * hx + hy * hy + hz * hz); }
+  if (hl < 1e-6) { hx = A[3]; hy = A[4]; hz = A[5]; hl = 1; }
+  car.tx = hx / hl; car.ty = hy / hl; car.tz = hz / hl;
+  // The heading against the road's way, + to the left (left of the way is normal × way).
   const lx = A[1] * A[5] - A[2] * A[4], ly = A[2] * A[3] - A[0] * A[5], lz = A[0] * A[4] - A[1] * A[3];
-  {
-    const hn = car.tx * A[0] + car.ty * A[1] + car.tz * A[2];
-    let hx = car.tx - A[0] * hn, hy = car.ty - A[1] * hn, hz = car.tz - A[2] * hn;
-    let hl = Math.sqrt(hx * hx + hy * hy + hz * hz);
-    if (hl < 0.2) { hx = car.vx; hy = car.vy; hz = car.vz; hl = Math.sqrt(hx * hx + hy * hy + hz * hz); }
-    if (hl < 1e-6) { hx = A[3]; hy = A[4]; hz = A[5]; hl = 1; }
-    car.tx = hx / hl; car.ty = hy / hl; car.tz = hz / hl;
-    car.pa = datan2(car.tx * lx + car.ty * ly + car.tz * lz, car.tx * A[3] + car.ty * A[4] + car.tz * A[5]);
-  }
+  car.pa = datan2(car.tx * lx + car.ty * ly + car.tz * lz, car.tx * A[3] + car.ty * A[4] + car.tz * A[5]);
   car.nx = A[0]; car.ny = A[1]; car.nz = A[2];
   if (car.tx * car.tx + car.tz * car.tz > 0.04) car.yaw = datan2(car.tx, car.tz);
   car.grounded = true; car.offroad = false; car.part = "";
 }
 
-/** Leaves the pipe: flying, or back on the road at either end. */
+/** Leaves the wall: flying, or back on the road. */
 function unstick(car: Car, grounded: boolean) {
   car.pipe = -1; car.grounded = grounded;
   if (car.tx * car.tx + car.tz * car.tz > 0.04) car.yaw = datan2(car.tx, car.tz);
   else if (car.vx * car.vx + car.vz * car.vz > 1) car.yaw = datan2(car.vx, car.vz);
   car.tx = car.ty = car.tz = 0;
   car.nx = 0; car.ny = 1; car.nz = 0;
-  car.yawRate = 0;
 }
 
 function pipeStep(r: Race, steer: number, gas: boolean, brake: boolean, drift: boolean) {
@@ -398,101 +377,77 @@ function pipeStep(r: Race, steer: number, gas: boolean, brake: boolean, drift: b
   const rx = hy * nz - hz * ny, ry = hz * nx - hx * nz, rz = hx * ny - hy * nx;
   let vf = car.vx * hx + car.vy * hy + car.vz * hz;
   let vl = car.vx * rx + car.vy * ry + car.vz * rz;
-  // Grip comes from how hard the road presses: fast round the curve it's
-  // full, slow on a wall or the roof it fades and the car slides down.
+  // Grip comes from how hard the wall presses: fast it's full, slow it fades
+  // and the car slides down.
   const press = car.load / g;
   [vf, vl] = handle(car, vf, vl, steer, gas, brake, drift, VMAX, false, false, press > 1 ? 1 : press < 0.05 ? 0.05 : press, false);
   let vx = hx * vf + rx * vl, vy = hy * vf + ry * vl, vz = hz * vf + rz * vl;
-  // Gravity, and the downforce pressing it onto the road.
+  // Gravity, and the downforce pressing it onto the wall.
   const df = g * (vf * vf + vl * vl) / (HOLD * HOLD) * DT;
   vx -= nx * df; vy -= g * DT + ny * df; vz -= nz * df;
   // Turn about the surface's normal.
-  const a = car.yawRate * DT, c = dcos(a), s = dsin(a);
+  const a = car.yawRate * DT, c = dcos(a), sn = dsin(a);
   const lx = ny * hz - nz * hy, ly = nz * hx - nx * hz, lz = nx * hy - ny * hx;
-  car.tx = hx * c + lx * s; car.ty = hy * c + ly * s; car.tz = hz * c + lz * s;
-  // Move, then find the road again.
+  car.tx = hx * c + lx * sn; car.ty = hy * c + ly * sn; car.tz = hz * c + lz * sn;
+  // Move, then find the wall again.
   const px = car.x, pz = car.z;
   const x = car.x + vx * DT, y = car.y + vy * DT, z = car.z + vz * DT;
   car.vx = vx; car.vy = vy; car.vz = vz;
-  let [u, l, d] = pipeProbe(P, x, y, z);
-  if (u < 0 || u > P.len) {
-    // Off either end, onto the road (the pipe is flat there).
-    car.x = x; car.z = z;
-    if (d < 0.6) { car.y = P.y; car.vy = 0; unstick(car, true); }
-    else { car.y = y; unstick(car, false); }
+  const [u, s, d] = pipeProbe(P, x, y, z);
+  if (s < 0 || u < 0 || u > P.len) {
+    // Down off the wall: onto the road, or over the gap into the drop.
+    car.x = x; car.y = y; car.z = z;
+    const road = (u < 0 || u > P.len || pipeFloor(P, u)) && y - P.y < 0.6;
+    if (road) { car.y = P.y; car.vy = 0; }
+    unstick(car, road);
     gates(r, px, pz);
     return;
   }
-  if (d > 1e-4) {
-    // The road fell away faster than gravity and grip could follow: off it, flying.
+  if (s > P.R * pipeTop(P, u) || d > 1e-4) {
+    // Off the lip, or the wall fell away faster than gravity could follow.
     car.x = x; car.y = y; car.z = z;
     unstick(car, false);
     return;
   }
-  if (l < -P.hw) {
-    // Slid off its low edge (it has no rail there): falling.
-    car.x = x; car.y = y; car.z = z;
-    unstick(car, false);
-    return;
-  }
-  // The rail along its high edge.
-  const lim = P.hw - CAR_R;
-  if (l > lim) {
-    l = lim;
-    const A = pipeAxes(P, u, l);
-    const into = car.vx * A[6] + car.vy * A[7] + car.vz * A[8];
-    if (into > 0) {
-      car.hit = into;
-      const k = 1.15 * into;
-      car.vx -= A[6] * k; car.vy -= A[7] * k; car.vz -= A[8] * k;
-    }
-    // Glance off it: the rail turns the nose along it, as the road's walls do.
-    const hin = car.tx * A[6] + car.ty * A[7] + car.tz * A[8];
-    if (hin > 0) { car.tx -= A[6] * 0.5 * hin; car.ty -= A[7] * 0.5 * hin; car.tz -= A[8] * 0.5 * hin; }
-  }
-
-  // How hard the road pushes back (what it takes to keep the car on it).
-  const A = pipeAxes(P, u, l);
+  // How hard the wall pushes back (what it takes to keep the car on it).
+  const A = pipeAxes(P, u, s);
   const vn = car.vx * A[0] + car.vy * A[1] + car.vz * A[2];
   car.load += ((vn < 0 ? -vn / DT : 0) - car.load) * 0.3;
-  // Following the road's curve turns the car's way without slowing it: keep
-  // the speed it had along the road, only its way changes.
+  // Following the wall's curve turns the car's way without slowing it.
   const on = vx * nx + vy * ny + vz * nz;
   const sx = vx - nx * on, sy = vy - ny * on, sz = vz - nz * on;
   const s0 = Math.sqrt(sx * sx + sy * sy + sz * sz);
-  stick(car, P, u, l);
+  stick(car, P, u, s);
   const s1 = Math.sqrt(car.vx * car.vx + car.vy * car.vy + car.vz * car.vz);
   if (s1 > 1e-6) { const k = s0 / s1; car.vx *= k; car.vy *= k; car.vz *= k; }
 }
 
 /**
- * Off the pipe (flying, or on the road under it): lands on a pipe's road when
- * it comes down onto it, and stops at it from underneath. True when it landed.
+ * Off the wall: drives up onto it from the road, lands on it from the air,
+ * and stops at its back. True when the car is now on it.
  */
 function pipeContact(r: Race, px: number, py: number, pz: number): boolean {
   const car = r.car, pipes = r.track.road!.pipes;
   for (let i = 0; i < pipes.length; i++) {
     const P = pipes[i];
-    const [u, l, d] = pipeProbe(P, car.x, car.y, car.z);
-    if (u < 0.5 || u > P.len - 0.5 || l > P.hw || l < -P.hw) continue;
-    const d0 = pipeProbe(P, px, py, pz)[2];
-    if (d0 >= 0 && d < 0 && d0 < 4) {
-      // Came down onto it.
+    const [u, s, d] = pipeProbe(P, car.x, car.y, car.z);
+    if (u < 0 || u > P.len || s < 0) continue;
+    const top = P.R * pipeTop(P, u);
+    if (s > top) continue;
+    const on = () => {
       car.pipe = i; car.load = GRAVITY * r.track.grav;
       if (car.tx * car.tx + car.ty * car.ty + car.tz * car.tz < 0.5) { car.tx = dsin(car.yaw); car.ty = 0; car.tz = dcos(car.yaw); }
-      const lim = P.hw - CAR_R;
-      stick(car, P, u, l > lim ? lim : l < -lim ? -lim : l);
+      stick(car, P, u, s);
       return true;
-    }
+    };
+    // Off the road's edge onto the foot of the wall.
+    if (car.grounded && top > 1.5 && s < 2 && d < 0.9 && d > -1.5) return on();
+    const d0 = pipeProbe(P, px, py, pz)[2];
+    // Came down onto it.
+    if (d0 >= 0 && d < 0 && d0 < 4) return on();
     if (d0 < 0 && d >= 0 && d0 > -4) {
-      const A = pipeAxes(P, u, l);
-      if (car.grounded && A[1] > 0.7) {
-        // Where it meets the road it's only a step: drive up onto it.
-        car.pipe = i; car.load = GRAVITY * r.track.grav; car.tx = dsin(car.yaw); car.ty = 0; car.tz = dcos(car.yaw);
-        stick(car, P, u, l);
-        return true;
-      }
-      // Its underside is solid.
+      // Its back is solid.
+      const A = pipeAxes(P, u, s);
       car.x = px; car.y = py; car.z = pz;
       const into = car.vx * A[0] + car.vy * A[1] + car.vz * A[2];
       if (into > 0) { car.hit = Math.max(car.hit, into); car.vx -= A[0] * into; car.vy -= A[1] * into; car.vz -= A[2] * into; }
