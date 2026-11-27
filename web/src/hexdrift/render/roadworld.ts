@@ -6,7 +6,7 @@
 import * as THREE from "three";
 import { groundAt, type Track } from "../sim/track.ts";
 import { terrainAt } from "../sim/terrain.ts";
-import { buildLoops, buildParts } from "./parts.ts";
+import { buildLoops, buildParts, buildPipes } from "./parts.ts";
 import { BOOST, FLUSH, GAP, LOOPJ, landAt, MAT, roadDist, TUN, WALL_H, WALL_T, WL, WR, THICK, type Road, type Sample } from "../sim/road.ts";
 import type { Biome, BiomeId } from "../maps.ts";
 import { buildProps } from "./props.ts";
@@ -166,6 +166,7 @@ export function buildRoadWorld(track: Track, biome: Biome, id: BiomeId, lookIn?:
   if (road.land.sea !== undefined && look.sea) jobs.push(() => water(group, road, look, geos, mats, time));
   roadSurface(group, road, look, geos, mats, time);
   buildLoops(group, road, geos, mats, look.asphalt, look.line);
+  buildPipes(group, road, geos, mats, look.asphalt, look.line);
   buildParts(group, track.parts, geos, mats);
   const misc = new Builder();
   const glow = new Builder();
