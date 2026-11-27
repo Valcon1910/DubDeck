@@ -8,6 +8,9 @@
 //   tyres     squeal with slip on hard surfaces, gravel crunch, sand hiss, ice
 //             hiss, a steel deck's seams; road roar rising with speed
 //   air       wind rising with speed (more when flying), a jet roar on boost
+//   revs      a rev limiter that bounces when held flat (on the grid or in
+//             the air), a clunk on every upshift and a throttle blip down
+//   scrapes   metal grinding along a wall
 //   ambience  per map: surf, rain, mountain wind, desert air, high sky, a
 //             space drone, and the crowd at the start
 //
@@ -35,6 +38,8 @@ export interface AudioState {
   phase: "countdown" | "running" | "finished";
   /** Metres from the start line (for the crowd). */
   fromStart: number;
+  /** Speed lost into a wall this frame (m/s): a grinding scrape while it lasts. */
+  scrape?: number;
 }
 
 /** How each car sounds. */
@@ -127,7 +132,9 @@ export class RaceAudio {
   private white!: AudioBuffer;
 
   // Recorded layers (null until the race sheet is in).
-  private rec: { eng: { s: AudioBufferSourceNode; g: GainNode; base: number }[]; squeal: { s: AudioBufferSourceNode; g: GainNode }; rush: { s: AudioBufferSourceNode; g: GainNode } } | null = null;
+  private rec: { eng: { s: AudioBufferSourceNode; g: GainNode; base: number }[]; squeal: { s: AudioBufferSourceNode; g: GainNode }; rush: { s: AudioBufferSourceNode; g: GainNode }; wind: { s: AudioBufferSourceNode; g: GainNode } } | null = null;
+  private scrape!: ReturnType<typeof noiseVoice>;
+  private limit = 0;
 
   // State.
   private gear = 0;
@@ -210,6 +217,8 @@ export class RaceAudio {
     this.wind = noiseVoice(c, this.white, this.bus, "bandpass", 500, 0.6);
     this.jet = noiseVoice(c, this.white, this.bus, "bandpass", 900, 0.7);
     this.crowd = noiseVoice(c, brown, this.bus, "bandpass", 900, 0.8);
+    this.scrape = noiseVoice(c, this.white, this.bus, "bandpass", 2600, 3);
+    this.nodes.push(this.scrape.s);
     this.nodes.push(this.squeal.s, this.squeal2.s, this.roll.s, this.grit.s, this.wind.s, this.jet.s, this.crowd.s);
 
     // ── The world ──
@@ -259,7 +268,7 @@ export class RaceAudio {
     const BASE = [43, 60, 64.5, 70, 73, 76.6];
     const eng = this.voice.electric ? [] : (["e0", "e1", "e2", "e3", "e4", "e5"] as const).map((k, i) => ({ ...loop(k, this.eFilt), base: BASE[i] }));
     if (eng.length) { this.eShape.disconnect(); }
-    this.rec = { eng, squeal: loop("squeal", this.bus!), rush: loop("rush", this.bus!) };
+    this.rec = { eng, squeal: loop("squeal", this.bus!), rush: loop("rush", this.bus!), wind: loop("wind", this.bus!) };
   }
 
   /** A soft clipper: more drive, more grit. */
@@ -295,23 +304,29 @@ export class RaceAudio {
       if (s.phase === "countdown" || sp < 0.5 && !air) {
         // On the grid: blip with the gas.
         this.gear = 0;
-        target = gas ? v.red * 0.75 : v.idle;
+        target = gas ? v.red * 1.02 : v.idle;
       } else {
         // Up at the redline, down when the revs fall away.
-        while (this.gear < N - 1 && sp > top(this.gear) * 0.97) { this.gear++; this.shiftCut = 0.09; }
-        while (this.gear > 0 && sp < top(this.gear - 1) * 0.62) this.gear--;
+        while (this.gear < N - 1 && sp > top(this.gear) * 0.97) { this.gear++; this.shiftCut = 0.09; if (gas) this.shift(); }
+        while (this.gear > 0 && sp < top(this.gear - 1) * 0.62) { this.gear--; this.rpm = Math.min(v.red, this.rpm + v.red * 0.18); if (!gas && v.pops) this.pop(0.3 * v.pops); }
         target = Math.max(v.idle, v.red * sp / top(this.gear));
         // In the air the wheels spin free.
-        if (air && gas) target = Math.max(target, v.red * 0.92);
+        if (air && gas) target = Math.max(target, v.red * 1.02);
         target = Math.min(target, v.red * (s.boosting ? 1.02 : 1));
       }
       const rise = target > this.rpm ? (air || s.phase === "countdown" ? 6 : 12) : 6;
       this.rpm += (target - this.rpm) * Math.min(1, dt * rise);
+      // The rev limiter: held at the redline the revs bounce off it with a stutter.
+      this.limit = Math.max(0, this.limit - dt);
+      if (this.rpm >= v.red * 0.985 && target >= v.red && this.limit <= 0) {
+        this.rpm = v.red * 0.9; this.limit = 0.075;
+        this.hit(420 + Math.random() * 200, 2, 0.05, 0.03, "lowpass");
+      }
       const half = (this.rpm / 60) * (v.cyl / 4); // the half order
       for (const o of this.eOsc) T(o.frequency, half, 0.02);
       const rf = (this.rpm - v.idle) / (v.red - v.idle);
       this.shiftCut = Math.max(0, this.shiftCut - dt);
-      const cut = this.shiftCut > 0 ? 0.35 : 1;
+      const cut = this.shiftCut > 0 ? 0.35 : this.limit > 0.04 ? 0.55 : 1;
       const lv = v.vol * (0.16 + 0.18 * this.load + 0.1 * clamp(rf, 0, 1)) * cut * (done ? 0.6 : 1);
       T(this.eGain.gain, lv, 0.03);
       // Recorded engines are already shaped: the filter only takes the edge off when lifting.
@@ -397,6 +412,16 @@ export class RaceAudio {
     T(this.wind.filt.frequency, 350 + 1400 * vK + (air ? 300 : 0), 0.2);
     T(this.jet.g.gain, s.boosting && !done ? (this.rec ? 0.1 : 0.16) : 0, s.boosting ? 0.05 : 0.3);
     if (this.rec) {
+      // Recorded air past the car: it rises fast with speed, and more in the air.
+      T(this.wind.g.gain, 0.03 * wK, 0.15);
+      T(this.rec.wind.g.gain, (air ? 0.75 : 0.5) * wK * wK + 0.6 * clamp((sp - 55) / 35, 0, 1) * vK, 0.2);
+      T(this.rec.wind.s.playbackRate, 0.7 + 0.7 * vK + (air ? 0.1 : 0), 0.2);
+    }
+    // Metal grinding along a wall.
+    const scr = done ? 0 : clamp((s.scrape ?? 0) / 4, 0, 1) * clamp(sp / 10, 0, 1);
+    T(this.scrape.g.gain, 0.35 * scr, scr > 0 ? 0.02 : 0.12);
+    T(this.scrape.filt.frequency, 1800 + 1600 * Math.random() + sp * 10, 0.02);
+    if (this.rec) {
       // Under the boost: a roaring rush of air that rises with speed.
       T(this.rec.rush.g.gain, s.boosting && !done ? 0.55 : 0, s.boosting ? 0.06 : 0.35);
       T(this.rec.rush.s.playbackRate, 0.85 + 0.5 * vK, 0.2);
@@ -430,6 +455,8 @@ export class RaceAudio {
   private pop(vol: number) { this.hit(300 + Math.random() * 500, 1.5, vol * (0.5 + Math.random() * 0.5), 0.04 + Math.random() * 0.04, "lowpass"); }
   private pops(k: number) { for (let i = 0; i < 2 + Math.floor(Math.random() * 4); i++) this.hit(400 + Math.random() * 600, 1.2, 0.3 * k, 0.05, "lowpass", 0.05 + i * (0.05 + Math.random() * 0.08)); }
   private blowOff(k: number) { this.hit(2200, 1.5, 0.18 * k, 0.35); this.hit(4500, 2, 0.08 * k, 0.25); }
+  /** An upshift: a mechanical clunk and a breath of intake. */
+  private shift() { this.hit(180 + Math.random() * 60, 4, 0.12, 0.06, "bandpass"); this.hit(1400, 1, 0.05, 0.08, "bandpass", 0.02); }
   private clank(k: number) { this.hit(320 + Math.random() * 80, 6, 0.1 + 0.12 * k, 0.07); }
 
   /** A clap of thunder (storm lightning). */
