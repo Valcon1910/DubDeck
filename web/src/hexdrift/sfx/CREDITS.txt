@@ -1,0 +1,17 @@
+Hexdrift sound effects
+
+ui.mp3 (menu sounds): Kenney, "Interface Sounds", CC0
+  https://opengameart.org/content/interface-sounds  (kenney.nl)
+impacts.mp3: Kenney, "Impact Sounds", CC0 (see LICENSE-kenney-impact-sounds.txt)
+
+race.wav, a sheet of:
+  e0..e5  engine loops: "racing car engine sound loops" by domasx2, CC0
+          https://opengameart.org/content/racing-car-engine-sound-loops
+  squeal  "Car tire squeal skid loop" by qubodup, CC-BY 3.0
+          https://opengameart.org/content/car-tire-squeal-skid-loop
+          (licensed under https://creativecommons.org/licenses/by/3.0/ ;
+          resampled to 22 kHz mono and level-matched)
+  boost   "Boost or Launch or Thruster Sound Effect" by ezduzziteh, CC0
+          https://opengameart.org/content/boost-or-launch-or-thruster-sound-effect
+  rush    "Air whoosh" by pyranostudios, CC0 (looped)
+          https://opengameart.org/content/air-whoosh

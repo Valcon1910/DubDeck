@@ -388,6 +388,10 @@ function Title() {
           <span>Gamepads and touch work too</span>
         </p>
       )}
+      <p className="hx-credits">
+        Music: cynicmusic, vitalezzz, Holizna, Zane Little Music (CC0). Sounds: Kenney, domasx2, ezduzziteh, pyranostudios (CC0);
+        tyre squeal by qubodup (<a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noreferrer">CC BY 3.0</a>). All via OpenGameArt.org.
+      </p>
     </div>
   );
 }
