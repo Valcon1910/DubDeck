@@ -48,14 +48,14 @@ export function PartyHome({ signedIn, offline }: { signedIn: boolean; offline: R
     <div className="hx-menu hx-page">
       <Bar />
       <h1 className="hx-page-title">Party</h1>
-      <p className="hx-dim">Race up to {ROOM_MAX} friends at once. Make a room and send them the link, or type the code they sent you.</p>
+      <p className="hx-dim">Race up to {ROOM_MAX} friends at once. Start a party and send them the link, or type the code they sent you.</p>
       {!signedIn ? <p className="hx-dim">{offline}</p> : (
         <div className="hx-party-start">
           <button type="button" className="hx-big" data-sound="confirm" onClick={() => { void createParty().then((c) => { location.hash = partyHash(c); }); }}>
-            <IconFlag size={22} /><span>Make a room</span>
+            <IconFlag size={22} /><span>Start a party</span>
           </button>
           <form className="hx-party-join" onSubmit={(e) => { e.preventDefault(); if (isRoomCode(clean)) { joinParty(clean); location.hash = partyHash(clean); } }}>
-            <label htmlFor="hx-code" className="hx-dim">Room code</label>
+            <label htmlFor="hx-code" className="hx-dim">Party code</label>
             <input id="hx-code" className="hx-code" value={clean} onChange={(e) => setCode(e.target.value)} placeholder="ABCDEF" autoComplete="off" autoCapitalize="characters" spellCheck={false} />
             <button type="submit" className="hx-btn hx-btn-main" disabled={!isRoomCode(clean)}>Join</button>
           </form>
@@ -92,7 +92,7 @@ export function Party({ code, sb, me, myName, nameOf, race, podium }: {
     const t = setInterval(() => setNow(Date.now()), 500);
     return () => clearInterval(t);
   }, [stageK]);
-  if (!s) return <div className="hx-menu hx-page"><Bar /><h1 className="hx-page-title">Room {code}</h1><p className="hx-dim">Joining…</p></div>;
+  if (!s) return <div className="hx-menu hx-page"><Bar /><h1 className="hx-page-title">Party {code}</h1><p className="hx-dim">Joining…</p></div>;
   const r = s.room, stage = s.stage, settings = s.settings, note = s.note, fail = s.fail, hud = s.hud;
   const members = s.members, isHost = s.isHost, inRoom = s.inRoom;
   const defOf = (id: string) => s.defOf(id);
@@ -105,7 +105,7 @@ export function Party({ code, sb, me, myName, nameOf, race, podium }: {
   if (fail) {
     return (
       <div className="hx-menu hx-page">{back}
-        <h1 className="hx-page-title">Room {code}</h1>
+        <h1 className="hx-page-title">Party {code}</h1>
         <p className="hx-dim">{fail}</p>
         <div className="hx-row"><button type="button" className="hx-btn" onClick={leave}>Back</button></div>
       </div>
@@ -117,7 +117,7 @@ export function Party({ code, sb, me, myName, nameOf, race, podium }: {
     const gone = defOf(stage.map) === null;
     return (
       <div className="hx-menu hx-page hx-party">{back}
-        <h1 className="hx-page-title">Room {code}</h1>
+        <h1 className="hx-page-title">Party {code}</h1>
         <p className={gone ? "" : "hx-dim"} role="status">{gone ? "This map won't load on your device (it may have been changed or taken down). You'll be in the next race." : "Loading the map…"}</p>
       </div>
     );
@@ -194,7 +194,7 @@ export function Party({ code, sb, me, myName, nameOf, race, podium }: {
   const myReady = !!members.find((m) => m.email === me)?.ready;
   return (
     <div className="hx-menu hx-page hx-party">{back}
-      <h1 className="hx-page-title">Room <span className="hx-code-big">{code}</span></h1>
+      <h1 className="hx-page-title">Party <span className="hx-code-big">{code}</span></h1>
       <Invite code={code} />
       {!inRoom ? <p className="hx-dim">Joining…</p> : (
         <>
@@ -320,7 +320,7 @@ function Invite({ code }: { code: string }) {
   const link = useMemo(() => partyLink(code), [code]);
   return (
     <div className="hx-party-invite">
-      <input readOnly value={link} aria-label="Room link" onFocus={(e) => e.currentTarget.select()} />
+      <input readOnly value={link} aria-label="Party link" onFocus={(e) => e.currentTarget.select()} />
       <button type="button" className="hx-btn" onClick={() => {
         void navigator.clipboard?.writeText(link).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }).catch(() => {});
       }}>{copied ? "Copied" : "Copy link"}</button>

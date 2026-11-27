@@ -90,6 +90,8 @@ export const IconMedal = (p: P) => (
 export const IconSound = (p: P) => <Svg {...p}><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor" fillOpacity={0.2} /><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" /></Svg>;
 export const IconMute = (p: P) => <Svg {...p}><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor" fillOpacity={0.2} /><path d="m16 9.5 5 5m0-5-5 5" /></Svg>;
 
+export const IconMusic = (p: P) => <Svg {...p}><path d="M9 18V5.5l11-2V16" /><circle cx="6.5" cy="18" r="2.5" fill="currentColor" fillOpacity={0.2} /><circle cx="17.5" cy="16" r="2.5" fill="currentColor" fillOpacity={0.2} /></Svg>;
+
 export const IconTimer = (p: P) => <Svg {...p}><circle cx="12" cy="13.5" r="7.5" /><path d="M12 13.5V9.5M10 2.5h4M18.5 6.5l1.5-1.5" /></Svg>;
 export const IconUsers = (p: P) => <Svg {...p}><circle cx="9" cy="8.5" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 5.2a3.5 3.5 0 0 1 0 6.6M18 14a6.5 6.5 0 0 1 3.5 6" /></Svg>;
 export const IconInfo = (p: P) => <Svg {...p}><circle cx="12" cy="12" r="9" /><path d="M12 11v6M12 7.5v.1" /></Svg>;

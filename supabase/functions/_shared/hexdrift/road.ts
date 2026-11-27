@@ -629,6 +629,8 @@ function heightOn(sg: Seg, q: { along: number; lat: number; t: number; d: number
   return sg.ay + (sg.by - sg.ay) * q.t + bk * lat;
 }
 
+/** Roads closer in height than this are the same road (a slope), not one above the other. */
+const LEVEL_GAP = 2.5;
 /** The highest road under (px, pz) that isn't more than `reach` above py. */
 export function roadGround(road: Road, px: number, py: number, pz: number, reach: number): RoadHit | null {
   const list = road.grid.get(bkey(Math.floor(px / RB), Math.floor(pz / RB)));
@@ -638,7 +640,11 @@ export function roadGround(road: Road, px: number, py: number, pz: number, reach
     const q = near(sg, px, pz);
     const h = heightOn(sg, q);
     if (h !== h || h > py + reach) continue;
-    if (!best || h > bh + 0.6 || (h > bh - 0.6 && q.d < bd)) { best = sg; bh = h; bd = q.d; blat = q.lat; bt = q.t; }
+    // A road clearly above another (an overpass) wins; otherwise the segment
+    // the car is on (nearest) does. Each segment also reaches a little past
+    // its ends, so on a slope the next or last one is always close in height:
+    // letting the higher win made the car hop up hills and hang over drops.
+    if (!best || h > bh + LEVEL_GAP || (h > bh - LEVEL_GAP && q.d < bd)) { best = sg; bh = h; bd = q.d; blat = q.lat; bt = q.t; }
   }
   if (!best) return null;
   const k = (best.by - best.ay) / best.len;

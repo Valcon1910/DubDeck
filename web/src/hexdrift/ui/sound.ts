@@ -15,8 +15,8 @@ let noiseBuf: AudioBuffer | null = null;
 let muted = false;
 try { muted = localStorage.getItem("hexdrift.uiSound") === "off"; } catch { /* */ }
 
-function audio(): { c: Ctx; out: GainNode } | null {
-  if (muted) return null;
+function audio(always = false): { c: Ctx; out: GainNode } | null {
+  if (muted && !always) return null;
   if (!ctx) {
     const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AC) return null;
@@ -38,6 +38,8 @@ function audio(): { c: Ctx; out: GainNode } | null {
 
 /** The audio context, once a gesture has unlocked it (shared with the game's sounds). */
 export function audioContext(): { c: Ctx; out: GainNode } | null { return audio(); }
+/** The same context even with interface sounds off (the music has its own switch). */
+export function musicContext(): Ctx | null { return audio(true)?.c ?? null; }
 
 // ── Recorded hits (Kenney's Impact Sounds, CC0) ──
 // One small file holding every clip, fetched the first time a sound plays;
