@@ -157,17 +157,19 @@ test("garage: free parts equip and stay, locked parts preview only, and the car 
   await expect(page.locator(".hx-time")).toBeVisible();
 });
 
-test("times from older physics keep their medal on maps that didn't change; changed maps drop them", async ({ page }) => {
+test("times from older physics are gone everywhere: the medals started fresh with the final physics", async ({ page }) => {
   await page.goto("/#/hexdrift");
   await page.evaluate(() => {
-    // An old step-1 style save: v4 (still counts) and v1 (from before the maps changed).
-    localStorage.setItem("hexdrift.best.desert-mirage", JSON.stringify({ t: 1300, i: btoa("\u0010"), at: 1, v: 4 }));
+    // Old step-1 style saves from earlier physics.
+    localStorage.setItem("hexdrift.best.desert-mirage", JSON.stringify({ t: 1300, i: btoa("\u0010"), at: 1, v: 7 }));
     localStorage.setItem("hexdrift.best.canyon-rush", JSON.stringify({ t: 900, i: btoa("\u0010"), at: 1, v: 1 }));
   });
   await page.goto("/#/hexdrift/maps");
-  await expect(page.locator(".hx-map", { hasText: "Desert Mirage" })).toContainText("0:21.667");
-  await expect(page.locator(".hx-map", { hasText: "Desert Mirage" }).locator(".hx-medal-gold")).toBeVisible();
+  await expect(page.locator(".hx-map", { hasText: "Desert Mirage" })).not.toContainText("0:21.667");
+  await expect(page.locator(".hx-map", { hasText: "Desert Mirage" }).locator(".hx-medal-gold")).toHaveCount(0);
   await expect(page.locator(".hx-map", { hasText: "Canyon Rush" })).not.toContainText("0:15.000");
+  await page.goto("/#/hexdrift");
+  await expect(page.getByText("Medal points").locator("..")).toContainText("0");
   await page.evaluate(() => localStorage.removeItem("hexdrift.legacy"));
 });
 

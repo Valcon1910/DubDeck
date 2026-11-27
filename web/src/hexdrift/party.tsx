@@ -47,7 +47,7 @@ export function PartyHome({ signedIn, offline }: { signedIn: boolean; offline: R
   return (
     <div className="hx-menu hx-page">
       <Bar />
-      <h1 className="hx-page-title">Party</h1>
+      <h1 className="hx-page-title">Multiplayer</h1>
       <p className="hx-dim">Race up to {ROOM_MAX} friends at once. Start a party and send them the link, or type the code they sent you.</p>
       {!signedIn ? <p className="hx-dim">{offline}</p> : (
         <div className="hx-party-start">

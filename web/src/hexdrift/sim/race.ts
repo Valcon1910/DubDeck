@@ -12,8 +12,10 @@ import { hitSolids } from "./props.ts";
 /**
  * Bump whenever the handling or track physics change: runs from older
  * physics can't be replayed exactly, so their records and ghosts are dropped.
+ * Version 8 is meant to be the final one: every leaderboard and all medal
+ * points started fresh with it.
  */
-export const PHYSICS_V = 7;
+export const PHYSICS_V = 8;
 
 export const HZ = 60;
 const DT = 1 / HZ;
