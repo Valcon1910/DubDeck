@@ -30,6 +30,8 @@ export class Preview {
   private trail: Trail | null = null;
   private fx = new FinishFx();
   private last = performance.now();
+  private lookKey = "";
+  private warm = 0;
 
   /** "hero": framed wider, for the title screen's big car. */
   constructor(host: HTMLElement, private framing: "garage" | "hero" = "garage") {
@@ -38,7 +40,8 @@ export class Preview {
     host.prepend(canvas);
     this.canvas = canvas;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    // A plain car at a low resolution first; full detail once it is ready (see setLook).
+    this.renderer.setPixelRatio(1);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.scene.add(new THREE.HemisphereLight("#cfd8ff", "#2a2140", 1.6));
     const key = new THREE.DirectionalLight("#ffffff", 2.2); key.position.set(4, 7, 5); this.scene.add(key);
@@ -98,12 +101,31 @@ export class Preview {
   }
 
   setLook(look: Look, mapAccent = "#7af7ff") {
+    const key = JSON.stringify(look) + mapAccent;
+    if (this.car && key === this.lookKey) return;
+    this.lookKey = key;
     if (this.car) { this.scene.remove(this.car.root); this.car.dispose(); }
-    this.car = buildCar({ look, mapAccent });
-    this.scene.add(this.car.root);
+    const car = this.car = buildCar({ look, mapAccent });
+    this.scene.add(car.root);
     this.trail?.dispose();
     this.trail = new Trail(trailDef(itemOf("trail", look.trail) as Item));
-    this.car.root.add(this.trail.mesh);
+    car.root.add(this.trail.mesh);
+    // Show the basic shape at once, then the details once their shaders are
+    // built (in parallel where the browser can), so the menu never stalls.
+    car.setDetail(2);
+    const id = ++this.warm;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (id !== this.warm || this.car !== car) return;
+      car.setDetail(0);
+      const ready = this.renderer.compileAsync(this.scene, this.camera);
+      car.setDetail(2);
+      void ready.catch(() => undefined).then(() => {
+        if (id !== this.warm || this.car !== car) return;
+        car.setDetail(0);
+        const full = Math.min(window.devicePixelRatio || 1, this.framing === "hero" ? 1.5 : 2);
+        if (this.renderer.getPixelRatio() !== full) { this.renderer.setPixelRatio(full); this.resize(); }
+      });
+    }));
   }
 
   /** Shows the boost flame and trail for a moment (when picking a trail). */
@@ -142,6 +164,7 @@ export class Preview {
   }
 
   dispose() {
+    this.warm++;
     cancelAnimationFrame(this.raf);
     this.canvas.removeEventListener("pointerdown", this.down);
     window.removeEventListener("pointermove", this.move);

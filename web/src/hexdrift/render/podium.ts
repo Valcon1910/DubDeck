@@ -29,6 +29,19 @@ function numberTexture(n: number, colour: string) {
   return t;
 }
 
+let fade: THREE.Texture | null = null;
+/** Bright at the bottom, gone at the top: for the light beams (shared, never disposed). */
+function fadeTexture() {
+  if (fade) return fade;
+  const c = document.createElement("canvas");
+  c.width = 4; c.height = 64;
+  const g = c.getContext("2d")!;
+  const gr = g.createLinearGradient(0, 0, 0, 64);
+  gr.addColorStop(0, "#000"); gr.addColorStop(0.7, "#444"); gr.addColorStop(1, "#fff");
+  g.fillStyle = gr; g.fillRect(0, 0, 4, 64);
+  return (fade = new THREE.CanvasTexture(c));
+}
+
 export class Podium {
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
@@ -41,6 +54,7 @@ export class Podium {
   private bits: { geo: THREE.BufferGeometry[]; mat: THREE.Material[]; tex: THREE.Texture[] } = { geo: [], mat: [], tex: [] };
   private group = new THREE.Group();
   private count = 0;
+  private caps: THREE.MeshStandardMaterial[] = [];
 
   constructor(host: HTMLElement) {
     const canvas = document.createElement("canvas");
@@ -82,27 +96,9 @@ export class Podium {
       const x = (i - (row.length - 1) / 2) * SPACING;
       const h = HEIGHT[p.place] ?? 1;
       const col = new THREE.Color(COLOURS[p.place] ?? "#7a5cff");
-      // The column: a six-sided prism of dark glass, a flat face to the
-      // front, lit edges and a glowing cap in the medal colour. Seen a little
-      // from above, so its top and both front sides catch the light.
-      const R = 1.85, ap = R * Math.cos(Math.PI / 6);
-      const body = new THREE.CylinderGeometry(R, R, h, 6, 1).rotateY(Math.PI / 6).translate(0, h / 2, 0);
-      const bm = new THREE.MeshStandardMaterial({ color: "#1d1a3a", metalness: 0.55, roughness: 0.3, emissive: col, emissiveIntensity: 0.08, flatShading: true });
-      const edges = new THREE.EdgesGeometry(body, 20);
-      const em = new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.85 });
-      const cap = new THREE.CylinderGeometry(R + 0.08, R + 0.08, 0.16, 6, 1).rotateY(Math.PI / 6).translate(0, h + 0.08, 0);
-      const cm = new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 0.55, metalness: 0.3, roughness: 0.25, flatShading: true });
-      const glow = new THREE.RingGeometry(R + 0.1, R + 0.7, 6, 1).rotateX(-Math.PI / 2).rotateY(Math.PI / 6);
-      const gm = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.22, depthWrite: false });
-      const fs = Math.min(1.4, h * 0.8);
-      const front = new THREE.PlaneGeometry(fs, fs).translate(0, Math.max(h * 0.46, Math.min(h * 0.55, h - 0.8)), ap + 0.01);
-      const tex = numberTexture(p.place, `#${col.getHexString()}`);
-      const fm = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false });
-      const pillar = new THREE.Group();
-      pillar.add(new THREE.Mesh(body, bm), new THREE.LineSegments(edges, em), new THREE.Mesh(cap, cm), new THREE.Mesh(glow, gm), new THREE.Mesh(front, fm));
+      const pillar = this.pillar(p.place, h, col);
       pillar.position.x = x;
       this.group.add(pillar);
-      this.bits.geo.push(body, edges, cap, glow, front); this.bits.mat.push(bm, em, cm, gm, fm); this.bits.tex.push(tex);
       if (p.look) {
         const m = buildCar({ look: p.look });
         m.root.scale.setScalar(0.62);
@@ -114,6 +110,69 @@ export class Podium {
     this.resize();
   }
 
+
+  /** Keeps a geometry and material for disposal, and returns the mesh. */
+  private mesh(g: THREE.BufferGeometry, m: THREE.Material) {
+    this.bits.geo.push(g); this.bits.mat.push(m);
+    return new THREE.Mesh(g, m);
+  }
+
+  /**
+   * One pillar: a stepped plinth, a dark glass hex column with lit edges and
+   * glowing grooves down the side faces, a metal collar, a glowing cap with a
+   * soft beam above it, the place number on the front and a pool of light
+   * on the floor. All flat, cheap materials: one draw per part, no shadows.
+   */
+  private pillar(place: number, h: number, col: THREE.Color) {
+    const g = new THREE.Group();
+    const R = 1.85, ap = R * Math.cos(Math.PI / 6), T = Math.PI / 6;
+    const hex = (r: number, hh: number, y: number, r2 = r) => new THREE.CylinderGeometry(r2, r, hh, 6, 1).rotateY(T).translate(0, y + hh / 2, 0);
+    const dark = new THREE.Color("#1d1a3a");
+    // Floor glow and the two-step plinth.
+    g.add(this.mesh(new THREE.CircleGeometry(R + 1.3, 6).rotateX(-Math.PI / 2).rotateY(T).translate(0, 0.005, 0),
+      new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.1, depthWrite: false })));
+    const plinthM = new THREE.MeshStandardMaterial({ color: "#14122a", metalness: 0.7, roughness: 0.35, flatShading: true });
+    g.add(this.mesh(hex(R + 0.45, 0.16, 0, R + 0.35), plinthM));
+    g.add(this.mesh(hex(R + 0.22, 0.12, 0.16, R + 0.16), plinthM));
+    const y0 = 0.28, bh = Math.max(0.4, h - y0 - 0.34);
+    // The column.
+    const body = hex(R, bh, y0);
+    g.add(this.mesh(body, new THREE.MeshStandardMaterial({ color: dark, metalness: 0.55, roughness: 0.3, emissive: col, emissiveIntensity: 0.07, flatShading: true })));
+    const edges = new THREE.EdgesGeometry(body, 20);
+    g.add(new THREE.LineSegments(edges, this.keep(new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.85 }), edges)));
+    // A glowing groove down the middle of each of the three faces in view.
+    const grooveM = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.55, depthWrite: false });
+    for (const k of [-1, 1]) {
+      const a = k * (Math.PI / 3);
+      const strip = new THREE.PlaneGeometry(0.07, bh * 0.82).translate(0, y0 + bh / 2, ap + 0.012).rotateY(a);
+      g.add(this.mesh(strip, grooveM));
+    }
+    // Metal collar and the glowing cap.
+    g.add(this.mesh(hex(R + 0.05, 0.12, y0 + bh), new THREE.MeshStandardMaterial({ color: "#c9d3e2", metalness: 0.9, roughness: 0.25, flatShading: true })));
+    const capM = new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 0.6, metalness: 0.3, roughness: 0.25, flatShading: true });
+    g.add(this.mesh(hex(R + 0.1, 0.2, y0 + bh + 0.12, R - 0.05), capM));
+    this.caps.push(capM);
+    g.add(this.mesh(new THREE.RingGeometry(R + 0.12, R + 0.6, 6, 1).rotateX(-Math.PI / 2).rotateY(T).translate(0, h + 0.005, 0),
+      new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.2, depthWrite: false })));
+    // A soft beam of light rising from the cap (taller for higher places).
+    const beamH = 2.2 + (6 - Math.min(5, place)) * 0.35;
+    const beam = new THREE.CylinderGeometry(R * 1.05, R * 0.9, beamH, 6, 1, true).rotateY(T).translate(0, h + beamH / 2, 0);
+    const beamM = new THREE.MeshBasicMaterial({ color: col, alphaMap: fadeTexture(), transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
+    beamM.forceSinglePass = true;
+    g.add(this.mesh(beam, beamM));
+    // The place number on the front face, in a lit frame.
+    const fs = Math.min(1.3, bh * 0.75);
+    const fy = y0 + Math.max(bh * 0.46, Math.min(bh * 0.55, bh - 0.7));
+    g.add(this.mesh(new THREE.PlaneGeometry(fs + 0.24, fs + 0.24).translate(0, fy, ap + 0.008),
+      new THREE.MeshBasicMaterial({ color: dark.clone().lerp(col, 0.18) })));
+    const tex = numberTexture(place, `#${col.getHexString()}`);
+    this.bits.tex.push(tex);
+    g.add(this.mesh(new THREE.PlaneGeometry(fs, fs).translate(0, fy, ap + 0.016), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false })));
+    return g;
+  }
+
+  private keep<M extends THREE.Material>(m: M, geo: THREE.BufferGeometry) { this.bits.geo.push(geo); this.bits.mat.push(m); return m; }
+
   private clear() {
     for (const c of this.cars) { this.scene.remove(c.m.root); c.m.dispose(); }
     this.cars = [];
@@ -122,6 +181,7 @@ export class Podium {
     for (const m of this.bits.mat) m.dispose();
     for (const t of this.bits.tex) t.dispose();
     this.bits = { geo: [], mat: [], tex: [] };
+    this.caps = [];
   }
 
   private frame(now: number) {
@@ -135,6 +195,9 @@ export class Podium {
       c.m.root.position.y = c.y + (1 - (1 - (1 - k) ** 3)) * 3;
       c.m.update(0, 0, dt);
     }
+    // The caps breathe gently.
+    const glow = 0.5 + Math.sin(now / 700) * 0.12;
+    for (const m of this.caps) m.emissiveIntensity = glow;
     this.renderer.render(this.scene, this.camera);
   }
 
