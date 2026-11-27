@@ -74,7 +74,7 @@ export const ALL_MAPS: MapDef[] = [
         set: [["stand", 30, -1, 3], ["stand", 30, 1, 3], ["billboard", 200, -1, 2], ["pier", 150, 1, 30], ["beachbar", 420, 1, 6], ["guard_a", 240, 1, 20], ["stand", 3250, -1, 3], ["stand", 3250, 1, 3]],
       },
     },
-    medals: { vortex: 3969, gold: 4339, silver: 4994, bronze: 6141 }, since: 9,
+    medals: { vortex: 3976, gold: 4346, silver: 5002, bronze: 6151 }, since: 9,
   },
   {
     id: "alpine-pass", name: "Alpine Pass", biome: "alpine", difficulty: "Medium",
@@ -113,7 +113,7 @@ export const ALL_MAPS: MapDef[] = [
       dress: { kit: "sky", zones: [[0, 280, "village", "village"], [280, 900, "park", "cliff"], [900, 1700, "cliff", "park"], [1700, 2400, "park", "cliff"], [2400, 3200, "village", "village"]],
         set: [["stand", 25, -1, 3], ["stand", 25, 1, 3], ["gatehouse", 8, 1, 4], ["keep", 140, -1, 26], ["windmill", 700, 1, 14], ["temple", 1300, -1, 16], ["wizard", 2000, 1, 14], ["keep", 2700, 1, 26], ["wizard", 2950, -1, 14]] },
     },
-    medals: { vortex: 3747, gold: 4096, silver: 4714, bronze: 5797 }, since: 9,
+    medals: { vortex: 3748, gold: 4097, silver: 4715, bronze: 5799 }, since: 9,
   },
   {
     id: "interstellar", name: "Interstellar", biome: "space", difficulty: "Expert",
@@ -126,7 +126,7 @@ export const ALL_MAPS: MapDef[] = [
       dress: { kit: "space", zones: [[0, 320, "village", "village"], [320, 1100, "park", "cliff"], [1100, 1900, "cliff", "park"], [1900, 2900, "park", "cliff"], [2900, 3800, "village", "village"]],
         set: [["stand", 25, -1, 3], ["stand", 25, 1, 3], ["spire", 150, -1, 10], ["ring", 900, 1, 160], ["ring", 2300, -1, 200], ["spire", 3150, 1, 10]] },
     },
-    medals: { vortex: 4449, gold: 4863, silver: 5597, bronze: 6883 }, since: 9,
+    medals: { vortex: 4448, gold: 4862, silver: 5596, bronze: 6882 }, since: 9,
   },
   {
     id: "miami-storm", name: "Miami Storm", biome: "storm", difficulty: "Beginner",

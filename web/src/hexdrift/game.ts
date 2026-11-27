@@ -60,7 +60,7 @@ const CAMS = [
   { dist: -0.2, height: 1.45, look: 1.25, fov: 78 },
 ];
 
-interface Snap { x: number; y: number; z: number; yaw: number; nx: number; ny: number; nz: number; loop: boolean; tx: number; ty: number; tz: number }
+interface Snap { x: number; y: number; z: number; yaw: number; nx: number; ny: number; nz: number; loop: boolean; pipe: boolean; tx: number; ty: number; tz: number }
 /** The best run replayed next to you: see-through, no collisions. */
 interface Ghost {
   inputs: Uint8Array;
@@ -84,7 +84,7 @@ const REMOTE_STALE = 4000;
 /** Car bodies for bumping: two circles along each car. */
 const BUMP_R = 1.25, BUMP_AT = 1.15;
 
-const snap = (r: Race): Snap => ({ x: r.car.x, y: r.car.y, z: r.car.z, yaw: r.car.yaw, nx: r.car.nx, ny: r.car.ny, nz: r.car.nz, loop: r.car.loop >= 0 || r.car.pipe >= 0, tx: r.car.tx, ty: r.car.ty, tz: r.car.tz });
+const snap = (r: Race): Snap => ({ x: r.car.x, y: r.car.y, z: r.car.z, yaw: r.car.yaw, nx: r.car.nx, ny: r.car.ny, nz: r.car.nz, loop: r.car.loop >= 0 || r.car.pipe >= 0, pipe: r.car.pipe >= 0, tx: r.car.tx, ty: r.car.ty, tz: r.car.tz });
 
 /** Other cars by quality level: full detail within, plainer within, drawn within (metres). */
 const CAR_LOD: Record<Gfx, [number, number, number]> = { high: [45, 160, 700], medium: [25, 90, 450], low: [12, 45, 260] };
@@ -141,6 +141,10 @@ export class Game {
   /** How far the camera has turned to follow a loop (0 to 1), and the loop's way forward. */
   private loopK = 0;
   private loopT = new THREE.Vector3(0, 0, 1);
+  /** On a pipe the same chase camera turns with the car: how far it has (0..1), and the car's smoothed forward. */
+  private pipeK = 0;
+  private pipeT = new THREE.Vector3(0, 0, 1);
+  private pipeV = new THREE.Vector3();
   private upV = new THREE.Vector3();
   private camInit = false;
   private respawnHeld = false;
@@ -865,13 +869,21 @@ export class Game {
     const sp = Math.abs(car.speed);
     const dist = c.dist + (this.cam === 2 ? 0 : sp * 0.025);
     const want = this.vy.set(x - fx * dist, cyy + c.height, z - fz * dist);
+    // On a pipe: the same camera, behind and above the car in its own frame (up the wall, on the roof).
+    const inPipe = this.cur.pipe && !jump;
+    this.pipeK += ((inPipe ? 1 : 0) - this.pipeK) * ease(4);
+    if (inPipe) this.pipeT.lerp(this.pipeV.set(this.cur.tx, this.cur.ty, this.cur.tz), ease(this.cam === 2 ? 30 : 7)).normalize();
+    else this.pipeT.set(fx, 0, fz);
+    const PT = this.pipeT, PN = this.smoothN;
+    if (this.pipeK > 0.001) want.lerp(this.pipeV.set(x - PT.x * dist + PN.x * c.height, y - PT.y * dist + PN.y * c.height, z - PT.z * dist + PN.z * c.height), this.pipeK);
     if (!this.camInit || jump) { this.camPos.copy(want); this.camInit = true; }
     else this.camPos.lerp(want, ease(this.cam === 2 ? 40 : 12));
     if (this.cam === 2) this.camPos.copy(want);
     this.camLook.set(x + fx * 6, cyy + c.look, z + fz * 6);
+    if (this.pipeK > 0.001) this.camLook.lerp(this.pipeV.set(x + PT.x * 6 + PN.x * c.look, y + PT.y * 6 + PN.y * c.look, z + PT.z * 6 + PN.z * c.look), this.pipeK);
     // Round a loop: behind the car along the loop and above it toward the loop's middle,
     // turning with it, so the camera stays inside the loop instead of cutting through it.
-    const inLoop = this.cur.loop && !jump;
+    const inLoop = this.cur.loop && !this.cur.pipe && !jump;
     this.loopK += ((inLoop ? 1 : 0) - this.loopK) * Math.min(1, dt * (inLoop ? 10 : 3));
     if (inLoop) this.loopT.set(this.cur.tx, this.cur.ty, this.cur.tz);
     if (inLoop && this.cam !== 2) {
@@ -879,7 +891,7 @@ export class Game {
       this.camPos.lerp(this.vy.set(x - L.x * d + n.x * h, y - L.y * d + n.y * h, z - L.z * d + n.z * h), Math.min(1, dt * 20));
       this.camLook.set(x + L.x * 6 + n.x * c.look, y + L.y * 6 + n.y * c.look, z + L.z * 6 + n.z * c.look);
     }
-    this.upV.set(0, 1, 0).lerp(this.smoothN, this.loopK);
+    this.upV.set(0, 1, 0).lerp(this.smoothN, Math.max(this.loopK, this.pipeK));
     if (this.upV.lengthSq() > 0.01) this.camera.up.copy(this.upV.normalize());
     if (this.race.phase === "finished") {
       // The finish shot: a low sweep beside the car that cranes up and out
