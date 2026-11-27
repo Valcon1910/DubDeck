@@ -145,7 +145,7 @@ test("garage: free parts equip and stay, locked parts preview only, and the car 
   // A locked car can be looked at but not equipped.
   await page.getByRole("tab", { name: "Car" }).click();
   await page.getByRole("button", { name: /^Formula X/ }).click();
-  await expect(page.locator(".hx-preview-lock")).toContainText("Formula X: unlocks at 12 medal points");
+  await expect(page.locator(".hx-preview-lock")).toContainText("Formula X: unlocks at 24 medal points");
   await expect(page.getByRole("button", { name: /^Grand Coupe/ })).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("button", { name: /^Cyber Rig/ }).click();
   await page.reload();

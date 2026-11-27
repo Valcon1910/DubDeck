@@ -23,7 +23,8 @@ import type { Preview } from "./render/preview.ts";
 import type { Podium } from "./render/podium.ts";
 import { podiumOrder } from "./render/podiumOrder.ts";
 import { isMuted, play, setMuted, wireUiSounds } from "./ui/sound.ts";
-import { IconBack, IconCamera, IconCrown, IconFlag, IconFullscreen, IconGamepad, IconGarage, IconLock, IconMedal, IconMute, IconPause, IconPlay, IconRestart, IconRoute, IconSound, IconTrophy } from "./ui/icons.tsx";
+import { muffleMusic, musicOn, setMusic, setMusicOn } from "./ui/music.ts";
+import { IconBack, IconCamera, IconCrown, IconFlag, IconFullscreen, IconGamepad, IconGarage, IconLock, IconMedal, IconMusic, IconMute, IconPause, IconPlay, IconRestart, IconRoute, IconSound, IconTrophy } from "./ui/icons.tsx";
 import type { IntroStage } from "./game.ts";
 import { cropStyle, readCrop, stripCrop } from "../vortex/crop";
 import "./hexdrift.css";
@@ -243,6 +244,8 @@ function useKeyboard() {
 function TopBar({ back, garage = true }: { back?: { href: string; label: string }; garage?: boolean }) {
   const gaming = useGaming();
   const [quiet, setQuiet] = useState(isMuted);
+  const [tunes, setTunes] = useState(musicOn);
+  useEffect(() => { setMusic("menu"); return () => setMusic("none"); }, []);
   return (
     <header className="hx-bar">
       {back ? <a className="hx-back" href={back.href}><IconBack size={18} />{back.label}</a>
@@ -252,6 +255,10 @@ function TopBar({ back, garage = true }: { back?: { href: string; label: string 
         <button type="button" className="hx-chipbtn hx-sq" data-sound="toggle" aria-label={quiet ? "Turn menu sounds on" : "Turn menu sounds off"}
           title={quiet ? "Sounds off" : "Sounds on"} onClick={() => { setMuted(!quiet); setQuiet(!quiet); if (quiet) play("toggle"); }}>
           {quiet ? <IconMute /> : <IconSound />}
+        </button>
+        <button type="button" className="hx-chipbtn hx-sq" style={tunes ? undefined : { opacity: 0.5 }} data-sound="toggle" aria-pressed={tunes} aria-label={tunes ? "Turn music off" : "Turn music on"}
+          title={tunes ? "Music on" : "Music off"} onClick={() => { setMusicOn(!tunes); setTunes(!tunes); }}>
+          <IconMusic />
         </button>
         {garage && <a className="hx-chipbtn" href="#/hexdrift/garage"><IconGarage />Garage</a>}
         <GamingButton />
@@ -688,6 +695,7 @@ function Play({ map, custom, home, practice, party }: { map: MapDef; custom?: Cu
   const game = useRef<Game | null>(null);
   const controls = useRef<Controls | null>(null);
   const [over, setOver] = useState<Over>(null);
+  useEffect(() => { setMusic("race", map.id); return () => { muffleMusic(false); setMusic("none"); }; }, [map.id]);
   const overRef = useRef<Over>(null);
   overRef.current = over;
   const [touch, setTouch] = useState(() => typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches);
@@ -725,6 +733,7 @@ function Play({ map, custom, home, practice, party }: { map: MapDef; custom?: Cu
     if (!g || g.race.phase === "finished") return;
     // The others keep racing: the menu opens, the car doesn't stop.
     if (!partyRef.current) g.setPaused(p);
+    muffleMusic(p);
     setOver(p ? "pause" : null);
   }, []);
 
