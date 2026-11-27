@@ -22,10 +22,14 @@ function numberTexture(n: number, colour: string) {
   c.width = 128; c.height = 128;
   const g = c.getContext("2d")!;
   g.font = "italic 800 96px 'Space Grotesk Variable', system-ui, sans-serif";
-  g.textAlign = "center"; g.textBaseline = "middle";
+  g.textAlign = "left"; g.textBaseline = "alphabetic";
   g.shadowColor = colour; g.shadowBlur = 18;
   g.fillStyle = "#ffffff";
-  g.fillText(String(n), 64, 70);
+  // Centre the glyph's own ink (italic digits lean, so the box is measured).
+  const m = g.measureText(String(n));
+  const x = 64 - (m.actualBoundingBoxRight - m.actualBoundingBoxLeft) / 2 + m.actualBoundingBoxLeft;
+  const y = 64 + (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2;
+  g.fillText(String(n), x, y);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
@@ -42,6 +46,28 @@ function dotTexture() {
   gr.addColorStop(0, "rgba(255,255,255,1)"); gr.addColorStop(0.35, "rgba(255,255,255,0.6)"); gr.addColorStop(1, "rgba(255,255,255,0)");
   g.fillStyle = gr; g.fillRect(0, 0, 32, 32);
   return (dot = new THREE.CanvasTexture(c));
+}
+
+let burstTex: THREE.Texture | null = null;
+/** Soft rays from a bright centre: the glory behind the crown (shared). */
+function burstTexture() {
+  if (burstTex) return burstTex;
+  const c = document.createElement("canvas");
+  c.width = c.height = 128;
+  const g = c.getContext("2d")!;
+  g.translate(64, 64);
+  for (let i = 0; i < 16; i++) {
+    g.rotate(Math.PI / 8);
+    const gr = g.createLinearGradient(0, 0, 0, -64);
+    gr.addColorStop(0, "rgba(255,255,255,0.9)"); gr.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = gr;
+    const w = i % 2 ? 3 : 6;
+    g.beginPath(); g.moveTo(-w, 0); g.lineTo(0, -64); g.lineTo(w, 0); g.fill();
+  }
+  const core = g.createRadialGradient(0, 0, 0, 0, 0, 40);
+  core.addColorStop(0, "rgba(255,255,255,0.8)"); core.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = core; g.fillRect(-64, -64, 128, 128);
+  return (burstTex = new THREE.CanvasTexture(c));
 }
 
 let pool: THREE.Texture | null = null;
@@ -83,6 +109,9 @@ export class Podium {
   private group = new THREE.Group();
   private count = 0;
   private heights: number[] = [];
+  private fx: { kind: "rise" | "spread" | "sheen"; o: THREE.Object3D; m: THREE.MeshBasicMaterial; t: number; rate: number; base: number; span: number; peak: number }[] = [];
+  private orbits: { pos: THREE.BufferAttribute; orb: { a: number; r: number; y: number; w: number }[] }[] = [];
+  private bursts: THREE.Object3D[] = [];
   private caps: THREE.MeshStandardMaterial[] = [];
   private spinners: { o: THREE.Object3D; w: number; bob?: number }[] = [];
   private sparks: { pos: THREE.BufferAttribute; speed: number[]; lo: number; hi: number }[] = [];
@@ -118,7 +147,7 @@ export class Podium {
     const inv = this.camera.matrixWorldInverse, v = new THREE.Vector3();
     let lo = Infinity, hi = -Infinity;
     const R = SPACING * 0.48;
-    for (const [y, z] of [[0, R], [0, -R], [tallest + BEAM, R], [tallest + BEAM, -R], [tallest + CROWN_Y + 1.1, 0]]) {
+    for (const [y, z] of [[0, R], [0, -R], [tallest + BEAM, R], [tallest + BEAM, -R], [tallest + CROWN_Y + 1.85, 0]]) {
       v.set(0, y, z).applyMatrix4(inv);
       lo = Math.min(lo, v.y); hi = Math.max(hi, v.y);
     }
@@ -230,7 +259,7 @@ export class Podium {
     const bands = Math.max(1, 4 - Math.min(3, place - 1));
     for (let i = 0; i < bands; i++) {
       const by = y0 + bh * (0.12 + (0.76 * i) / Math.max(1, bands)) ;
-      if (Math.abs(by - (y0 + bh * 0.5)) < 0.55) continue; // keep the medal clear
+      if (Math.abs(by - (y0 + bh * 0.5)) < Math.min(0.78, bh * 0.4) + 0.3) continue; // keep the medal clear
       g.add(this.mesh(hex(R + 0.025, 0.035, by), glowMat(0.55)));
     }
 
@@ -248,7 +277,7 @@ export class Podium {
     beamM.forceSinglePass = true;
     g.add(this.mesh(new THREE.CylinderGeometry(R * 1.02, R * 0.92, beamH, 24, 1, true).translate(0, h + beamH / 2, 0), beamM));
     // Sparkles drifting up through the beam (more for higher places).
-    const n = [0, 36, 24, 18, 10, 8][place] ?? 8;
+    const n = [0, 60, 40, 30, 20, 16][place] ?? 16;
     const pos = new Float32Array(n * 3), seedArr: number[] = [];
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * R * 0.95;
@@ -263,6 +292,57 @@ export class Podium {
     g.add(pts);
     this.sparks.push({ pos: pg.getAttribute("position") as THREE.BufferAttribute, speed: seedArr, lo: h, hi: h + beamH });
 
+    // Hexagons of light rising up the beam, fading in and out.
+    for (let i = 0; i < 3; i++) {
+      const m = glowMat(0);
+      const ring = this.mesh(new THREE.RingGeometry(R * 0.9, R * 0.97, 6, 1).rotateX(-Math.PI / 2).rotateY(T), m);
+      g.add(ring);
+      this.fx.push({ kind: "rise", o: ring, m, t: i / 3, rate: 0.32, base: h, span: beamH * 0.95, peak: 0.6 });
+    }
+    // Hexagons expanding out over the floor from the base, like a pulse.
+    for (let i = 0; i < 2; i++) {
+      const m = glowMat(0);
+      const ring = this.mesh(new THREE.RingGeometry(0.9, 1, 6, 1).rotateX(-Math.PI / 2).rotateY(T).translate(0, 0.02, 0), m);
+      g.add(ring);
+      this.fx.push({ kind: "spread", o: ring, m, t: i / 2, rate: 0.4, base: R + 0.4, span: SPACING * 0.47 - (R + 0.4), peak: 0.9 });
+    }
+    // A sheen sweeping up the front face now and then.
+    {
+      const m = glowMat(0);
+      const sheen = this.mesh(new THREE.PlaneGeometry(R * 0.95, 0.35).translate(0, 0, ap + 0.03), m);
+      g.add(sheen);
+      this.fx.push({ kind: "sheen", o: sheen, m, t: Math.random(), rate: 0.22, base: y0, span: bh, peak: 0.28 });
+    }
+    // Motes orbiting the column.
+    {
+      const k = 14 + (6 - Math.min(5, place)) * 4;
+      const op = new Float32Array(k * 3), orb: { a: number; r: number; y: number; w: number }[] = [];
+      for (let i = 0; i < k; i++) orb.push({ a: Math.random() * Math.PI * 2, r: R + 0.35 + Math.random() * 0.25, y: 0.3 + Math.random() * (h - 0.2), w: (0.4 + Math.random() * 0.5) * (i % 2 ? 1 : -1) });
+      const og = new THREE.BufferGeometry();
+      og.setAttribute("position", new THREE.BufferAttribute(op, 3));
+      const om = new THREE.PointsMaterial({ color: col.clone().lerp(new THREE.Color("#ffffff"), 0.35), size: 0.11, map: dotTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+      this.bits.geo.push(og); this.bits.mat.push(om);
+      const pts = new THREE.Points(og, om); pts.frustumCulled = false;
+      g.add(pts);
+      this.orbits.push({ pos: og.getAttribute("position") as THREE.BufferAttribute, orb });
+    }
+    // Floating diamonds circling just above the cap.
+    {
+      const ring = new THREE.Group();
+      const dm = new THREE.MeshStandardMaterial({ color: col.clone().lerp(new THREE.Color("#ffffff"), 0.4), emissive: col, emissiveIntensity: 0.8, metalness: 0.5, roughness: 0.15, flatShading: true });
+      this.bits.mat.push(dm);
+      const dg = new THREE.OctahedronGeometry(0.1).scale(0.8, 1.4, 0.8);
+      this.bits.geo.push(dg);
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2, d = new THREE.Mesh(dg, dm);
+        d.position.set(Math.sin(a) * (R + 0.15), 0.35 + (i % 2) * 0.15, Math.cos(a) * (R + 0.15));
+        ring.add(d);
+      }
+      ring.position.y = h;
+      g.add(ring);
+      this.spinners.push({ o: ring, w: 0.6 });
+    }
+
     // The place number in a medal on the front.
     const md = Math.min(0.78, bh * 0.4);
     const my = y0 + bh * 0.5;
@@ -274,6 +354,15 @@ export class Podium {
     g.add(this.mesh(new THREE.PlaneGeometry(md * 1.7, md * 1.7).translate(0, my, ap + 0.022), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false })));
 
     // First place: a crown floating over the car.
+    if (place === 1) {
+      // A slowly turning starburst behind the crown.
+      const sm = new THREE.MeshBasicMaterial({ color: "#ffd24a", map: burstTexture(), transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending });
+      const burst = this.mesh(new THREE.PlaneGeometry(2.4, 2.4), sm);
+      burst.position.set(0, h + CROWN_Y + 0.3, -0.4);
+      burst.lookAt(0, h + CROWN_Y + 8, 14); // face the camera (see resize)
+      g.add(burst);
+      this.bursts.push(burst);
+    }
     if (place === 1) { const crown = this.crown(); crown.position.y = h + CROWN_Y; g.add(crown); this.spinners.push({ o: crown, w: 0.7, bob: h + CROWN_Y }); }
     return g;
   }
@@ -331,7 +420,7 @@ export class Podium {
     for (const m of this.bits.mat) m.dispose();
     for (const t of this.bits.tex) t.dispose();
     this.bits = { geo: [], mat: [], tex: [] };
-    this.caps = []; this.spinners = []; this.sparks = [];
+    this.caps = []; this.spinners = []; this.fx = []; this.orbits = []; this.bursts = []; this.sparks = [];
   }
 
   private frame(now: number) {
@@ -352,6 +441,26 @@ export class Podium {
       s.o.rotation.y += s.w * dt;
       if (s.bob !== undefined) s.o.position.y = s.bob + Math.sin(now / 600) * 0.12;
     }
+    for (const f of this.fx) {
+      f.t = (f.t + dt * f.rate) % 1;
+      const fade = Math.sin(f.t * Math.PI);
+      if (f.kind === "rise") { f.o.position.y = f.base + f.t * f.span; f.m.opacity = f.peak * fade; }
+      else if (f.kind === "spread") { f.o.scale.setScalar(f.base + f.t * f.span); f.m.opacity = f.peak * (1 - f.t) ** 1.5; }
+      else { // the sheen runs in the first third of its cycle, then rests
+        const k = Math.min(1, f.t * 3);
+        f.o.position.y = f.base + k * f.span;
+        f.m.opacity = f.t < 1 / 3 ? f.peak * Math.sin(k * Math.PI) : 0;
+      }
+    }
+    for (const ob of this.orbits) {
+      const a = ob.pos.array as Float32Array;
+      ob.orb.forEach((o, i) => {
+        o.a += o.w * dt;
+        a[i * 3] = Math.sin(o.a) * o.r; a[i * 3 + 1] = o.y + Math.sin(now / 900 + i) * 0.08; a[i * 3 + 2] = Math.cos(o.a) * o.r;
+      });
+      ob.pos.needsUpdate = true;
+    }
+    for (const b of this.bursts) b.rotateZ(dt * 0.25);
     for (const sp of this.sparks) {
       const a = sp.pos.array as Float32Array;
       for (let i = 0; i < sp.speed.length; i++) {
