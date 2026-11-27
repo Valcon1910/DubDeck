@@ -902,7 +902,7 @@ function Play({ map, custom, home, practice, party }: { map: MapDef; custom?: Cu
           <p className="hx-dim">Party race: your car keeps going while this is open.</p>
           <div className="hx-row">
             <button type="button" className="hx-btn hx-btn-main" onClick={() => setOver(null)} autoFocus>Back to the race</button>
-            <button type="button" className="hx-btn" onClick={party.leave}>Leave the room</button>
+            <button type="button" className="hx-btn" onClick={party.leave}>Leave the party</button>
           </div>
           <GraphicsPicker game={game.current} />
         </div></div>

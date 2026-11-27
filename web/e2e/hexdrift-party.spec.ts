@@ -16,13 +16,13 @@ test("Party: two players join a room, race and see the results", async ({ browse
   const A = await ctx.newPage(), B = await ctx.newPage();
 
   await A.goto("/?as=a@x.test#/hexdrift/party");
-  await A.getByRole("button", { name: "Make a room" }).click();
+  await A.getByRole("button", { name: "Start a party" }).click();
   await expect(A).toHaveURL(/#\/hexdrift\/party\/[A-Z]{6}$/);
   const code = A.url().split("/").pop()!;
-  await expect(A.getByRole("textbox", { name: "Room link" })).toHaveValue(new RegExp(`#/hexdrift/party/${code}$`));
+  await expect(A.getByRole("textbox", { name: "Party link" })).toHaveValue(new RegExp(`#/hexdrift/party/${code}$`));
 
   await B.goto("/?as=b@x.test#/hexdrift/party");
-  await B.getByLabel("Room code").fill(code.toLowerCase());
+  await B.getByLabel("Party code").fill(code.toLowerCase());
   await B.getByRole("button", { name: "Join" }).click();
   await expect(B.locator(".hx-party-list li")).toHaveCount(2);
   await expect(A.locator(".hx-party-list li")).toHaveCount(2);
