@@ -7,6 +7,8 @@
 // on the first press and everything before that is silent.
 
 import impactsUrl from "../sfx/impacts.mp3?url";
+import uiUrl from "../sfx/ui.mp3?url";
+import raceUrl from "../sfx/race.wav?url";
 
 type Ctx = AudioContext;
 let ctx: Ctx | null = null;
@@ -33,6 +35,7 @@ function audio(always = false): { c: Ctx; out: GainNode } | null {
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   }
   if (ctx.state === "suspended") void ctx.resume().catch(() => {});
+  loadUi(ctx);
   return ctx.state === "closed" ? null : { c: ctx, out: bus! };
 }
 
@@ -62,8 +65,50 @@ function loadSprite(c: Ctx) {
   fetch(impactsUrl).then((r) => r.arrayBuffer()).then((b) => c.decodeAudioData(b)).then((buf) => { sprite = buf; })
     .catch(() => { spriteLoading = false; });
 }
-/** Fetches the recorded hits ahead of a race (once the audio is unlocked). */
-export function preloadSounds() { const a = audio(); if (a) loadSprite(a.c); }
+/** Fetches the recorded hits and race sounds ahead of a race (once the audio is unlocked). */
+export function preloadSounds() { const a = audio(); if (a) { loadSprite(a.c); loadRace(a.c); } }
+
+// ── Recorded interface sounds (Kenney's Interface Sounds, CC0) ──
+const UI: Partial<Record<UiSound, [number, number, number]>> = {
+  // start, length, volume
+  hover: [0.15, 0.045, 0.25], click: [0.345, 0.0116, 0.7], confirm: [0.5066, 0.29, 0.6], back: [0.9464, 0.0914, 0.6],
+  whoosh: [1.1879, 0.38, 0.5], toggle: [1.7178, 0.1364, 0.6], locked: [2.0042, 0.1045, 0.6], tick: [2.2587, 0.0203, 0.5],
+  count: [2.429, 0.0404, 0.9], go: [2.6194, 0.539, 0.8], reveal: [3.3084, 0.2254, 0.6], medal: [3.6838, 0.4904, 0.8],
+};
+let uiBuf: AudioBuffer | null = null;
+let uiLoading = false;
+function loadUi(c: Ctx) {
+  if (uiBuf || uiLoading) return;
+  uiLoading = true;
+  fetch(uiUrl).then((r) => r.arrayBuffer()).then((b) => c.decodeAudioData(b)).then((buf) => { uiBuf = buf; }).catch(() => { uiLoading = false; });
+}
+function uiClip(c: Ctx, out: AudioNode, s: UiSound, k: number): boolean {
+  const e = UI[s];
+  if (!e) return false;
+  if (!uiBuf) { loadUi(c); return false; }
+  const src = c.createBufferSource(); src.buffer = uiBuf;
+  if (s === "count") src.playbackRate.value = 0.9;
+  const g = c.createGain(); g.gain.value = e[2] * k;
+  src.connect(g).connect(out);
+  src.start(c.currentTime, e[0], e[1] + 0.02);
+  return true;
+}
+
+// ── Race sounds (engine loops, tyres, boost): one lossless sheet so loops are seamless ──
+/** Where each clip sits in the race sheet: start and length (seconds). */
+export const RACE_CLIPS = {
+  e0: [0.1, 0.864082], e1: [1.064082, 0.666667], e2: [1.830748, 0.682585], e3: [2.613333, 0.616054],
+  e4: [3.329388, 0.630839], e5: [4.060227, 0.629569], squeal: [4.789796, 3.0], boost: [7.889796, 0.341723], rush: [8.331519, 2.5],
+} as const;
+let raceBuf: AudioBuffer | null = null;
+let raceLoading = false;
+function loadRace(c: Ctx) {
+  if (raceBuf || raceLoading) return;
+  raceLoading = true;
+  fetch(raceUrl).then((r) => r.arrayBuffer()).then((b) => c.decodeAudioData(b)).then((buf) => { raceBuf = buf; }).catch(() => { raceLoading = false; });
+}
+/** The race sheet once loaded (starts loading it otherwise). */
+export function raceSheet(): AudioBuffer | null { if (!raceBuf && ctx) loadRace(ctx); return raceBuf; }
 /** Plays a random take of a recorded clip; false if they aren't loaded yet. */
 function clip(c: Ctx, out: AudioNode, name: string, vol: number, rate = 1, at = 0): boolean {
   if (!sprite) { loadSprite(c); return false; }
@@ -120,11 +165,10 @@ export function play(s: UiSound, k = 1) {
   const a = audio();
   if (!a) return;
   const { c, out } = a;
+  if (s === "hover") { const now = performance.now(); if (now - lastHover < 45) return; lastHover = now; }
+  if (uiClip(c, out, s, 1)) return;
   switch (s) {
     case "hover": {
-      const now = performance.now();
-      if (now - lastHover < 45) return;
-      lastHover = now;
       tone(c, out, { f: 2400, f2: 2100, type: "sine", dur: 0.035, vol: 0.05 });
       break;
     }
@@ -197,6 +241,14 @@ export function play(s: UiSound, k = 1) {
       noise(c, out, { dur: 0.3, vol: 0.06, f: 6000, q: 0.6, attack: 0.02 });
       break;
     case "boost":
+      if (raceBuf) { // the recorded thruster ignition, layered with a rising rush
+        const [t, d] = RACE_CLIPS.boost;
+        const src = c.createBufferSource(); src.buffer = raceBuf; src.playbackRate.value = 0.92 + Math.random() * 0.1;
+        const g = c.createGain(); g.gain.value = 0.9;
+        src.connect(g).connect(out); src.start(c.currentTime, t, d);
+        noise(c, out, { dur: 0.7, vol: 0.12, f: 500, f2: 5000, q: 0.7, attack: 0.05 });
+        break;
+      }
       noise(c, out, { dur: 0.55, vol: 0.2, f: 400, f2: 4200, q: 0.8, attack: 0.04 });
       tone(c, out, { f: 120, f2: 360, type: "sawtooth", dur: 0.4, vol: 0.05, attack: 0.03 });
       break;

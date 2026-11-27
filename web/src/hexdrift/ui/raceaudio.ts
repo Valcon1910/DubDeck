@@ -11,9 +11,15 @@
 //   ambience  per map: surf, rain, mountain wind, desert air, high sky, a
 //             space drone, and the crowd at the start
 //
+// Once the race sheet has loaded, recorded sounds take over: the engine from
+// six CC0 recorded engine loops (idle and five rev steps, crossfaded and
+// pitched to follow the revs), a recorded tyre squeal and a rush of air under
+// the boost. The synthesised versions above play until then (and for the
+// electric truck, which has no engine to record).
+//
 // It runs on the interface sounds' context and bus (one compressor for all).
 // Muting the sounds mutes this too.
-import { audioContext, isMuted } from "./sound.ts";
+import { audioContext, isMuted, RACE_CLIPS, raceSheet } from "./sound.ts";
 import type { BiomeId } from "../maps.ts";
 
 export type Surface = "asphalt" | "dirt" | "ice" | "metal" | "sand" | "grass" | "air";
@@ -119,6 +125,9 @@ export class RaceAudio {
   private crowd!: ReturnType<typeof noiseVoice>;
   private ambV: { g: GainNode; filt?: BiquadFilterNode; lfo?: number }[] = [];
   private white!: AudioBuffer;
+
+  // Recorded layers (null until the race sheet is in).
+  private rec: { eng: { s: AudioBufferSourceNode; g: GainNode; base: number }[]; squeal: { s: AudioBufferSourceNode; g: GainNode }; rush: { s: AudioBufferSourceNode; g: GainNode } } | null = null;
 
   // State.
   private gear = 0;
@@ -232,6 +241,27 @@ export class RaceAudio {
     return true;
   }
 
+  /** Switches to the recorded engine, squeal and boost rush once the sheet is loaded. */
+  private record() {
+    if (this.rec || this.ctx) return;
+    const buf = raceSheet();
+    if (!buf) return;
+    const c = this.c!, now = c.currentTime;
+    const loop = (key: keyof typeof RACE_CLIPS, out: AudioNode) => {
+      const [t, d] = RACE_CLIPS[key];
+      const s = c.createBufferSource(); s.buffer = buf; s.loop = true; s.loopStart = t; s.loopEnd = t + d;
+      const g = c.createGain(); g.gain.value = 0;
+      s.connect(g).connect(out); s.start(now, t + Math.random() * d * 0.5);
+      this.nodes.push(s);
+      return { s, g };
+    };
+    // The base pitch (Hz) of each recorded loop: idle, then five steps up.
+    const BASE = [43, 60, 64.5, 70, 73, 76.6];
+    const eng = this.voice.electric ? [] : (["e0", "e1", "e2", "e3", "e4", "e5"] as const).map((k, i) => ({ ...loop(k, this.eFilt), base: BASE[i] }));
+    if (eng.length) { this.eShape.disconnect(); }
+    this.rec = { eng, squeal: loop("squeal", this.bus!), rush: loop("rush", this.bus!) };
+  }
+
   /** A soft clipper: more drive, more grit. */
   private curve(drive: number): Float32Array<ArrayBuffer> {
     const n = 1024, k = new Float32Array(n);
@@ -248,6 +278,7 @@ export class RaceAudio {
     const quiet = this.paused || isMuted();
     this.bus!.gain.setTargetAtTime(quiet ? 0 : 1, now, quiet ? 0.05 : 0.2);
     if (quiet) return;
+    this.record();
     this.t += dt;
     const sp = Math.abs(s.speed);
     const done = s.phase === "finished";
@@ -283,7 +314,25 @@ export class RaceAudio {
       const cut = this.shiftCut > 0 ? 0.35 : 1;
       const lv = v.vol * (0.16 + 0.18 * this.load + 0.1 * clamp(rf, 0, 1)) * cut * (done ? 0.6 : 1);
       T(this.eGain.gain, lv, 0.03);
-      T(this.eFilt.frequency, v.dark + (v.bright - v.dark) * (0.25 * clamp(rf, 0, 1) + 0.75 * this.load), 0.04);
+      // Recorded engines are already shaped: the filter only takes the edge off when lifting.
+      const open = 0.25 * clamp(rf, 0, 1) + 0.75 * this.load;
+      T(this.eFilt.frequency, this.rec?.eng.length ? 1400 + 9000 * open : v.dark + (v.bright - v.dark) * open, 0.04);
+      if (this.rec?.eng.length) {
+        // The recorded engine: a pitch that climbs with the revs (deeper for
+        // big lazy engines, higher for screamers), played by the two loops
+        // either side of it with an equal-power crossfade.
+        const tone = Math.pow(Math.max(4, v.cyl) / 8, 0.3) * Math.pow(v.red / 7000, 0.35);
+        const F = 43 * tone * (1 + 2.5 * clamp(rf, 0, 1.05));
+        const E = this.rec.eng;
+        let i = 0;
+        while (i < E.length - 1 && F >= E[i + 1].base) i++;
+        const k = i < E.length - 1 ? clamp((F - E[i].base) / (E[i + 1].base - E[i].base), 0, 1) : 0;
+        E.forEach((e, j) => {
+          const w = j === i ? Math.cos(k * Math.PI / 2) : j === i + 1 ? Math.sin(k * Math.PI / 2) : 0;
+          T(e.g.gain, w * 1.5, 0.03);
+          if (w > 0 || j === i + 1) T(e.s.playbackRate, clamp(F / e.base, 0.5, 2.8), 0.02);
+        });
+      }
       T(this.intake.filt.frequency, half * 6, 0.05);
       T(this.intake.g.gain, 0.05 + 0.12 * this.load * clamp(rf, 0, 1), 0.05);
       // Off the gas high in the revs: crackles on the overrun.
@@ -319,6 +368,12 @@ export class RaceAudio {
     T(this.squeal.g.gain, 0.22 * sq * clamp(sp / 15, 0, 1), 0.04);
     T(this.squeal2.g.gain, 0.12 * sq * clamp(sp / 15, 0, 1), 0.04);
     T(this.squeal.filt.frequency, 950 + 250 * Math.sin(this.t * 9) * sq + sp * 3, 0.05);
+    if (this.rec) {
+      // Recorded squeal instead of the noise one.
+      T(this.squeal.g.gain, 0, 0.05); T(this.squeal2.g.gain, 0, 0.05);
+      T(this.rec.squeal.g.gain, 0.55 * sq * clamp(sp / 15, 0, 1), 0.04);
+      T(this.rec.squeal.s.playbackRate, 0.9 + 0.25 * sq + sp / 400, 0.1);
+    }
     const vK = clamp(sp / 60, 0, 1);
     const rollVol = air ? 0 : surf === "asphalt" ? 0.18 : surf === "metal" ? 0.16 : surf === "ice" ? 0.06 : surf === "sand" ? 0.12 : 0.24;
     T(this.roll.g.gain, rollVol * vK, 0.06);
@@ -340,7 +395,12 @@ export class RaceAudio {
     const wK = vK * vK;
     T(this.wind.g.gain, (air ? 0.22 : 0.1) * wK + (air ? 0.04 : 0), 0.15);
     T(this.wind.filt.frequency, 350 + 1400 * vK + (air ? 300 : 0), 0.2);
-    T(this.jet.g.gain, s.boosting && !done ? 0.16 : 0, s.boosting ? 0.05 : 0.3);
+    T(this.jet.g.gain, s.boosting && !done ? (this.rec ? 0.1 : 0.16) : 0, s.boosting ? 0.05 : 0.3);
+    if (this.rec) {
+      // Under the boost: a roaring rush of air that rises with speed.
+      T(this.rec.rush.g.gain, s.boosting && !done ? 0.55 : 0, s.boosting ? 0.06 : 0.35);
+      T(this.rec.rush.s.playbackRate, 0.85 + 0.5 * vK, 0.2);
+    }
     T(this.jet.filt.frequency, s.boosting ? 1800 + 400 * Math.sin(this.t * 3) : 700, 0.2);
 
     // ── The world: the crowd by the start and finish, and the map's own air ──

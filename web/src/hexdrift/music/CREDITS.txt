@@ -1,0 +1,14 @@
+Hexdrift soundtracks (all CC0 / public domain, from OpenGameArt.org)
+
+menu.mp3   "Calm Ambient 2 (Synthwave 15k)" by cynicmusic
+           https://opengameart.org/content/calm-ambient-2-synthwave-15k
+race1.mp3  "A Flawless Getaway" (loop) by vitalezzz
+           https://opengameart.org/content/a-flawless-getaway
+race2.mp3  "Brute Force" (loop) by vitalezzz
+           https://opengameart.org/content/brute-force
+race3.mp3  "All The Fight Left!" by Holizna
+           https://opengameart.org/content/all-the-fight-left
+race4.mp3  "Drive" by Zane Little Music
+           https://opengameart.org/content/drive-0
+
+Re-encoded at 96 kbit/s and loudness-matched; otherwise unchanged.
