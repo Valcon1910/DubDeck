@@ -165,13 +165,14 @@ export function pipeRoll(P: Pipe, u: number): [number, number] {
 }
 
 /** A point on a pipe's surface: `u` m in, `l` m across from the middle (+ toward the wall), `up` off the surface. */
-/** A point on a pipe's road: u along it, l across (+ toward the wall), up off the surface. The road stays flat across and banks as a whole. */
+/** A point on a pipe's road: u along it, l across (+ toward the wall), up off the surface. The road stays flat across and banks as a whole, about its floor-side edge. */
 export function pipePoint(P: Pipe, u: number, l: number, up = 0): [number, number, number] {
   const th = pipeRoll(P, u)[0], sn = dsin(th), cs = dcos(th);
   const sdx = P.w * P.rx, sdz = P.w * P.rz;
   // Out from the axis by R − up, then l along the road's width.
   const a = P.R - up;
-  const o = a * sn + l * cs, h = P.R - a * cs + l * sn;
+  // Lifted (by hw·sinθ up to the wall, then hw) so the floor-side edge never sinks below the road.
+  const o = a * sn + l * cs, h = P.R - a * cs + l * sn + P.hw * (cs > 0 ? sn : 1);
   return [P.x + P.fx * u + o * sdx, P.y + h, P.z + P.fz * u + o * sdz];
 }
 

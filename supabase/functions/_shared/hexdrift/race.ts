@@ -61,8 +61,9 @@ export interface Car {
   rough: number;
   /** Going round a loop (its index; -1 when not): distance round it, and across it. */
   loop: number; ls: number; ll: number;
-  /** Riding a pipe (its index; -1 when not): ls is metres along it, ll metres across (+ toward its wall). */
-  pipe: number;
+  /** On a pipe (its index; -1 when not): ls is metres along it, ll metres across (+ toward its wall),
+   *  pa the heading on its surface (0 along the road, + to the left), pu and pv the velocity along and across. */
+  pipe: number; pa: number; pu: number; pv: number;
   /** Which way the car points in a loop or a pipe (for drawing it). */
   tx: number; ty: number; tz: number;
   /** The material of the part it stands on ("" when not on a part). */
@@ -76,7 +77,7 @@ function place(car: Car, p: Spot) {
   car.rough = VMAX_OFF;
   car.grounded = true; car.nx = 0; car.ny = 1; car.nz = 0;
   car.speed = 0; car.slip = 0; car.boosting = 0; car.offroad = false; car.drift = 0; car.hit = 0; car.land = 0;
-  car.loop = -1; car.pipe = -1; car.ls = 0; car.ll = 0; car.tx = 0; car.ty = 0; car.tz = 0; car.part = "";
+  car.loop = -1; car.pipe = -1; car.pa = 0; car.pu = 0; car.pv = 0; car.ls = 0; car.ll = 0; car.tx = 0; car.ty = 0; car.tz = 0; car.part = "";
 }
 
 export type Phase = "countdown" | "running" | "finished";
@@ -122,7 +123,7 @@ export function step(r: Race, byte: number) {
 
   if (byte & 128) { respawn(r); return; }
   if (car.loop >= 0) { loopStep(r, steer, gas, brake); return; }
-  if (car.pipe >= 0) { pipeStep(r, steer, gas, brake); return; }
+  if (car.pipe >= 0) { pipeStep(r, steer, gas, brake, drift); return; }
 
   const fx = dsin(car.yaw), fz = dcos(car.yaw);
   const grav = GRAVITY * r.track.grav;
@@ -139,33 +140,11 @@ export function step(r: Race, byte: number) {
     let vf = car.vx * tx + car.vy * ty + car.vz * tz;
     let vl = car.vx * rx + car.vy * ry + car.vz * rz;
 
-    if (gas) vf += ENGINE * (1 - vf / (off ? car.rough : VMAX)) * DT * (vf < 0 ? 2.5 : 1);
-    if (off) vf -= vf * 1.2 * DT; // grass and sand are slow
-    if (brake) {
-      if (vf > 0.5) vf -= 58 * DT;
-      else vf = Math.max(vf - 20 * DT, -16);
-    }
-    if (!gas && !brake) vf -= vf * 0.35 * DT;
-    vf -= vf * (vf < 0 ? -vf : vf) * 0.0006 * DT;
-    // The drift eases in quickly and out gently, so letting go slides the car
-    // back into grip instead of snapping it straight.
-    car.drift += ((drift ? 1 : 0) - car.drift) * Math.min(1, (drift ? 9 : 2.6) * DT);
-    const dr = car.drift;
-    vf -= vf * 0.12 * dr * DT;
-    if (g && g.boost) { vf = Math.min(vf + BOOST * DT, VMAX * 1.45); car.boosting = 40; }
-    if (car.boosting > 0) car.boosting--;
-
-    const grip = (10 - 8.5 * dr) * (ice ? 0.2 : 1) * (off ? 0.6 : 1) * (g ? g.grip : 1);
-    vl -= vl * Math.min(1, grip * DT);
+    [vf, vl] = handle(car, vf, vl, steer, gas, brake, drift, off ? car.rough : VMAX, off, ice, g ? g.grip : 1, !!(g && g.boost));
     car.vx = tx * vf + rx * vl; car.vy = ty * vf + ry * vl; car.vz = tz * vf + rz * vl;
     // Gravity along the slope.
     car.vx -= grav * DT * (0 - nx * ny); car.vy -= grav * DT * (1 - ny * ny); car.vz -= grav * DT * (0 - nz * ny);
 
-    const sp = vf < 0 ? -vf : vf;
-    let target = -steer * 2.0 * Math.min(1, sp / 6) / (1 + sp / 50) * (vf < 0 ? -1 : 1);
-    target *= 1 + 0.45 * dr;
-    car.yawRate += (target - car.yawRate) * Math.min(1, (ice ? 2.5 : 5) * DT);
-    car.speed = vf; car.slip = vl;
   } else {
     car.vy -= grav * DT;
     car.yawRate += (-steer * 1.6 - car.yawRate) * Math.min(1, 6 * DT);
@@ -238,9 +217,13 @@ export function step(r: Race, byte: number) {
       const a0 = (px - P.x) * P.fx + (pz - P.z) * P.fz, a1 = (car.x - P.x) * P.fx + (car.z - P.z) * P.fz;
       const lat = (car.x - P.x) * P.rx + (car.z - P.z) * P.rz;
       if (a0 < 0 && a1 >= 0 && lat > -P.hw && lat < P.hw && car.y - P.y < 2 && P.y - car.y < 2) {
+        // Drive on onto it as you were: same heading, same speed.
         car.pipe = i; car.ls = a1; car.ll = lat * P.w;
-        car.speed = car.vx * P.fx + car.vz * P.fz;
-        pipePose(car, P);
+        const d = car.yaw - P.yaw;
+        car.pa = datan2(dsin(d), dcos(d));
+        car.pu = car.vx * P.fx + car.vz * P.fz;
+        car.pv = (car.vx * P.rx + car.vz * P.rz) * P.w;
+        pipePose(car, P, pipeFrame(P, car.ls));
         return;
       }
     }
@@ -270,6 +253,38 @@ export function step(r: Race, byte: number) {
     }
   }
   if (car.y < r.track.minY - 30) respawn(r);
+}
+
+/**
+ * The car's handling on whatever it drives on: engine, brakes, drag, drift,
+ * boost pads, grip and steering. Takes and returns the speed along the car
+ * and across it (right); sets the turn rate, speed and slip.
+ */
+function handle(car: Car, vf: number, vl: number, steer: number, gas: boolean, brake: boolean, drift: boolean, top: number, off: boolean, ice: boolean, gripK: number, boost: boolean): [number, number] {
+    if (gas) vf += ENGINE * (1 - vf / top) * DT * (vf < 0 ? 2.5 : 1);
+    if (off) vf -= vf * 1.2 * DT; // grass and sand are slow
+    if (brake) {
+      if (vf > 0.5) vf -= 58 * DT;
+      else vf = Math.max(vf - 20 * DT, -16);
+    }
+    if (!gas && !brake) vf -= vf * 0.35 * DT;
+    vf -= vf * (vf < 0 ? -vf : vf) * 0.0006 * DT;
+    // The drift eases in quickly and out gently, so letting go slides the car
+    // back into grip instead of snapping it straight.
+    car.drift += ((drift ? 1 : 0) - car.drift) * Math.min(1, (drift ? 9 : 2.6) * DT);
+    const dr = car.drift;
+    vf -= vf * 0.12 * dr * DT;
+    if (boost) { vf = Math.min(vf + BOOST * DT, VMAX * 1.45); car.boosting = 40; }
+    if (car.boosting > 0) car.boosting--;
+
+    const grip = (10 - 8.5 * dr) * (ice ? 0.2 : 1) * (off ? 0.6 : 1) * gripK;
+    vl -= vl * Math.min(1, grip * DT);
+    const sp = vf < 0 ? -vf : vf;
+    let target = -steer * 2.0 * Math.min(1, sp / 6) / (1 + sp / 50) * (vf < 0 ? -1 : 1);
+    target *= 1 + 0.45 * dr;
+    car.yawRate += (target - car.yawRate) * Math.min(1, (ice ? 2.5 : 5) * DT);
+    car.speed = vf; car.slip = vl;
+  return [vf, vl];
 }
 
 const TAU = 6.283185307179586;
@@ -336,75 +351,102 @@ function loopStep(r: Race, steer: number, gas: boolean, brake: boolean) {
 //     the further round it is the car drops off;
 //   · coming down from the roof onto the wall on the throttle turns the drop
 //     into a big surge of speed.
+// Pipes: the road curls up a wall (or over onto the roof) and back down. The
+// car drives on it freely, with the same handling as anywhere else; only
+// gravity and how well it sticks are special, for the wall-ride feel:
 const WALL_KEEP = 0.25;   // share of the climb's slow-down felt up to the wall
 const WALL_PULL = 9;      // extra drive on a wall, m/s²
 const ROOF_DRAG = 14;     // extra slow-down upside down, m/s² (at the very top)
 const ROOF_SURGE = 2.4;   // the drop from roof to wall on the throttle, times
-const WALL_SLIDE = 7;     // how fast a slow car slides down the wall, m/s
+const STICK = 45;         // above this speed (m/s) the car barely slides down a wall
 
-/** Where the car is on its pipe (from car.ls, car.ll), which way it points, and its velocity. */
-function pipePose(car: Car, P: Pipe) {
-  const [rc, dr] = pipeRoll(P, car.ls);
+/** The pipe's surface at u: along the road (E), across it toward the wall (B), out of it (N), and left of E (L). */
+interface PipeFrame { rc: number; sn: number; cs: number; k: number; J: number; E: number[]; B: number[]; N: number[]; L: number[] }
+function pipeFrame(P: Pipe, u: number): PipeFrame {
+  const [rc, dr] = pipeRoll(P, u);
   const sn = dsin(rc), cs = dcos(rc);
   const sdx = P.w * P.rx, sdz = P.w * P.rz;
-  [car.x, car.y, car.z] = pipePoint(P, car.ls, car.ll);
-  // Along the road: forward, plus the banking carrying it round.
-  const k = P.R * dr;
-  let tx = P.fx + k * cs * sdx, ty = k * sn, tz = P.fz + k * cs * sdz;
-  const tl = Math.sqrt(tx * tx + ty * ty + tz * tz);
-  tx /= tl; ty /= tl; tz /= tl;
-  car.tx = tx; car.ty = ty; car.tz = tz;
-  car.nx = -sn * sdx; car.ny = cs; car.nz = -sn * sdz;
-  car.vx = tx * car.speed; car.vy = ty * car.speed; car.vz = tz * car.speed;
-  car.yaw = P.yaw;
-  car.grounded = true; car.offroad = false; car.slip = 0; car.yawRate = 0; car.part = "";
+  // How fast the surface turns across as you go along (the lift by hw·sinθ adds to it).
+  const k = (P.R + (cs > 0 ? P.hw * cs * sn : 0)) * dr, J = Math.sqrt(1 + k * k);
+  const A = [cs * sdx, sn, cs * sdz], N = [-sn * sdx, cs, -sn * sdz];
+  const E = [(P.fx + k * A[0]) / J, k * A[1] / J, (P.fz + k * A[2]) / J];
+  const B = [(A[0] - k * P.fx) / J, A[1] / J, (A[2] - k * P.fz) / J];
+  const L = [N[1] * E[2] - N[2] * E[1], N[2] * E[0] - N[0] * E[2], N[0] * E[1] - N[1] * E[0]];
+  return { rc, sn, cs, k, J, E, B, N, L };
 }
 
-function pipeStep(r: Race, steer: number, gas: boolean, brake: boolean) {
+/** Puts the car where it is on the pipe, standing on it, pointing and moving as it is. */
+function pipePose(car: Car, P: Pipe, F: PipeFrame) {
+  [car.x, car.y, car.z] = pipePoint(P, car.ls, car.ll);
+  const c = dcos(car.pa), s = dsin(car.pa);
+  car.tx = c * F.E[0] + s * F.L[0]; car.ty = c * F.E[1] + s * F.L[1]; car.tz = c * F.E[2] + s * F.L[2];
+  car.nx = F.N[0]; car.ny = F.N[1]; car.nz = F.N[2];
+  car.vx = car.pu * F.E[0] + car.pv * F.B[0]; car.vy = car.pu * F.E[1] + car.pv * F.B[1]; car.vz = car.pu * F.E[2] + car.pv * F.B[2];
+  const hz = car.tx * car.tx + car.tz * car.tz;
+  if (hz > 0.04) car.yaw = datan2(car.tx, car.tz);
+  car.grounded = true; car.offroad = false; car.part = "";
+}
+
+function pipeStep(r: Race, steer: number, gas: boolean, brake: boolean, drift: boolean) {
   const car = r.car, P = r.track.road!.pipes[car.pipe];
   const g = GRAVITY * r.track.grav;
-  const [rc, dr] = pipeRoll(P, car.ls);
-  const sn = dsin(rc), cs = dcos(rc);
-  const J = Math.sqrt(1 + P.R * dr * P.R * dr);
-  let vf = car.speed;
-  if (gas) vf += ENGINE * (1 - vf / VMAX) * DT;
-  if (brake) vf -= 30 * DT;
-  vf -= vf * (vf < 0 ? -vf : vf) * 0.0006 * DT;
-  // Gravity along the way: up the wall or over the roof, or back down.
-  const climb = P.R * dr * sn / J;
-  if (climb > 0) vf -= g * climb * (cs > -0.17 ? WALL_KEEP : 1) * DT;
-  else vf -= g * climb * (gas && cs < 0.5 ? ROOF_SURGE : 1) * DT;
+  const F = pipeFrame(P, car.ls);
+  const { E, B, L, sn, cs } = F;
+  // The car's own forward and right on the surface.
+  const c = dcos(car.pa), s = dsin(car.pa);
+  const h = [c * E[0] + s * L[0], c * E[1] + s * L[1], c * E[2] + s * L[2]];
+  const rt = [s * E[0] - c * L[0], s * E[1] - c * L[1], s * E[2] - c * L[2]];
+  const V = [car.pu * E[0] + car.pv * B[0], car.pu * E[1] + car.pv * B[1], car.pu * E[2] + car.pv * B[2]];
+  let vf = V[0] * h[0] + V[1] * h[1] + V[2] * h[2];
+  let vl = V[0] * rt[0] + V[1] * rt[1] + V[2] * rt[2];
+  [vf, vl] = handle(car, vf, vl, steer, gas, brake, drift, VMAX, false, false, 1, false);
+  for (let i = 0; i < 3; i++) V[i] = h[i] * vf + rt[i] * vl;
+  let a = V[0] * E[0] + V[1] * E[1] + V[2] * E[2];
+  let b = V[0] * B[0] + V[1] * B[1] + V[2] * B[2];
+  // Gravity along the surface. Climbing to the wall costs little; coming down
+  // off the roof on the throttle pays back hard; fast cars stick to the wall.
+  const sp0 = Math.sqrt(a * a + b * b);
+  let gE = -g * E[1], gB = -g * B[1];
+  if (gE < 0) gE *= cs > -0.17 ? WALL_KEEP : 1;
+  else gE *= gas && cs < 0.5 ? ROOF_SURGE : 1;
+  gB *= clamp(1 - sp0 / STICK, 0.12, 1);
+  a += gE * DT; b += gB * DT;
   // On the wall the throttle pulls harder; upside down the speed bleeds away.
-  if (gas && sn > 0.7 && cs > -0.3 && vf < VMAX * 1.35) vf += WALL_PULL * sn * DT;
-  if (cs < 0) vf -= ROOF_DRAG * -cs * DT;
-  if (vf > VMAX * 1.6) vf = VMAX * 1.6;
-  // Steering moves across; a slow car slides down toward the floor.
-  const slow = clamp(1 - vf / 45, 0, 1);
-  car.ll += (steer * 9 * P.w - WALL_SLIDE * sn * slow) * DT;
-  const lim = P.hw - 1.5;
-  if (car.ll > lim) car.ll = lim; else if (car.ll < -lim) car.ll = -lim;
-  if (car.boosting > 0) car.boosting--;
-  car.speed = vf;
-  car.ls += vf * DT / J;
+  let sp = Math.sqrt(a * a + b * b);
+  if (sp > 0.01) {
+    let to = sp;
+    if (gas && sn > 0.7 && cs > -0.3 && to < VMAX * 1.35) to += WALL_PULL * sn * DT;
+    if (cs < 0) to = Math.max(0, to - ROOF_DRAG * -cs * DT);
+    if (to > VMAX * 1.6) to = VMAX * 1.6;
+    a *= to / sp; b *= to / sp; sp = to;
+  }
+  car.pa += car.yawRate * DT;
+  car.pa = datan2(dsin(car.pa), dcos(car.pa));
+  // Move over the surface; the rails at its edges are walls.
+  car.ls += (a - F.k * b) / F.J * DT;
+  car.ll += b * F.J * DT;
+  const lim = P.hw - CAR_R;
+  if (car.ll > lim || car.ll < -lim) {
+    car.ll = car.ll > 0 ? lim : -lim;
+    if (b * car.ll > 0) { car.hit = b < 0 ? -b : b; b = -0.15 * b; }
+  }
+  car.pu = a; car.pv = b;
   if (car.ls >= P.len || car.ls < 0) {
-    // Out onto the road again.
-    const along = car.ls, side = car.ll * P.w;
-    car.x = P.x + P.fx * along + P.rx * side;
-    car.y = P.y;
-    car.z = P.z + P.fz * along + P.rz * side;
-    car.vx = P.fx * vf; car.vy = 0; car.vz = P.fz * vf;
-    car.nx = 0; car.ny = 1; car.nz = 0; car.yaw = P.yaw;
-    car.grounded = true; car.offroad = false;
+    // Out onto the road again, driving on as it was.
+    const u = car.ls;
+    car.ls = u < 0 ? 0 : P.len;
+    pipePose(car, P, pipeFrame(P, car.ls));
+    car.x += P.fx * (u - car.ls); car.z += P.fz * (u - car.ls);
+    car.y = P.y; car.vy = 0;
+    car.nx = 0; car.ny = 1; car.nz = 0;
     car.pipe = -1; car.tx = car.ty = car.tz = 0;
     return;
   }
-  pipePose(car, P);
+  pipePose(car, P, F);
   // High up the wall or on the roof it takes speed to hold on.
-  const need = rc > 1.3 ? 6 + 22 * (cs < 0 ? -cs : 0) : 0;
-  if (vf < need || (vf < 1 && rc > 0.5)) {
+  const need = F.rc > 1.3 ? 6 + 22 * (cs < 0 ? -cs : 0) : 0;
+  if (sp < need || (sp < 1 && F.rc > 0.5)) {
     car.pipe = -1; car.grounded = false;
-    const hx = car.tx, hz = car.tz;
-    if (hx * hx + hz * hz > 0.01) car.yaw = datan2(hx, hz);
     car.tx = car.ty = car.tz = 0;
     car.nx = 0; car.ny = 1; car.nz = 0;
   }
